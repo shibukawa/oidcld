@@ -1,0 +1,72 @@
+# Git
+.git/
+.gitignore
+.github/
+
+# Documentation
+*.md
+docs/
+examples/
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test files
+*_test.go
+coverage.out
+coverage.html
+testdata/
+
+# Build artifacts
+dist/
+*.exe
+oidcld
+openidld
+/tmp/
+
+# Configuration files (will be provided at runtime)
+*.yaml
+*.yml
+*.key
+*.pub.key
+*.pem
+*.crt
+config/
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node modules (if any)
+node_modules/
+
+# Logs
+*.log
+
+# Docker files (not needed in build context)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD files
+.github/
+.golangci.yml
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Backup files
+*.bak
+*.backup
+*~

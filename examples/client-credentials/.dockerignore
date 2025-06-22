@@ -1,0 +1,27 @@
+# Ignore built binaries
+client-credentials-example
+
+# Ignore Docker files
+Dockerfile
+compose.yaml
+.dockerignore
+
+# Ignore configuration files (they're mounted as volumes)
+oidcld.yaml
+
+# Ignore version control
+.git
+.gitignore
+
+# Ignore documentation
+README.md
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS files
+.DS_Store
+Thumbs.db

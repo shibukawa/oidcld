@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "oidcld": {
+      "command": "/Users/shibukawayoshiki/develop/idpd/oidcld",
+      "args": ["mcp", "--config", "oidcld.yaml"],
+      "env": {}
+    }
+  }
+}

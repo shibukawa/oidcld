@@ -1,0 +1,13 @@
+oidcld
+oidcld.exe
+oidcld.yaml
+examples/client-credentials/client-credentials-example
+examples/client-credentials/client-credentials-example.exe
+scripts
+
+docs/COMPLETED_TASKS.md
+docs/CURRENT_PRIORITIES.md
+docs/PHASE4_REFACTORING_ANALYSIS.md
+docs/TESTING.md
+docs/TODO.md
+*.pem
