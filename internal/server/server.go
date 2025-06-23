@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -236,7 +237,7 @@ func (s *Server) renderLoginForm(w http.ResponseWriter, authRequestID string, au
 			fmt.Sprintf("%v", authReq.GetScopes())),
 		FormAction: "",
 		HiddenFields: map[string]string{
-			"authRequestID": authRequestID,
+			"authRequestID": html.EscapeString(authRequestID),
 		},
 		ButtonAction: "submit",
 	}
