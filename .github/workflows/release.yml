@@ -89,14 +89,28 @@ jobs:
         CGO_ENABLED: 0
       run: |
         mkdir -p dist
+        BINARY_NAME="oidcld-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
         go build -ldflags="-s -w -X main.version=${{ github.ref_name }} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-          -o dist/oidcld-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} .
+          -o "dist/${BINARY_NAME}" .
         
-    - name: Upload binary artifact
+        # Create compressed archive
+        cd dist
+        if [[ "${{ matrix.goos }}" == "windows" ]]; then
+          zip "${BINARY_NAME%.exe}.zip" "${BINARY_NAME}"
+          echo "Created ${BINARY_NAME%.exe}.zip"
+        else
+          tar -czf "${BINARY_NAME}.tar.gz" "${BINARY_NAME}"
+          echo "Created ${BINARY_NAME}.tar.gz"
+        fi
+        ls -la
+        
+    - name: Upload release assets
       uses: actions/upload-artifact@v4
       with:
-        name: oidcld-${{ matrix.goos }}-${{ matrix.goarch }}
-        path: dist/oidcld-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+        name: release-assets-${{ matrix.goos }}-${{ matrix.goarch }}
+        path: |
+          dist/*.zip
+          dist/*.tar.gz
         retention-days: 1
 
   build-docker:
@@ -162,35 +176,17 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Download all artifacts
+    - name: Download all release assets
       uses: actions/download-artifact@v4
       with:
-        path: dist
+        pattern: release-assets-*
+        path: artifacts
+        merge-multiple: true
         
-    - name: Prepare release assets
+    - name: List downloaded artifacts
       run: |
-        cd dist
-        for dir in */; do
-          if [ -d "$dir" ]; then
-            cd "$dir"
-            for file in *; do
-              if [ -f "$file" ]; then
-                # Create compressed archives
-                if [[ "$file" == *".exe" ]]; then
-                  # Windows binary - create zip
-                  zip "../${file%.exe}.zip" "$file"
-                else
-                  # Unix binary - create tar.gz
-                  tar -czf "../${file}.tar.gz" "$file"
-                fi
-              fi
-            done
-            cd ..
-          fi
-        done
-        
-        # List all release assets
-        ls -la *.zip *.tar.gz || true
+        echo "Downloaded artifacts:"
+        find artifacts -type f -name "*.zip" -o -name "*.tar.gz" | sort
         
     - name: Generate release notes
       id: release_notes
@@ -242,9 +238,7 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        files: |
-          dist/*.zip
-          dist/*.tar.gz
+        files: artifacts/*
         body_path: release_notes.md
         draft: false
         prerelease: ${{ contains(github.ref_name, '-') }}
