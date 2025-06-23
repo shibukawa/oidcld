@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -98,13 +99,16 @@ func LoadConfig(configPath string) (*Config, error) {
 
 // SaveConfig saves configuration to a YAML file using text template.
 func SaveConfig(configPath string, config *Config) error {
-	// Define the safe directory
-	const safeDir = "/etc/oidcld/"
-
 	// Resolve the absolute path
 	absPath, err := filepath.Abs(configPath)
-	if err != nil || !strings.HasPrefix(absPath, safeDir) {
-		return fmt.Errorf("invalid config path: %s", configPath)
+	if err != nil {
+		return fmt.Errorf("invalid config path: %w", err)
+	}
+
+	// Ensure the directory exists
+	dir := filepath.Dir(absPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
 	// Generate YAML content using template
