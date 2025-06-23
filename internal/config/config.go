@@ -98,6 +98,15 @@ func LoadConfig(configPath string) (*Config, error) {
 
 // SaveConfig saves configuration to a YAML file using text template.
 func SaveConfig(configPath string, config *Config) error {
+	// Define the safe directory
+	const safeDir = "/etc/oidcld/"
+
+	// Resolve the absolute path
+	absPath, err := filepath.Abs(configPath)
+	if err != nil || !strings.HasPrefix(absPath, safeDir) {
+		return fmt.Errorf("invalid config path: %s", configPath)
+	}
+
 	// Generate YAML content using template
 	yamlContent, err := generateConfigYAML(config)
 	if err != nil {
@@ -105,12 +114,12 @@ func SaveConfig(configPath string, config *Config) error {
 	}
 
 	// Write to file atomically
-	tempFile := configPath + ".tmp"
+	tempFile := absPath + ".tmp"
 	if err := os.WriteFile(tempFile, []byte(yamlContent), 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 
-	if err := os.Rename(tempFile, configPath); err != nil {
+	if err := os.Rename(tempFile, absPath); err != nil {
 		os.Remove(tempFile)
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}

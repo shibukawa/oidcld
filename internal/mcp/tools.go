@@ -108,9 +108,13 @@ func (t *InitTool) Execute(ctx context.Context, args map[string]any) (any, error
 	cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", port)
 
 	// Save configuration
+	// Define the safe directory
+	const safeDir = "/etc/oidcld/"
+
+	// Resolve the absolute path
 	absPath, err := filepath.Abs(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve config path: %w", err)
+	if err != nil || !strings.HasPrefix(absPath, safeDir) {
+		return nil, fmt.Errorf("invalid config path: %s", configPath)
 	}
 
 	if err := config.SaveConfig(absPath, cfg); err != nil {
