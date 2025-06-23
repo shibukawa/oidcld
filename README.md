@@ -1,5 +1,7 @@
 # OpenID Connect for Local Development: OpenID Connect Test Identity Provider
 
+![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
+
 ## Terminology
 
 This project uses terminology from xUnit test patterns to clearly describe its purpose and functionality:
@@ -28,6 +30,14 @@ A fake OpenID Connect Identity Provider (IdP) designed for testing and developme
 - Supports local and test environment development workflows
 - Facilitates E2E testing of applications that require OpenID Connect authentication
 - Compatible with Microsoft EntraID/AzureAD clients and MSAL libraries
+
+----
+
+![screenshot](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/login-screen.png)
+
+**Login Screen:** No password, just click to login. It helps you to test. No special no-login-local-dev-only-logic anymore.
+
+----
 
 ### Core Features
 - **Standards-Compliant Implementation**: Built on zitadel/oidc v3 library for full OpenID Connect Core 1.0 compliance
