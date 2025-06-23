@@ -1,5 +1,7 @@
 # ローカル開発用OpenID Connect: OpenID Connect テスト用アイデンティティプロバイダー
 
+![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
+
 ## 用語
 
 このプロジェクトでは、xUnitテストパターンの用語を使用して、その目的と機能を明確に説明しています：
@@ -28,6 +30,14 @@
 - ローカルおよびテスト環境の開発ワークフローをサポート
 - OpenID Connect認証を必要とするアプリケーションのE2Eテストを促進
 - Microsoft EntraID/AzureADクライアントおよびMSALライブラリと互換
+
+----
+
+![screenshot](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/login-screen.png)
+
+**ログイン画面:** パスワードなしのクリックのみのログイン。テストをスムーズにします。特別な**ローカル時のみのログインなしロジック**とはおさらばです。
+
+----
 
 ### コア機能
 - **標準準拠実装**: 完全なOpenID Connect Core 1.0準拠のためのzitadel/oidc v3ライブラリ上に構築
