@@ -1,0 +1,49 @@
+services:
+  oidcld:
+    image: ghcr.io/shibukawa/oidcld:latest
+    ports:
+      - "18888:18888"
+    environment:
+      - PORT=18888
+    volumes:
+      - ./oidcld.yaml:/app/oidcld.yaml:ro
+    healthcheck:
+      test: ["CMD", "/app/oidcld", "health", "--url", "http://localhost:18888"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - oidc-network
+
+  client-credentials-example:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      oidcld:
+        condition: service_healthy
+    command: 
+      - "--idp-host=http://oidcld:18888"
+      - "--client-id=my-client-app"
+    networks:
+      - oidc-network
+    profiles:
+      - example
+
+networks:
+  oidc-network:
+    driver: bridge
+
+# Example usage:
+# 1. Start only the OIDC server:
+#    docker compose up oidcld
+#
+# 2. Run the client credentials example:
+#    docker compose --profile example up --build
+#
+# 3. Run example multiple times:
+#    docker compose run --rm client-credentials-example --client-id custom-client
+#
+# 4. Clean up:
+#    docker compose down

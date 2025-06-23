@@ -1,0 +1,97 @@
+# OpenID Connect IdP settings for Vue.js Demo
+oidcld:
+  iss: "http://localhost:18888"
+  valid_audiences:
+    - "test-client"
+  pkce_required: false
+  nonce_required: false
+  expired_in: 3600  # Token expiration in seconds
+  # Standard scopes (openid, profile, email) are always included
+  valid_scopes:  # Optional custom scopes
+    - "admin"
+    - "read"
+    - "write"
+    - "profile"
+    - "email"
+  refresh_token_enabled: true             # Enable refresh token support
+  refresh_token_expiry: 86400             # Refresh token expiry in seconds (24 hours)
+  end_session_enabled: true               # Enable logout/end session functionality
+  end_session_endpoint_visible: true      # Show end_session_endpoint in discovery
+
+# CORS (Cross-Origin Resource Sharing) settings for SPA development
+cors:
+  enabled: true                           # Enable CORS support
+  allowed_origins:                        # List of allowed origins
+    - "http://localhost:5173"             # Vite dev server default port
+    - "http://localhost:3000"             # Alternative dev server port
+    - "http://localhost:4173"             # Vite preview server port
+    - "http://localhost:8080"             # Alternative dev server port
+    - "https://localhost:5173"            # HTTPS dev server
+    - "https://localhost:3000"            # HTTPS dev server
+  allowed_methods:                        # Allowed HTTP methods
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "OPTIONS"
+    - "HEAD"
+  allowed_headers:                        # Allowed request headers
+    - "Content-Type"
+    - "Authorization"
+    - "Accept"
+    - "Origin"
+    - "X-Requested-With"
+
+# Demo users for testing different scenarios
+users:
+  demo-admin:
+    display_name: "Demo Administrator"
+    extra_valid_scopes:
+      - "admin"
+      - "read"
+      - "write"
+    extra_claims:
+      email: "admin@demo.example.com"
+      role: "admin"
+      department: "IT"
+      preferred_username: "demo-admin"
+      given_name: "Demo"
+      family_name: "Administrator"
+      picture: "https://via.placeholder.com/150/0066cc/ffffff?text=DA"
+      
+  demo-user:
+    display_name: "Demo User"
+    extra_valid_scopes:
+      - "read"
+    extra_claims:
+      email: "user@demo.example.com"
+      role: "user"
+      department: "Sales"
+      preferred_username: "demo-user"
+      given_name: "Demo"
+      family_name: "User"
+      picture: "https://via.placeholder.com/150/00cc66/ffffff?text=DU"
+  test-developer:
+    display_name: "Test Developer"
+    extra_valid_scopes:
+      - "read"
+      - "write"
+    extra_claims:
+      email: "developer@demo.example.com"
+      role: "developer"
+      department: "Engineering"
+      preferred_username: "test-developer"
+      given_name: "Test"
+      family_name: "Developer"
+      picture: "https://via.placeholder.com/150/cc6600/ffffff?text=TD"
+      groups: ["developers", "testers"]
+      
+  guest-user:
+    display_name: "Guest User"
+    extra_claims:
+      email: "guest@demo.example.com"
+      role: "guest"
+      preferred_username: "guest-user"
+      given_name: "Guest"
+      family_name: "User"
+      picture: "https://via.placeholder.com/150/666666/ffffff?text=GU"

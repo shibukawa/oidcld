@@ -1,0 +1,70 @@
+services:
+  oidcld:
+    image: ghcr.io/shibukawa/oidcld:latest
+    ports:
+      - "18888:18888"
+    environment:
+      - PORT=18888
+    volumes:
+      - ./oidcld.yaml:/app/oidcld.yaml:ro
+    healthcheck:
+      test: ["CMD", "/app/oidcld", "health", "--url", "http://localhost:18888"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - oidc-network
+
+  react-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      oidcld:
+        condition: service_healthy
+    networks:
+      - oidc-network
+    profiles:
+      - app
+
+  # Development service with hot reload
+  react-dev:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      oidcld:
+        condition: service_healthy
+    networks:
+      - oidc-network
+    profiles:
+      - dev
+
+networks:
+  oidc-network:
+    driver: bridge
+
+# Example usage:
+# 1. Start only the OIDC server:
+#    docker compose up oidcld
+#
+# 2. Run production React app:
+#    docker compose --profile app up --build
+#
+# 3. Run development React app with hot reload:
+#    docker compose --profile dev up
+#
+# 4. Access the application:
+#    Production: http://localhost:3000
+#    Development: http://localhost:5173
+#
+# 5. Clean up:
+#    docker compose down

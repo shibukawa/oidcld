@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  oidc-server:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    ports:
+      - "18888:18888"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - PORT=18888
+    command: ["./oidcld", "--config", "/app/config/oidcld.yaml"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18888/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  device-client:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      oidc-server:
+        condition: service_healthy
+    environment:
+      - OIDC_ISSUER=http://oidc-server:18888
+      - OIDC_CLIENT_ID=device-flow-cli
+      - OIDC_SCOPE=openid profile email
+    stdin_open: true
+    tty: true
+
+networks:
+  default:
+    name: oidc-device-flow
