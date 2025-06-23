@@ -1,4 +1,4 @@
-version: 2
+version: "2"
 linters:
   default: all
   disable:
@@ -49,7 +49,5 @@ linters:
       - path: main.go
         linters:
           - forbidigo
-  issues:
-
 run:
   timeout: 5m
