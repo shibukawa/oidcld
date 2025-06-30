@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/alecthomas/assert/v2 v2.11.0
-	github.com/alecthomas/kong v0.8.1
+	github.com/alecthomas/kong v1.12.0
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-jose/go-jose/v4 v4.0.5
