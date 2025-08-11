@@ -11,7 +11,7 @@ require (
 	github.com/goccy/go-yaml v1.18.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
-	github.com/zitadel/oidc/v3 v3.43.0
+	github.com/zitadel/oidc/v3 v3.44.0
 	golang.org/x/text v0.27.0
 )
 
