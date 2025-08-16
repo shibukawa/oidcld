@@ -1,0 +1,184 @@
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/fatih/color"
+	"github.com/fsnotify/fsnotify"
+	"github.com/shibukawa/oidcld/internal/config"
+	"github.com/shibukawa/oidcld/internal/server"
+)
+
+// ServeCmd represents the command to start the OpenID Connect server
+type ServeCmd struct {
+	Config   string `short:"c" help:"Configuration file path" default:"oidcld.yaml"`
+	Port     string `short:"p" help:"Port to listen on" default:"18888"`
+	Watch    bool   `short:"w" help:"Watch configuration file for changes and reload automatically"`
+	HTTPS    bool   `help:"Enable HTTPS server"`
+	CertFile string `help:"Path to TLS certificate file (for HTTPS)"`
+	KeyFile  string `help:"Path to TLS private key file (for HTTPS)"`
+	Verbose  bool   `short:"v" help:"Enable verbose logging (including health check logs)" env:"OIDCLD_VERBOSE"`
+	// Environment variable overrides for autocert
+	ACMEDirectoryURL    string `help:"ACME directory URL" env:"ACME_DIRECTORY_URL"`
+	Email               string `help:"Email for ACME registration" env:"EMAIL"`
+	Domain              string `help:"Domain for autocert" env:"DOMAIN"`
+	CacheDir            string `help:"Cache directory for autocert" env:"CACHE_DIR"`
+	AgreeTOS            bool   `help:"Agree to ACME Terms of Service" env:"AGREE_TOS"`
+	InsecureSkipVerify  bool   `help:"Skip TLS certificate verification for ACME" env:"INSECURE_SKIP_VERIFY"`
+}
+
+// Run executes the serve command to start the OpenID Connect server
+func (cmd *ServeCmd) Run() error {
+	// Prepare autocert overrides from environment variables
+	autocertOverrides := &config.AutocertOverrides{
+		ACMEDirectoryURL:   cmd.ACMEDirectoryURL,
+		Email:              cmd.Email,
+		Domain:             cmd.Domain,
+		CacheDir:           cmd.CacheDir,
+		AgreeTOS:           cmd.AgreeTOS,
+		InsecureSkipVerify: cmd.InsecureSkipVerify,
+	}
+
+	// Load configuration with overrides
+	cfg, err := config.LoadConfigWithOverrides(cmd.Config, cmd.Verbose, autocertOverrides)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Auto-enable HTTPS if autocert is configured
+	if cfg.Autocert != nil && cfg.Autocert.Enabled {
+		cmd.HTTPS = true
+		color.Cyan("🔧 Auto-enabling HTTPS mode due to autocert configuration")
+	}
+
+	// Update issuer URL based on HTTPS setting if not explicitly set
+	if cmd.HTTPS && cfg.OIDCLD.Issuer == "" {
+		cfg.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", cmd.Port)
+	} else if !cmd.HTTPS && cfg.OIDCLD.Issuer == "" {
+		cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", cmd.Port)
+	}
+
+	// Create server
+	srv, err := server.New(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+
+	// If watch mode is enabled, set up file watching
+	if cmd.Watch {
+		color.Cyan("🔄 Watch mode enabled - configuration will be reloaded automatically on changes")
+		if err := cmd.setupConfigWatcher(srv); err != nil {
+			return fmt.Errorf("failed to setup config watcher: %w", err)
+		}
+	}
+
+	// Start server with HTTPS options
+	if cmd.HTTPS {
+		// Check if autocert is enabled
+		if cfg.Autocert != nil && cfg.Autocert.Enabled {
+			color.Cyan("🔄 Starting server with autocert...")
+			return srv.StartAutocert(cmd.Port)
+		}
+		color.Cyan("🔄 Starting server with TLS certificates...")
+		return srv.StartTLS(cmd.Port, cmd.CertFile, cmd.KeyFile)
+	}
+	color.Cyan("🔄 Starting server with HTTP...")
+	return srv.Start(cmd.Port)
+}
+
+// setupConfigWatcher sets up file system watching for configuration changes
+func (cmd *ServeCmd) setupConfigWatcher(srv *server.Server) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed to create file watcher: %w", err)
+	}
+
+	// Add config file to watcher
+	if err := watcher.Add(cmd.Config); err != nil {
+		watcher.Close()
+		return fmt.Errorf("failed to watch config file %s: %w", cmd.Config, err)
+	}
+
+	// Start watching in a goroutine
+	go func() {
+		defer watcher.Close()
+		
+		// Debounce timer to avoid multiple rapid reloads
+		var debounceTimer *time.Timer
+		const debounceDelay = 500 * time.Millisecond
+
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+
+				// Only handle write events
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					// Cancel previous timer if it exists
+					if debounceTimer != nil {
+						debounceTimer.Stop()
+					}
+
+					// Set new timer for debounced reload
+					debounceTimer = time.AfterFunc(debounceDelay, func() {
+						cmd.reloadConfig(srv)
+					})
+				}
+
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				color.Red("❌ File watcher error: %v", err)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// reloadConfig reloads the configuration and updates the server
+func (cmd *ServeCmd) reloadConfig(srv *server.Server) {
+	color.Cyan("\n🔄 Configuration file changed, reloading...")
+
+	// Prepare autocert overrides from environment variables
+	autocertOverrides := &config.AutocertOverrides{
+		ACMEDirectoryURL:   cmd.ACMEDirectoryURL,
+		Email:              cmd.Email,
+		Domain:             cmd.Domain,
+		CacheDir:           cmd.CacheDir,
+		AgreeTOS:           cmd.AgreeTOS,
+		InsecureSkipVerify: cmd.InsecureSkipVerify,
+	}
+
+	// Load new configuration with overrides
+	newCfg, err := config.LoadConfigWithOverrides(cmd.Config, cmd.Verbose, autocertOverrides)
+	if err != nil {
+		color.Red("❌ Failed to reload configuration: %v", err)
+		color.Red("   Keeping previous configuration")
+		return
+	}
+
+	// Update server configuration
+	if err := srv.UpdateConfig(newCfg); err != nil {
+		color.Red("❌ Failed to update server configuration: %v", err)
+		color.Red("   Keeping previous configuration")
+		return
+	}
+
+	// Success message with configuration details
+	color.Green("✅ Configuration reloaded successfully!")
+	color.Cyan("📋 Updated configuration:")
+	color.Cyan("   Issuer: %s", newCfg.OIDCLD.Issuer)
+	color.Cyan("   Users: %d", len(newCfg.Users))
+	color.Cyan("   Valid Audiences: %v", newCfg.OIDCLD.ValidAudiences)
+	color.Cyan("   Valid Scopes: %v", newCfg.OIDCLD.ValidScopes)
+	if newCfg.Autocert != nil && newCfg.Autocert.Enabled {
+		color.Cyan("   Autocert: enabled (%v)", newCfg.Autocert.Domains)
+	}
+	color.Cyan("   Timestamp: %s", time.Now().Format("15:04:05"))
+	fmt.Println()
+}

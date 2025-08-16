@@ -1,0 +1,64 @@
+services:
+  # myencrypt - Local ACME server for development
+  myencrypt:
+    image: ghcr.io/shibukawa/myencrypt:latest
+    ports:
+      - "14000:80"  # ACME server port
+    environment:
+      - MYENCRYPT_EXPOSE_PORT=14000  # Required: Host-accessible port
+      - MYENCRYPT_PROJECT_NAME=oidcld  # Required: Project name for Docker mode
+      - MYENCRYPT_HOSTNAME=myencrypt  # Required: Hostname for ACME directory URLs
+      - MYENCRYPT_INDIVIDUAL_CERT_TTL=168h  # 7 days (7 * 24h)
+      - MYENCRYPT_CA_CERT_TTL=19200h
+      - MYENCRYPT_ALLOWED_DOMAINS=localhost,*.localhost
+      - MYENCRYPT_CERT_STORE_PATH=/data
+      - MYENCRYPT_DATABASE_PATH=/data/myencrypt.db
+      - MYENCRYPT_LOG_LEVEL=info  # Enable debug logging
+    volumes:
+      - myencrypt-data:/data
+    restart: unless-stopped
+
+  # OIDCLD with myencrypt autocert (TLS-ALPN challenge)
+  oidc.localhost:
+    # image: oidcld:local
+    build: .
+    # image: ghcr.io/shibukawa/oidcld:latest
+    ports:
+      - "8443:443"     # HTTPS OIDC server port (mapped to non-privileged port)
+    volumes:
+      - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
+    environment:
+      - OIDCLD_CONFIG=/app/config.yaml
+      # Minimal autocert environment variables (TLS-ALPN challenge)
+      - DOMAIN=oidc.localhost
+      - ACME_DIRECTORY_URL=http://myencrypt:80/acme/directory
+      - CACHE_DIR=/tmp/autocert-cache  # Temporary cache directory (no persistence)
+      - EMAIL=dev@localhost
+      - AGREE_TOS=true
+      - INSECURE_SKIP_VERIFY=true
+    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--verbose"]
+    depends_on:
+      myencrypt:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Existing Azure MSAL Browser React Sample (built with nginx)
+  app.localhost:
+    build:
+      context: ./examples/azure-msal-browser-react
+      dockerfile: Dockerfile
+      args:
+        VITE_OIDC_AUTHORITY: "https://localhost:8443"  # Use the external port for HTTPS
+        VITE_OIDC_CLIENT_ID: "12345678-1234-1234-1234-123456789abc"
+        VITE_REDIRECT_URI: "http://localhost:3000"
+        VITE_OIDC_SCOPES: "openid,profile,email,read,write,admin"  # Add admin scope for testing
+    ports:
+      - "3000:80"   # nginx serves on port 80, exposed as 3000
+    depends_on:
+      oidc.localhost:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  myencrypt-data:
+    driver: local
