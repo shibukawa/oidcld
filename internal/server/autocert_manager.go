@@ -113,6 +113,37 @@ func (am *AutocertManager) StartRenewalMonitor(ctx context.Context) {
 	go am.renewalMonitor(ctx)
 }
 
+// TriggerInitialObtain attempts to obtain certificates for all configured domains
+// once at startup. It runs asynchronously and respects the provided context.
+func (am *AutocertManager) TriggerInitialObtain(ctx context.Context) {
+	go func() {
+		// Small delay to allow server to finish startup tasks if needed
+		time.Sleep(1 * time.Second)
+
+		for _, domain := range am.config.Domains {
+			select {
+			case <-ctx.Done():
+				am.logger.Info("Initial certificate obtain canceled")
+				return
+			default:
+			}
+
+			am.logger.Info(fmt.Sprintf("Attempting initial certificate obtain for %s", domain))
+
+			hello := &tls.ClientHelloInfo{ServerName: domain}
+			_, err := am.manager.GetCertificate(hello)
+			if err != nil {
+				am.logger.Warning(fmt.Sprintf("Initial certificate obtain failed for %s: %v", domain, err))
+			} else {
+				am.logger.Info(fmt.Sprintf("Initial certificate obtained for %s", domain))
+			}
+
+			// Small pause between domains to avoid hammering ACME server
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+}
+
 // renewalMonitor runs in the background and checks for certificates that need renewal.
 func (am *AutocertManager) renewalMonitor(ctx context.Context) {
 	ticker := time.NewTicker(24 * time.Hour) // Check daily

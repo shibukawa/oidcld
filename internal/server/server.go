@@ -100,6 +100,9 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 
 		// Start renewal monitor
 		am.StartRenewalMonitor(ctx)
+
+		// Trigger an initial certificate obtain attempt for configured domains.
+		am.TriggerInitialObtain(ctx)
 	}
 
 	return server, nil
