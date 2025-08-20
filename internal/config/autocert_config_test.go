@@ -38,7 +38,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 					Enabled:          true,
 					Domains:          []string{"auth.example.com"},
 					Email:            "admin@example.com",
-					AgreeToS:         true,
+					AgreeTOS:         true,
 					ACMEServer:       "https://acme-v02.api.letsencrypt.org/directory",
 					CacheDir:         "./autocert-cache",
 					RenewalThreshold: 30,
@@ -53,7 +53,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 					Enabled:          true,
 					Domains:          []string{"auth-staging.example.com"},
 					Email:            "staging@example.com",
-					AgreeToS:         true,
+					AgreeTOS:         true,
 					Staging:          true,
 					RenewalThreshold: 7,
 				},
@@ -67,12 +67,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 					Enabled:  true,
 					Domains:  []string{"auth.local.dev"},
 					Email:    "dev@example.com",
-					AgreeToS: true,
-					Local: &AutocertLocalConfig{
-						Enabled:            true,
-						ACMEServer:         "https://localhost:14000/dir",
-						InsecureSkipVerify: true,
-					},
+					AgreeTOS: true,
 				},
 			},
 			expectError: false,
@@ -83,7 +78,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Email:    "admin@example.com",
-					AgreeToS: true,
+					AgreeTOS: true,
 				},
 			},
 			expectError: true,
@@ -96,7 +91,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 					Enabled:  true,
 					Domains:  []string{},
 					Email:    "admin@example.com",
-					AgreeToS: true,
+					AgreeTOS: true,
 				},
 			},
 			expectError: true,
@@ -108,7 +103,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Domains:  []string{"auth.example.com"},
-					AgreeToS: true,
+					AgreeTOS: true,
 				},
 			},
 			expectError: true,
@@ -121,28 +116,11 @@ func TestAutocertConfig_Validation(t *testing.T) {
 					Enabled:  true,
 					Domains:  []string{"auth.example.com"},
 					Email:    "admin@example.com",
-					AgreeToS: false,
+					AgreeTOS: false,
 				},
 			},
 			expectError: true,
 			errorMsg:    "autocert.agree_tos must be true when autocert is enabled",
-		},
-		{
-			name: "local mode missing acme_server should fail",
-			config: &Config{
-				Autocert: &AutocertConfig{
-					Enabled:  true,
-					Domains:  []string{"auth.local.dev"},
-					Email:    "dev@example.com",
-					AgreeToS: true,
-					Local: &AutocertLocalConfig{
-						Enabled: true,
-						// Missing ACMEServer
-					},
-				},
-			},
-			expectError: true,
-			errorMsg:    "autocert.local.acme_server is required when local mode is enabled",
 		},
 	}
 
@@ -173,7 +151,7 @@ func TestAutocertConfig_DefaultValues(t *testing.T) {
 			Enabled:  true,
 			Domains:  []string{"auth.example.com"},
 			Email:    "admin@example.com",
-			AgreeToS: true,
+			AgreeTOS: true,
 			// Leave other fields empty to test defaults
 		},
 	}
@@ -205,7 +183,7 @@ func TestAutocertConfig_StagingDefaults(t *testing.T) {
 			Enabled:  true,
 			Domains:  []string{"auth-staging.example.com"},
 			Email:    "staging@example.com",
-			AgreeToS: true,
+			AgreeTOS: true,
 			Staging:  true,
 			// ACMEServer should be set to staging
 		},
@@ -228,7 +206,7 @@ func TestAutocertConfig_ChallengeDefaults(t *testing.T) {
 			Enabled:   true,
 			Domains:   []string{"auth.example.com"},
 			Email:     "admin@example.com",
-			AgreeToS:  true,
+			AgreeTOS:  true,
 			Challenge: &AutocertChallengeConfig{
 				// Leave fields empty to test defaults
 			},
@@ -256,7 +234,7 @@ func TestAutocertConfig_RateLimitDefaults(t *testing.T) {
 			Enabled:   true,
 			Domains:   []string{"auth.example.com"},
 			Email:     "admin@example.com",
-			AgreeToS:  true,
+			AgreeTOS:  true,
 			RateLimit: &AutocertRateLimitConfig{
 				// Leave fields empty to test defaults
 			},
@@ -284,7 +262,7 @@ func TestAutocertConfig_RetryDefaults(t *testing.T) {
 			Enabled:  true,
 			Domains:  []string{"auth.example.com"},
 			Email:    "admin@example.com",
-			AgreeToS: true,
+			AgreeTOS: true,
 			Retry:    &AutocertRetryConfig{
 				// Leave fields empty to test defaults
 			},
@@ -329,7 +307,7 @@ func TestGetAutocertDefaults(t *testing.T) {
 		t.Errorf("expected default renewal threshold 30, got %d", defaults.RenewalThreshold)
 	}
 
-	if defaults.AgreeToS {
+	if defaults.AgreeTOS {
 		t.Error("expected agree_tos to be false by default")
 	}
 
@@ -373,7 +351,7 @@ func TestAutocertConfig_YAMLSerialization(t *testing.T) {
 			CacheDir:         "./autocert-cache",
 			RenewalThreshold: 30,
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			Staging:          false,
 			Challenge: &AutocertChallengeConfig{
 				Port:    80,
@@ -387,11 +365,6 @@ func TestAutocertConfig_YAMLSerialization(t *testing.T) {
 				MaxAttempts:  3,
 				InitialDelay: "1s",
 				MaxDelay:     "30s",
-			},
-			Local: &AutocertLocalConfig{
-				Enabled:            false,
-				ACMEServer:         "",
-				InsecureSkipVerify: false,
 			},
 		},
 		Users: map[string]User{
@@ -451,7 +424,7 @@ func TestAutocertConfig_FileOperations(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         "./autocert-cache",
 			RenewalThreshold: 30,
 		},

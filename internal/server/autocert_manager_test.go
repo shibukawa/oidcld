@@ -49,7 +49,7 @@ func TestNewAutocertManager(t *testing.T) {
 				Enabled:          true,
 				Domains:          []string{"auth.example.com"},
 				Email:            "admin@example.com",
-				AgreeToS:         true,
+				AgreeTOS:         true,
 				ACMEServer:       "https://acme-v02.api.letsencrypt.org/directory",
 				CacheDir:         filepath.Join(t.TempDir(), "autocert-cache"),
 				RenewalThreshold: 30,
@@ -62,7 +62,7 @@ func TestNewAutocertManager(t *testing.T) {
 				Enabled:          true,
 				Domains:          []string{"auth-staging.example.com"},
 				Email:            "staging@example.com",
-				AgreeToS:         true,
+				AgreeTOS:         true,
 				Staging:          true,
 				CacheDir:         filepath.Join(t.TempDir(), "autocert-cache"),
 				RenewalThreshold: 7,
@@ -75,14 +75,9 @@ func TestNewAutocertManager(t *testing.T) {
 				Enabled:          true,
 				Domains:          []string{"auth.local.dev"},
 				Email:            "dev@example.com",
-				AgreeToS:         true,
+				AgreeTOS:         true,
 				CacheDir:         filepath.Join(t.TempDir(), "autocert-cache"),
 				RenewalThreshold: 7,
-				Local: &config.AutocertLocalConfig{
-					Enabled:            true,
-					ACMEServer:         "https://localhost:14000/dir",
-					InsecureSkipVerify: true,
-				},
 			},
 			expectError: false,
 		},
@@ -140,7 +135,7 @@ func TestAutocertManager_GetTLSConfig(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth.example.com"},
 		Email:            "admin@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 30,
 	}
@@ -181,7 +176,7 @@ func TestAutocertManager_HTTPHandler(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth.example.com"},
 		Email:            "admin@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 30,
 	}
@@ -214,7 +209,7 @@ func TestAutocertManager_CertificateInfo(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth.example.com", "api.example.com"},
 		Email:            "admin@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 30,
 	}
@@ -270,7 +265,7 @@ func TestAutocertManager_HealthCheck(t *testing.T) {
 				Enabled:          true,
 				Domains:          []string{"auth.example.com"},
 				Email:            "admin@example.com",
-				AgreeToS:         true,
+				AgreeTOS:         true,
 				CacheDir:         filepath.Join(tempDir, "valid-cache"),
 				RenewalThreshold: 30,
 			},
@@ -282,7 +277,7 @@ func TestAutocertManager_HealthCheck(t *testing.T) {
 				Enabled:          true,
 				Domains:          []string{"auth.example.com"},
 				Email:            "admin@example.com",
-				AgreeToS:         true,
+				AgreeTOS:         true,
 				CacheDir:         "/root/invalid-cache", // Use a path that definitely won't be accessible
 				RenewalThreshold: 30,
 			},
@@ -334,7 +329,7 @@ func TestAutocertManager_RenewalMonitor(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth.example.com"},
 		Email:            "admin@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 30,
 	}
@@ -361,18 +356,17 @@ func TestAutocertManager_LocalConfiguration(t *testing.T) {
 	logger := NewLogger()
 	tempDir := t.TempDir()
 
+	// Since "local mode" concept was removed, simulate a local ACME setup by
+	// providing a custom ACME server URL and enabling InsecureSkipVerify.
 	config := &config.AutocertConfig{
-		Enabled:          true,
-		Domains:          []string{"auth.local.dev"},
-		Email:            "dev@example.com",
-		AgreeToS:         true,
-		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
-		RenewalThreshold: 7,
-		Local: &config.AutocertLocalConfig{
-			Enabled:            true,
-			ACMEServer:         "https://localhost:14000/dir",
-			InsecureSkipVerify: true,
-		},
+		Enabled:            true,
+		Domains:            []string{"auth.local.dev"},
+		Email:              "dev@example.com",
+		AgreeTOS:           true,
+		CacheDir:           filepath.Join(tempDir, "autocert-cache"),
+		RenewalThreshold:   7,
+		ACMEServer:         "http://localhost:14000",
+		InsecureSkipVerify: true,
 	}
 
 	manager, err := NewAutocertManager(config, logger)
@@ -380,19 +374,24 @@ func TestAutocertManager_LocalConfiguration(t *testing.T) {
 		t.Fatalf("failed to create autocert manager: %v", err)
 	}
 
-	// Verify local ACME server configuration
+	// Verify ACME client and settings
 	if manager.manager.Client == nil {
 		t.Fatal("ACME client not configured")
 	}
 
-	if manager.manager.Client.DirectoryURL != config.Local.ACMEServer {
+	if manager.manager.Client.DirectoryURL != config.ACMEServer {
 		t.Errorf("expected ACME server URL %s, got %s",
-			config.Local.ACMEServer, manager.manager.Client.DirectoryURL)
+			config.ACMEServer, manager.manager.Client.DirectoryURL)
 	}
 
-	// Verify insecure skip verify is configured
+	// When InsecureSkipVerify is requested, the underlying HTTPClient should be
+	// configured accordingly.
+	if !config.InsecureSkipVerify {
+		return
+	}
+
 	if manager.manager.Client.HTTPClient == nil {
-		t.Fatal("HTTP client not configured for local ACME server")
+		t.Fatal("HTTP client not configured for ACME server")
 	}
 
 	transport, ok := manager.manager.Client.HTTPClient.Transport.(*http.Transport)
@@ -401,7 +400,7 @@ func TestAutocertManager_LocalConfiguration(t *testing.T) {
 	}
 
 	if transport.TLSClientConfig == nil || !transport.TLSClientConfig.InsecureSkipVerify {
-		t.Error("InsecureSkipVerify not configured for local ACME server")
+		t.Error("InsecureSkipVerify not configured on HTTP client")
 	}
 }
 
@@ -413,7 +412,7 @@ func TestAutocertManager_StagingConfiguration(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth-staging.example.com"},
 		Email:            "staging@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		Staging:          true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 7,
@@ -440,7 +439,7 @@ func TestAutocertManager_ProductionConfiguration(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth.example.com"},
 		Email:            "admin@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		Staging:          false,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 30,
@@ -467,7 +466,7 @@ func TestAutocertManager_Close(t *testing.T) {
 		Enabled:          true,
 		Domains:          []string{"auth.example.com"},
 		Email:            "admin@example.com",
-		AgreeToS:         true,
+		AgreeTOS:         true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 		RenewalThreshold: 30,
 	}

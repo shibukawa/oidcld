@@ -44,7 +44,7 @@ func TestServer_AutocertIntegration(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 30,
 		},
@@ -104,7 +104,7 @@ func TestServer_AutocertTLSConfig(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 30,
 		},
@@ -169,7 +169,7 @@ func TestServer_AutocertHTTPHandler(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 30,
 		},
@@ -256,14 +256,9 @@ func TestServer_AutocertLocalConfiguration(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.local.dev"},
 			Email:            "dev@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 7,
-			Local: &config.AutocertLocalConfig{
-				Enabled:            true,
-				ACMEServer:         "https://localhost:14000/dir",
-				InsecureSkipVerify: true,
-			},
 		},
 		Users: map[string]config.User{
 			"testuser": {
@@ -294,22 +289,6 @@ func TestServer_AutocertLocalConfiguration(t *testing.T) {
 	if !server.config.Autocert.Enabled {
 		t.Error("autocert should be enabled")
 	}
-
-	if server.config.Autocert.Local == nil {
-		t.Fatal("local autocert config is nil")
-	}
-
-	if !server.config.Autocert.Local.Enabled {
-		t.Error("local autocert should be enabled")
-	}
-
-	if server.config.Autocert.Local.ACMEServer != "https://localhost:14000/dir" {
-		t.Errorf("expected local ACME server URL, got %s", server.config.Autocert.Local.ACMEServer)
-	}
-
-	if !server.config.Autocert.Local.InsecureSkipVerify {
-		t.Error("InsecureSkipVerify should be enabled for local ACME server")
-	}
 }
 
 func TestServer_AutocertHealthCheck(t *testing.T) {
@@ -327,7 +306,7 @@ func TestServer_AutocertHealthCheck(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 30,
 		},
@@ -378,7 +357,7 @@ func TestServer_AutocertCertificateInfo(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com", "api.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 30,
 		},
@@ -453,7 +432,7 @@ func TestServer_AutocertRenewalMonitor(t *testing.T) {
 			Enabled:          true,
 			Domains:          []string{"auth.example.com"},
 			Email:            "admin@example.com",
-			AgreeToS:         true,
+			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
 			RenewalThreshold: 30,
 		},

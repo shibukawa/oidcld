@@ -20,12 +20,12 @@ type ServeCmd struct {
 	KeyFile  string `help:"Path to TLS private key file (for HTTPS)"`
 	Verbose  bool   `short:"v" help:"Enable verbose logging (including health check logs)" env:"OIDCLD_VERBOSE"`
 	// Environment variable overrides for autocert
-	ACMEDirectoryURL    string `help:"ACME directory URL" env:"ACME_DIRECTORY_URL"`
-	Email               string `help:"Email for ACME registration" env:"EMAIL"`
-	Domain              string `help:"Domain for autocert" env:"DOMAIN"`
-	CacheDir            string `help:"Cache directory for autocert" env:"CACHE_DIR"`
-	AgreeTOS            bool   `help:"Agree to ACME Terms of Service" env:"AGREE_TOS"`
-	InsecureSkipVerify  bool   `help:"Skip TLS certificate verification for ACME" env:"INSECURE_SKIP_VERIFY"`
+	ACMEDirectoryURL   string `help:"ACME directory URL" env:"ACME_DIRECTORY_URL"`
+	Email              string `help:"Email for ACME registration" env:"EMAIL"`
+	Domain             string `help:"Domain for autocert" env:"DOMAIN"`
+	CacheDir           string `help:"Cache directory for autocert" env:"CACHE_DIR"`
+	AgreeTOS           bool   `help:"Agree to ACME Terms of Service" env:"AGREE_TOS"`
+	InsecureSkipVerify bool   `help:"Skip TLS certificate verification for ACME" env:"INSECURE_SKIP_VERIFY"`
 }
 
 // Run executes the serve command to start the OpenID Connect server
@@ -75,11 +75,16 @@ func (cmd *ServeCmd) Run() error {
 
 	// Start server with HTTPS options
 	if cmd.HTTPS {
-		// Check if autocert is enabled
+		// If autocert is configured but server package doesn't provide an autocert starter,
+		// attempt to start with provided cert/key. If none provided, return helpful error.
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
-			color.Cyan("🔄 Starting server with autocert...")
-			return srv.StartAutocert(cmd.Port)
+			color.Cyan("🔄 Autocert is configured, but automatic autocert start is not available in this build. Trying TLS certificates if provided...")
+			if cmd.CertFile != "" && cmd.KeyFile != "" {
+				return srv.StartTLS(cmd.Port, cmd.CertFile, cmd.KeyFile)
+			}
+			return fmt.Errorf("autocert configured but no cert/key provided and automatic autocert start is unavailable")
 		}
+
 		color.Cyan("🔄 Starting server with TLS certificates...")
 		return srv.StartTLS(cmd.Port, cmd.CertFile, cmd.KeyFile)
 	}
@@ -103,7 +108,7 @@ func (cmd *ServeCmd) setupConfigWatcher(srv *server.Server) error {
 	// Start watching in a goroutine
 	go func() {
 		defer watcher.Close()
-		
+
 		// Debounce timer to avoid multiple rapid reloads
 		var debounceTimer *time.Timer
 		const debounceDelay = 500 * time.Millisecond

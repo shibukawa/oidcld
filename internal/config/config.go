@@ -28,10 +28,11 @@ var (
 
 // Config represents the OIDCLD configuration.
 type Config struct {
-	OIDCLD  OIDCLDConfig    `yaml:"oidcld"`
-	EntraID *EntraIDConfig  `yaml:"entraid,omitempty"`
-	CORS    *CORSConfig     `yaml:"cors,omitempty"`
-	Users   map[string]User `yaml:"users"`
+	OIDCLD   OIDCLDConfig    `yaml:"oidcld"`
+	EntraID  *EntraIDConfig  `yaml:"entraid,omitempty"`
+	CORS     *CORSConfig     `yaml:"cors,omitempty"`
+	Autocert *AutocertConfig `yaml:"autocert,omitempty"`
+	Users    map[string]User `yaml:"users"`
 }
 
 // OIDCLDConfig represents the core OpenID Connect configuration.
@@ -49,6 +50,7 @@ type OIDCLDConfig struct {
 	RefreshTokenExpiry        int      `yaml:"refresh_token_expiry,omitempty"`
 	EndSessionEnabled         bool     `yaml:"end_session_enabled,omitempty"`
 	EndSessionEndpointVisible bool     `yaml:"end_session_endpoint_visible,omitempty"`
+	VerboseLogging            bool     `yaml:"verbose_logging,omitempty"`
 }
 
 // EntraIDConfig represents EntraID/AzureAD compatibility settings.
@@ -63,6 +65,42 @@ type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
 	AllowedMethods []string `yaml:"allowed_methods,omitempty"`
 	AllowedHeaders []string `yaml:"allowed_headers,omitempty"`
+}
+
+// AutocertConfig represents automatic HTTPS certificate configuration.
+type AutocertConfig struct {
+	Enabled            bool                     `yaml:"enabled,omitempty"`
+	Domains            []string                 `yaml:"domains,omitempty"`
+	Email              string                   `yaml:"email,omitempty"`
+	AgreeTOS           bool                     `yaml:"agree_tos,omitempty"`
+	CacheDir           string                   `yaml:"cache_dir,omitempty"`
+	ACMEServer         string                   `yaml:"acme_server,omitempty"`
+	Staging            bool                     `yaml:"staging,omitempty"`
+	RenewalThreshold   int                      `yaml:"renewal_threshold,omitempty"` // Days before expiry to renew
+	InsecureSkipVerify bool                     `yaml:"insecure_skip_verify,omitempty"`
+	Challenge          *AutocertChallengeConfig `yaml:"challenge,omitempty"`
+	RateLimit          *AutocertRateLimitConfig `yaml:"rate_limit,omitempty"`
+	Retry              *AutocertRetryConfig     `yaml:"retry,omitempty"`
+}
+
+// AutocertChallengeConfig represents ACME challenge configuration.
+type AutocertChallengeConfig struct {
+	Port    int    `yaml:"port,omitempty"`
+	Path    string `yaml:"path,omitempty"`
+	Timeout string `yaml:"timeout,omitempty"` // Duration string like "30s"
+}
+
+// AutocertRateLimitConfig represents rate limiting configuration for ACME requests.
+type AutocertRateLimitConfig struct {
+	RequestsPerSecond int `yaml:"requests_per_second,omitempty"`
+	Burst             int `yaml:"burst,omitempty"`
+}
+
+// AutocertRetryConfig represents retry configuration for ACME requests.
+type AutocertRetryConfig struct {
+	MaxAttempts  int    `yaml:"max_attempts,omitempty"`
+	InitialDelay string `yaml:"initial_delay,omitempty"` // Duration string like "1s"
+	MaxDelay     string `yaml:"max_delay,omitempty"`     // Duration string like "30s"
 }
 
 // User represents a test user configuration.
@@ -154,19 +192,11 @@ func createDefaultConfig(mode Mode) *Config {
 			EndSessionEnabled:         true,
 			EndSessionEndpointVisible: true,
 		},
-		// Add CORS configuration for SPA development
+		// Add CORS configuration for SPA development - enabled by default for development ease
 		CORS: &CORSConfig{
 			Enabled: true,
-			AllowedOrigins: []string{
-				"http://localhost:3000",  // React dev server
-				"http://localhost:5173",  // Vite dev server
-				"http://localhost:4173",  // Vite preview server
-				"http://localhost:8080",  // Alternative dev server
-				"https://localhost:3000", // HTTPS dev server
-				"https://localhost:5173", // HTTPS Vite dev server
-			},
-			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"},
-			AllowedHeaders: []string{"Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"},
+			// Leave origins, methods, and headers empty to use permissive defaults
+			// This allows all origins (*), all common HTTP methods, and all common headers
 		},
 		Users: map[string]User{
 			"admin": {
@@ -247,6 +277,29 @@ oidcld:{{if .OIDCLD.Issuer}}
 entraid:
   tenant_id: "{{.EntraID.TenantID}}"
   version: "{{.EntraID.Version}}"
+{{end}}{{if .Autocert}}
+# Automatic HTTPS certificate configuration
+autocert:
+  enabled: {{.Autocert.Enabled}}{{if .Autocert.Domains}}
+  domains:{{range .Autocert.Domains}}
+    - "{{.}}"{{end}}{{end}}{{if .Autocert.Email}}
+  email: "{{.Autocert.Email}}"{{end}}
+  agree_tos: {{.Autocert.AgreeTOS}}{{if .Autocert.CacheDir}}
+  cache_dir: "{{.Autocert.CacheDir}}"{{end}}{{if .Autocert.ACMEServer}}
+  acme_server: "{{.Autocert.ACMEServer}}"{{end}}
+  staging: {{.Autocert.Staging}}
+  renewal_threshold: {{.Autocert.RenewalThreshold}}{{if .Autocert.Challenge}}
+  challenge:
+    port: {{.Autocert.Challenge.Port}}{{if .Autocert.Challenge.Path}}
+    path: "{{.Autocert.Challenge.Path}}"{{end}}{{if .Autocert.Challenge.Timeout}}
+    timeout: "{{.Autocert.Challenge.Timeout}}"{{end}}{{end}}{{if .Autocert.RateLimit}}
+  rate_limit:
+    requests_per_second: {{.Autocert.RateLimit.RequestsPerSecond}}
+    burst: {{.Autocert.RateLimit.Burst}}{{end}}{{if .Autocert.Retry}}
+  retry:
+    max_attempts: {{.Autocert.Retry.MaxAttempts}}{{if .Autocert.Retry.InitialDelay}}
+    initial_delay: "{{.Autocert.Retry.InitialDelay}}"{{end}}{{if .Autocert.Retry.MaxDelay}}
+    max_delay: "{{.Autocert.Retry.MaxDelay}}"{{end}}{{end}}
 {{end}}{{if .CORS}}
 # CORS (Cross-Origin Resource Sharing) settings for SPA development
 cors:
@@ -370,6 +423,27 @@ func applyConfigUpdate(config *Config, key string, value any) error {
 	case "refresh_token_expiry":
 		if v, ok := value.(int); ok {
 			config.OIDCLD.RefreshTokenExpiry = v
+		}
+	case "autocert_enabled":
+		if config.Autocert == nil {
+			config.Autocert = &AutocertConfig{}
+		}
+		if v, ok := value.(bool); ok {
+			config.Autocert.Enabled = v
+		}
+	case "autocert_email":
+		if config.Autocert == nil {
+			config.Autocert = &AutocertConfig{}
+		}
+		if v, ok := value.(string); ok {
+			config.Autocert.Email = v
+		}
+	case "autocert_cache_dir":
+		if config.Autocert == nil {
+			config.Autocert = &AutocertConfig{}
+		}
+		if v, ok := value.(string); ok {
+			config.Autocert.CacheDir = v
 		}
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownConfigKey, key)
@@ -524,6 +598,215 @@ func generateECDSAKeys(algorithm string) error {
 
 	if err := pem.Encode(publicKeyFile, publicKeyPEM); err != nil {
 		return fmt.Errorf("failed to write public key: %w", err)
+	}
+
+	return nil
+}
+
+// ValidateAutocertConfig validates the autocert configuration.
+func (c *Config) ValidateAutocertConfig() error {
+	if c.Autocert == nil || !c.Autocert.Enabled {
+		return nil // Disabled or nil autocert is valid
+	}
+
+	if len(c.Autocert.Domains) == 0 {
+		return fmt.Errorf("autocert.domains is required when autocert is enabled")
+	}
+
+	if c.Autocert.Email == "" {
+		return fmt.Errorf("autocert.email is required when autocert is enabled")
+	}
+
+	if !c.Autocert.AgreeTOS {
+		return fmt.Errorf("autocert.agree_tos must be true when autocert is enabled")
+	}
+
+	// Set defaults for optional fields
+	if c.Autocert.CacheDir == "" {
+		c.Autocert.CacheDir = "./autocert-cache"
+	}
+
+	// If not set (0) or negative, default to 30 days
+	if c.Autocert.RenewalThreshold <= 0 {
+		c.Autocert.RenewalThreshold = 30 // Default to 30 days
+	}
+
+	// Set ACME server based on staging flag if not explicitly set
+	if c.Autocert.ACMEServer == "" {
+		if c.Autocert.Staging {
+			c.Autocert.ACMEServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+		} else {
+			c.Autocert.ACMEServer = "https://acme-v02.api.letsencrypt.org/directory"
+		}
+	}
+
+	// Set challenge defaults
+	if c.Autocert.Challenge != nil {
+		if c.Autocert.Challenge.Port <= 0 {
+			c.Autocert.Challenge.Port = 80
+		}
+		if c.Autocert.Challenge.Path == "" {
+			c.Autocert.Challenge.Path = "/.well-known/acme-challenge/"
+		}
+		if c.Autocert.Challenge.Timeout == "" {
+			c.Autocert.Challenge.Timeout = "30s"
+		}
+	}
+
+	// Set rate limit defaults
+	if c.Autocert.RateLimit != nil {
+		if c.Autocert.RateLimit.RequestsPerSecond <= 0 {
+			c.Autocert.RateLimit.RequestsPerSecond = 10
+		}
+		if c.Autocert.RateLimit.Burst <= 0 {
+			c.Autocert.RateLimit.Burst = 20
+		}
+	}
+
+	// Set retry defaults
+	if c.Autocert.Retry != nil {
+		if c.Autocert.Retry.MaxAttempts <= 0 {
+			c.Autocert.Retry.MaxAttempts = 3
+		}
+		if c.Autocert.Retry.InitialDelay == "" {
+			c.Autocert.Retry.InitialDelay = "1s"
+		}
+		if c.Autocert.Retry.MaxDelay == "" {
+			c.Autocert.Retry.MaxDelay = "30s"
+		}
+	}
+	return nil
+}
+
+// GetAutocertDefaults returns a default AutocertConfig with all default values set.
+func GetAutocertDefaults() *AutocertConfig {
+	return &AutocertConfig{
+		Enabled:          false,
+		Domains:          []string{},
+		Email:            "",
+		AgreeTOS:         false,
+		CacheDir:         "./autocert-cache",
+		ACMEServer:       "https://acme-v02.api.letsencrypt.org/directory",
+		Staging:          false,
+		RenewalThreshold: 30,
+		Challenge: &AutocertChallengeConfig{
+			Port:    80,
+			Path:    "/.well-known/acme-challenge/",
+			Timeout: "30s",
+		},
+		RateLimit: &AutocertRateLimitConfig{
+			RequestsPerSecond: 10,
+			Burst:             20,
+		},
+		Retry: &AutocertRetryConfig{
+			MaxAttempts:  3,
+			InitialDelay: "1s",
+			MaxDelay:     "30s",
+		},
+	}
+}
+
+// LoadConfigWithOverrides loads configuration from file and applies environment variable overrides
+func LoadConfigWithOverrides(configPath string, verbose bool, autocertOverrides *AutocertOverrides) (*Config, error) {
+	// Load base configuration
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply verbose logging override
+	if verbose {
+		cfg.OIDCLD.VerboseLogging = true
+	}
+
+	// Apply autocert environment variable overrides
+	if autocertOverrides != nil {
+		if err := applyAutocertOverrides(cfg, autocertOverrides); err != nil {
+			return nil, fmt.Errorf("failed to apply autocert overrides: %w", err)
+		}
+	}
+
+	return cfg, nil
+}
+
+// AutocertOverrides represents environment variable overrides for autocert
+type AutocertOverrides struct {
+	ACMEDirectoryURL   string
+	Email              string
+	Domain             string
+	CacheDir           string
+	AgreeTOS           bool
+	InsecureSkipVerify bool
+	RenewalThreshold   int
+}
+
+// applyAutocertOverrides applies autocert environment variable overrides to configuration
+func applyAutocertOverrides(cfg *Config, overrides *AutocertOverrides) error {
+	// Determine whether any autocert-related environment variables are present.
+	// If so, prefer environment (Docker) and enable autocert even when the
+	// file config explicitly disables it.
+	present := overrides != nil && (overrides.ACMEDirectoryURL != "" || overrides.Email != "" || overrides.Domain != "" || overrides.CacheDir != "" || overrides.AgreeTOS || overrides.InsecureSkipVerify || overrides.RenewalThreshold >= 0)
+
+	// Initialize autocert config if not present and environment variables are set
+	if cfg.Autocert == nil && present {
+		cfg.Autocert = &AutocertConfig{
+			Enabled: true,
+		}
+	}
+
+	// If autocert exists in file but environment overrides are present,
+	// allow env to enable autocert (env should take precedence in Docker mode).
+	if cfg.Autocert != nil && present {
+		cfg.Autocert.Enabled = true
+	}
+
+	// Apply environment variable overrides if autocert is configured
+	if cfg.Autocert != nil {
+		// ACME Directory URL
+		if overrides.ACMEDirectoryURL != "" {
+			cfg.Autocert.ACMEServer = overrides.ACMEDirectoryURL
+			cfg.Autocert.Enabled = true
+		}
+
+		// Email for ACME registration
+		if overrides.Email != "" {
+			cfg.Autocert.Email = overrides.Email
+		}
+
+		// Domain(s) for certificate
+		if overrides.Domain != "" {
+			// Split comma-separated domains
+			domains := strings.Split(overrides.Domain, ",")
+			for i, domain := range domains {
+				domains[i] = strings.TrimSpace(domain)
+			}
+			cfg.Autocert.Domains = domains
+		}
+
+		// Cache directory
+		if overrides.CacheDir != "" {
+			cfg.Autocert.CacheDir = overrides.CacheDir
+		}
+
+		// Agree to Terms of Service
+		if overrides.AgreeTOS {
+			cfg.Autocert.AgreeTOS = true
+		}
+
+		// Insecure skip verify
+		if overrides.InsecureSkipVerify {
+			cfg.Autocert.InsecureSkipVerify = true
+		}
+
+		// Renewal threshold
+		if overrides.RenewalThreshold >= 0 {
+			cfg.Autocert.RenewalThreshold = overrides.RenewalThreshold
+		}
+
+		// Set default cache directory if not specified
+		if cfg.Autocert.CacheDir == "" {
+			cfg.Autocert.CacheDir = "/tmp/autocert"
+		}
 	}
 
 	return nil

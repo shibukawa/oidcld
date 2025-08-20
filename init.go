@@ -14,14 +14,14 @@ import (
 
 // InitCmd represents the command to initialize configuration
 type InitCmd struct {
-	Config    string `arg:"" help:"Configuration file path" default:"oidcld.yaml"`
-	Template  string `help:"Template to use" enum:"standard,entraid-v1,entraid-v2," default:""`
-	TenantID  string `help:"Tenant ID for EntraID templates"`
-	Port      string `short:"p" help:"Port number for issuer URL"`
-	Issuer    string `help:"Custom issuer URL"`
-	Cert      string `help:"Generate certificate with algorithm" enum:"RS256,RS384,RS512,ES256,ES384,ES512," default:""`
-	HTTPS     bool   `help:"Enable HTTPS mode (default for EntraID templates)"`
-	Mkcert    bool   `help:"Generate mkcert certificates for HTTPS"`
+	Config   string `arg:"" help:"Configuration file path" default:"oidcld.yaml"`
+	Template string `help:"Template to use" enum:"standard,entraid-v1,entraid-v2," default:""`
+	TenantID string `help:"Tenant ID for EntraID templates"`
+	Port     string `short:"p" help:"Port number for issuer URL"`
+	Issuer   string `help:"Custom issuer URL"`
+	Cert     string `help:"Generate certificate with algorithm" enum:"RS256,RS384,RS512,ES256,ES384,ES512," default:""`
+	HTTPS    bool   `help:"Enable HTTPS mode (default for EntraID templates)"`
+	Mkcert   bool   `help:"Generate mkcert certificates for HTTPS"`
 	// ACME/Autocert settings
 	Autocert   bool   `help:"Enable autocert for automatic HTTPS certificates"`
 	ACMEServer string `help:"ACME server URL for autocert" env:"ACME_DIRECTORY_URL"`
@@ -119,7 +119,7 @@ func (cmd *InitCmd) Run() error {
 		cfg.Autocert.ACMEServer = cmd.ACMEServer
 		cfg.Autocert.Email = cmd.Email
 		cfg.Autocert.CacheDir = "/tmp/autocert"
-		
+
 		// Parse domains
 		if cmd.Domains != "" {
 			domains := strings.Split(cmd.Domains, ",")

@@ -48,39 +48,23 @@ func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertMa
 	}
 
 	// Configure ACME client
-	if cfg.Local != nil && cfg.Local.Enabled {
-		// Local ACME server configuration
-		manager.Client = &acme.Client{
-			DirectoryURL: cfg.Local.ACMEServer,
-		}
-		if cfg.Local.InsecureSkipVerify {
-			manager.Client.HTTPClient = &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: true,
-					},
+	// Use configured ACME server or default to Let's Encrypt production
+	acmeServer := cfg.ACMEServer
+	if acmeServer == "" {
+		acmeServer = "https://acme-v02.api.letsencrypt.org/directory"
+	}
+	manager.Client = &acme.Client{
+		DirectoryURL: acmeServer,
+	}
+
+	// Apply InsecureSkipVerify if configured
+	if cfg.InsecureSkipVerify {
+		manager.Client.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
 				},
-			}
-		}
-	} else {
-		// Use configured ACME server or default to Let's Encrypt production
-		acmeServer := cfg.ACMEServer
-		if acmeServer == "" {
-			acmeServer = "https://acme-v02.api.letsencrypt.org/directory"
-		}
-		manager.Client = &acme.Client{
-			DirectoryURL: acmeServer,
-		}
-		
-		// Apply InsecureSkipVerify if configured
-		if cfg.InsecureSkipVerify {
-			manager.Client.HTTPClient = &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: true,
-					},
-				},
-			}
+			},
 		}
 	}
 
