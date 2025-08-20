@@ -6,7 +6,9 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -73,19 +75,22 @@ type HealthCmd struct {
 
 // Run executes the health check command
 func (cmd *HealthCmd) Run() error {
-	// Auto-detect URL if not provided
-	healthURL, err := cmd.buildHealthURL()
+	// Auto-detect URL if not provided; buildHealthURL now returns whether HTTPS is used
+	healthURL, isHTTPS, err := cmd.buildHealthURL()
 	if err != nil {
 		return fmt.Errorf("failed to build health URL: %w", err)
 	}
 
-	// Create HTTP client with timeout and skip TLS verification for testing
+	// Create HTTP client with timeout. If using HTTPS, allow insecure skip verify
+	// because health check may run against self-signed/local certs.
+	tlsConfig := &tls.Config{}
+	if isHTTPS {
+		tlsConfig.InsecureSkipVerify = true
+	}
 	client := &http.Client{
 		Timeout: cmd.Timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
+			TLSClientConfig: tlsConfig,
 		},
 	}
 
@@ -121,7 +126,7 @@ func (cmd *HealthCmd) Run() error {
 }
 
 // buildHealthURL constructs the health check URL with auto-detection
-func (cmd *HealthCmd) buildHealthURL() (string, error) {
+func (cmd *HealthCmd) buildHealthURL() (string, bool, error) {
 	// If URL is explicitly provided, use it
 	if cmd.URL != "" {
 		healthURL := cmd.URL
@@ -129,7 +134,14 @@ func (cmd *HealthCmd) buildHealthURL() (string, error) {
 			healthURL += "/"
 		}
 		healthURL += "health"
-		return healthURL, nil
+
+		// Determine if HTTPS
+		parsed, err := neturl.Parse(healthURL)
+		if err != nil {
+			return "", false, fmt.Errorf("invalid URL provided: %w", err)
+		}
+		isHTTPS := parsed.Scheme == "https"
+		return healthURL, isHTTPS, nil
 	}
 
 	// Auto-detect from configuration and environment variables
@@ -140,17 +152,46 @@ func (cmd *HealthCmd) buildHealthURL() (string, error) {
 	// Load configuration; let config package consider environment overrides.
 	cfg, err := config.LoadConfig(cmd.Config, false)
 	if err != nil {
-		return "", fmt.Errorf("failed to load configuration for auto-detection: %w", err)
+		return "", false, fmt.Errorf("failed to load configuration for auto-detection: %w", err)
 	}
 
-	// Use loaded config
+	// Use loaded config. Prefer explicit issuer if set.
 	if cfg != nil {
-		if cfg.Autocert != nil && cfg.Autocert.Enabled {
+		if cfg.OIDCLD.Issuer != "" {
+			// Parse issuer URL to extract scheme, host and port
+			parsed, err := neturl.Parse(cfg.OIDCLD.Issuer)
+			if err == nil {
+				if parsed.Scheme != "" {
+					protocol = parsed.Scheme
+				}
+				// Extract host and optional port
+				host := parsed.Host
+				if host != "" {
+					h, p, err := net.SplitHostPort(host)
+					if err == nil {
+						hostname = h
+						port = p
+					} else {
+						// No explicit port
+						hostname = host
+						if protocol == "https" {
+							port = "443"
+						} else if protocol == "http" {
+							port = "80"
+						}
+					}
+				}
+			}
+		} else if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			protocol = "https"
 			port = "443"
 			if len(cfg.Autocert.Domains) > 0 {
 				hostname = cfg.Autocert.Domains[0]
 			}
+		} else if cfg.OIDCLD.TLSCertFile != "" && cfg.OIDCLD.TLSKeyFile != "" {
+			// TLS configured via cert files
+			protocol = "https"
+			port = "443"
 		}
 	}
 
@@ -161,7 +202,8 @@ func (cmd *HealthCmd) buildHealthURL() (string, error) {
 
 	// Construct URL
 	healthURL := fmt.Sprintf("%s://%s:%s/health", protocol, hostname, port)
-	return healthURL, nil
+	isHTTPS := protocol == "https"
+	return healthURL, isHTTPS, nil
 }
 
 func main() {
