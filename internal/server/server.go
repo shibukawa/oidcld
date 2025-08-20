@@ -41,6 +41,12 @@ type Server struct {
 	autocertCancel  context.CancelFunc
 }
 
+// SupportsAutocert reports whether this Server was built with autocert support
+// and currently has an initialized autocert manager.
+func (s *Server) SupportsAutocert() bool {
+	return s != nil && s.autocertManager != nil
+}
+
 // generatePrivateKey generates a new RSA private key for JWT signing
 func generatePrivateKey() (*rsa.PrivateKey, error) {
 	return rsa.GenerateKey(rand.Reader, 2048)

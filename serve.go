@@ -63,6 +63,17 @@ func (cmd *ServeCmd) Run() error {
 		// If autocert is configured but server package doesn't provide an autocert starter,
 		// attempt to start with provided cert/key. If none provided, return helpful error.
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
+			// If server supports autocert, prefer it — but error if user also provided cert/key.
+			if srv.SupportsAutocert() {
+				if cmd.CertFile != "" || cmd.KeyFile != "" {
+					return fmt.Errorf("autocert is configured and automatic autocert start is available; do not provide TLS cert/key files when using autocert")
+				}
+				color.Cyan("🔄 Autocert is configured and available - starting HTTPS with autocert...")
+				return srv.StartTLS(cmd.Port, "", "")
+			}
+
+			// Fallback: try using provided cert/key files if available when autocert is configured
+			// but not available in this build.
 			color.Cyan("🔄 Autocert is configured, but automatic autocert start is not available in this build. Trying TLS certificates if provided...")
 			if cmd.CertFile != "" && cmd.KeyFile != "" {
 				return srv.StartTLS(cmd.Port, cmd.CertFile, cmd.KeyFile)

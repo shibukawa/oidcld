@@ -38,20 +38,23 @@ type Config struct {
 
 // OIDCLDConfig represents the core OpenID Connect configuration.
 type OIDCLDConfig struct {
-	Issuer                    string   `yaml:"iss,omitempty"`
-	ValidAudiences            []string `yaml:"valid_audiences,omitempty"`
-	PKCERequired              bool     `yaml:"pkce_required,omitempty"`
-	NonceRequired             bool     `yaml:"nonce_required,omitempty"`
-	ExpiredIn                 int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
-	Algorithm                 string   `yaml:"algorithm,omitempty"`
-	ValidScopes               []string `yaml:"valid_scopes,omitempty"`
-	PrivateKeyPath            string   `yaml:"private_key_path,omitempty"`
-	PublicKeyPath             string   `yaml:"public_key_path,omitempty"`
-	RefreshTokenEnabled       bool     `yaml:"refresh_token_enabled,omitempty"`
-	RefreshTokenExpiry        int      `yaml:"refresh_token_expiry,omitempty"`
-	EndSessionEnabled         bool     `yaml:"end_session_enabled,omitempty"`
-	EndSessionEndpointVisible bool     `yaml:"end_session_endpoint_visible,omitempty"`
-	VerboseLogging            bool     `yaml:"verbose_logging,omitempty"`
+	Issuer         string   `yaml:"iss,omitempty"`
+	ValidAudiences []string `yaml:"valid_audiences,omitempty"`
+	PKCERequired   bool     `yaml:"pkce_required,omitempty"`
+	NonceRequired  bool     `yaml:"nonce_required,omitempty"`
+	ExpiredIn      int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
+	Algorithm      string   `yaml:"algorithm,omitempty"`
+	ValidScopes    []string `yaml:"valid_scopes,omitempty"`
+	PrivateKeyPath string   `yaml:"private_key_path,omitempty"`
+	PublicKeyPath  string   `yaml:"public_key_path,omitempty"`
+	// TLS certificate file paths for serving HTTPS when not using autocert.
+	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
+	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
+	RefreshTokenEnabled       bool   `yaml:"refresh_token_enabled,omitempty"`
+	RefreshTokenExpiry        int    `yaml:"refresh_token_expiry,omitempty"`
+	EndSessionEnabled         bool   `yaml:"end_session_enabled,omitempty"`
+	EndSessionEndpointVisible bool   `yaml:"end_session_endpoint_visible,omitempty"`
+	VerboseLogging            bool   `yaml:"verbose_logging,omitempty"`
 }
 
 // EntraIDConfig represents EntraID/AzureAD compatibility settings.
@@ -675,6 +678,10 @@ func (c *Config) ValidateAutocertConfig() error {
 		if c.Autocert.Retry.MaxDelay == "" {
 			c.Autocert.Retry.MaxDelay = "30s"
 		}
+	}
+	// If autocert is enabled, disallow explicit TLS cert/key in OIDCLD config to avoid ambiguity.
+	if c.OIDCLD.TLSCertFile != "" || c.OIDCLD.TLSKeyFile != "" {
+		return fmt.Errorf("autocert is enabled but TLS cert/key are also configured in oidcld config; choose one method")
 	}
 	return nil
 }
