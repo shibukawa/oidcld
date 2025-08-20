@@ -19,13 +19,13 @@ type ServeCmd struct {
 	CertFile string `help:"Path to TLS certificate file (for HTTPS)"`
 	KeyFile  string `help:"Path to TLS private key file (for HTTPS)"`
 	Verbose  bool   `short:"v" help:"Enable verbose logging (including health check logs)" env:"OIDCLD_VERBOSE"`
-	// Environment variable overrides for autocert
-	ACMEDirectoryURL   string `help:"ACME directory URL" env:"ACME_DIRECTORY_URL"`
-	Email              string `help:"Email for ACME registration" env:"EMAIL"`
-	Domain             string `help:"Domain for autocert" env:"DOMAIN"`
-	CacheDir           string `help:"Cache directory for autocert" env:"CACHE_DIR"`
-	AgreeTOS           bool   `help:"Agree to ACME Terms of Service" env:"AGREE_TOS"`
-	InsecureSkipVerify bool   `help:"Skip TLS certificate verification for ACME" env:"INSECURE_SKIP_VERIFY"`
+	// Environment variable overrides for autocert (prefixed with OIDCLD_ACME_)
+	ACMEDirectoryURL   string `help:"ACME directory URL" env:"OIDCLD_ACME_DIRECTORY_URL"`
+	Email              string `help:"Email for ACME registration" env:"OIDCLD_ACME_EMAIL"`
+	Domain             string `help:"Domain for autocert" env:"OIDCLD_ACME_DOMAIN"`
+	CacheDir           string `help:"Cache directory for autocert" env:"OIDCLD_ACME_CACHE_DIR"`
+	AgreeTOS           bool   `help:"Agree to ACME Terms of Service" env:"OIDCLD_ACME_AGREE_TOS"`
+	InsecureSkipVerify bool   `help:"Skip TLS certificate verification for ACME" env:"OIDCLD_ACME_INSECURE_SKIP_VERIFY"`
 }
 
 // Run executes the serve command to start the OpenID Connect server

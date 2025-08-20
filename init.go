@@ -24,9 +24,9 @@ type InitCmd struct {
 	Mkcert   bool   `help:"Generate mkcert certificates for HTTPS"`
 	// ACME/Autocert settings
 	Autocert   bool   `help:"Enable autocert for automatic HTTPS certificates"`
-	ACMEServer string `help:"ACME server URL for autocert" env:"ACME_DIRECTORY_URL"`
+	ACMEServer string `help:"ACME server URL for autocert" env:"OIDCLD_ACME_DIRECTORY_URL"`
 	Domains    string `help:"Comma-separated list of domains for autocert certificates"`
-	Email      string `help:"Email address for ACME registration" env:"EMAIL"`
+	Email      string `help:"Email address for ACME registration" env:"OIDCLD_ACME_EMAIL"`
 	Overwrite  bool   `short:"w" help:"Overwrite existing files without confirmation"`
 }
 

@@ -154,10 +154,10 @@ func (cmd *HealthCmd) buildHealthURL() (string, error) {
 	}
 
 	// Check environment variables (overrides config)
-	if acmeURL := os.Getenv("ACME_DIRECTORY_URL"); acmeURL != "" {
+	if acmeURL := os.Getenv("OIDCLD_ACME_DIRECTORY_URL"); acmeURL != "" {
 		protocol = "https"
 		port = "443"
-		if domain := os.Getenv("DOMAIN"); domain != "" {
+		if domain := os.Getenv("OIDCLD_ACME_DOMAIN"); domain != "" {
 			hostname = domain
 		}
 	}
