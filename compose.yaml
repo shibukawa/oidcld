@@ -38,7 +38,7 @@ services:
       - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
     command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--verbose"]
     depends_on:
-      myencrypt:
+      myencrypt.localhost:
         condition: service_healthy
     restart: unless-stopped
 

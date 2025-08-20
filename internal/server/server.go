@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -33,6 +34,11 @@ type Server struct {
 	privateKey *rsa.PrivateKey
 	logger     *slog.Logger
 	prettyLog  *Logger // Add colorful logger
+
+	// Autocert manager (optional)
+	autocertManager *AutocertManager
+	autocertCtx     context.Context
+	autocertCancel  context.CancelFunc
 }
 
 // generatePrivateKey generates a new RSA private key for JWT signing
@@ -74,6 +80,22 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 	}
 
 	server.provider = provider
+
+	// Initialize AutocertManager if autocert is enabled in configuration.
+	if cfg.Autocert != nil && cfg.Autocert.Enabled {
+		am, err := NewAutocertManager(cfg.Autocert, server.prettyLog)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize autocert manager: %w", err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		server.autocertManager = am
+		server.autocertCtx = ctx
+		server.autocertCancel = cancel
+
+		// Start renewal monitor
+		am.StartRenewalMonitor(ctx)
+	}
+
 	return server, nil
 }
 
@@ -341,7 +363,6 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Device Verification - OIDC Test Identity Provider</title>
-    <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
         .container { text-align: center; }
         input[type="text"] { padding: 15px; font-size: 18px; width: 300px; text-align: center; letter-spacing: 2px; font-family: monospace; }
@@ -374,32 +395,12 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
         
         <form method="POST">
             <input type="text" name="user_code" value="%s" placeholder="XXXX-XXXX" required maxlength="9" style="text-transform: uppercase;">
-            <button type="submit">Verify Device</button>
-        </form>
-        
-        <div id="user-selection" style="display: none;">
-            <h2>Select User to Authorize</h2>
-            <ul class="user-list">`, userCode)
+			<button type="submit">Verify Device</button>
+			<button onclick="denyDevice()" style="background-color: #dc3545; margin-top: 20px;">Deny Authorization</button>
+		</div>
+	</div>
 
-	// Add user selection options as buttons with aria-label containing user-id for E2E testing
-	for userID, user := range s.config.Users {
-		email := getEmailFromClaims(user.ExtraClaims)
-		html += fmt.Sprintf(`
-                <li>
-                    <button type="button" onclick="authorizeDevice('%s', '%s')" class="user-button" aria-label="%s">
-                        <span class="user-name">%s</span>
-                        <span class="user-email">%s</span>
-                    </button>
-                </li>`, userID, userCode, userID, user.DisplayName, email)
-	}
-
-	html += `
-            </ul>
-            <button onclick="denyDevice()" style="background-color: #dc3545; margin-top: 20px;">Deny Authorization</button>
-        </div>
-    </div>
-
-    <script>
+	<script>
         // Auto-focus on the input field
         document.querySelector('input[name="user_code"]').focus();
         
@@ -444,7 +445,8 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
         }
     </script>
 </body>
-</html>`
+
+</html>`, html.EscapeString(userCode))
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
@@ -514,6 +516,23 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 
 	// Use colorful logging for server startup
 	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true)
+	// If autocert manager is configured, prefer it when no cert/key provided.
+	if s.autocertManager != nil {
+		// If both autocert and explicit cert/key are provided, that's ambiguous — error out.
+		if certFile != "" || keyFile != "" {
+			return fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
+		}
+
+		// Use autocert-provided TLS config and let net/http handle ACME TLS handshake.
+		server.TLSConfig = s.autocertManager.GetTLSConfig()
+		return server.ListenAndServeTLS("", "")
+	}
+
+	// No autocert manager configured: require certFile and keyFile.
+	if certFile == "" || keyFile == "" {
+		return fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+	}
+
 	return server.ListenAndServeTLS(certFile, keyFile)
 }
 

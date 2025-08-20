@@ -1,26 +1,24 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS builder
+ARG NODE_VERSION=24.1.0
 
-WORKDIR /app
+FROM node:${NODE_VERSION}-alpine as build
 
-# Cache package.json and package-lock.json
-RUN --mount=type=cache,target=/root/.npm \
-    --mount=type=bind,source=package.json,target=package.json \
+WORKDIR /usr/src/app
+
+RUN --mount=type=bind,source=package.json,target=package.json \
     --mount=type=bind,source=package-lock.json,target=package-lock.json \
-    npm ci --only=production
+    --mount=type=cache,target=/root/.npm \
+    npm ci
 
-# Build the application
-RUN --mount=type=cache,target=/root/.npm \
-    --mount=type=bind,target=. \
-    npm run build
+COPY . .
+
+RUN npm run build
 
 FROM nginx:alpine
 
-# Copy built application
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=build /usr/src/app/dist /usr/share/nginx/html
 
-# Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
