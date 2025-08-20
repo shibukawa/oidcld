@@ -32,7 +32,7 @@ func TestInitializeConfig(t *testing.T) {
 			assert.NoError(t, err, "Config file should exist")
 
 			// Load and verify configuration
-			config, err := LoadConfig(configPath)
+			config, err := LoadConfig(configPath, true)
 			assert.NoError(t, err)
 			assert.True(t, config != nil, "Config should not be nil")
 
@@ -98,7 +98,7 @@ func TestLoadAndSaveConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Load config
-	loadedConfig, err := LoadConfig(configPath)
+	loadedConfig, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
 
 	// Verify loaded config matches original
@@ -129,7 +129,7 @@ func TestAddUser(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify user was added
-	config, err := LoadConfig(configPath)
+	config, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
 	_, hasNewUser := config.Users["newuser"]
 	assert.True(t, hasNewUser, "Should contain new user")
@@ -149,7 +149,7 @@ func TestRemoveUser(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify user was removed
-	config, err := LoadConfig(configPath)
+	config, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
 	_, hasTestUser := config.Users["testuser"]
 	assert.False(t, hasTestUser, "Should not contain testuser")
@@ -177,7 +177,7 @@ func TestModifyConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify changes
-	config, err := LoadConfig(configPath)
+	config, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
 	assert.False(t, config.OIDCLD.PKCERequired)
 	assert.True(t, config.OIDCLD.NonceRequired)

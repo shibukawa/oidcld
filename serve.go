@@ -19,29 +19,14 @@ type ServeCmd struct {
 	CertFile string `help:"Path to TLS certificate file (for HTTPS)"`
 	KeyFile  string `help:"Path to TLS private key file (for HTTPS)"`
 	Verbose  bool   `short:"v" help:"Enable verbose logging (including health check logs)" env:"OIDCLD_VERBOSE"`
-	// Environment variable overrides for autocert (prefixed with OIDCLD_ACME_)
-	ACMEDirectoryURL   string `help:"ACME directory URL" env:"OIDCLD_ACME_DIRECTORY_URL"`
-	Email              string `help:"Email for ACME registration" env:"OIDCLD_ACME_EMAIL"`
-	Domain             string `help:"Domain for autocert" env:"OIDCLD_ACME_DOMAIN"`
-	CacheDir           string `help:"Cache directory for autocert" env:"OIDCLD_ACME_CACHE_DIR"`
-	AgreeTOS           bool   `help:"Agree to ACME Terms of Service" env:"OIDCLD_ACME_AGREE_TOS"`
-	InsecureSkipVerify bool   `help:"Skip TLS certificate verification for ACME" env:"OIDCLD_ACME_INSECURE_SKIP_VERIFY"`
+	// Autocert is configured via environment variables only. CLI autocert flags removed.
 }
 
 // Run executes the serve command to start the OpenID Connect server
 func (cmd *ServeCmd) Run() error {
-	// Prepare autocert overrides from environment variables
-	autocertOverrides := &config.AutocertOverrides{
-		ACMEDirectoryURL:   cmd.ACMEDirectoryURL,
-		Email:              cmd.Email,
-		Domain:             cmd.Domain,
-		CacheDir:           cmd.CacheDir,
-		AgreeTOS:           cmd.AgreeTOS,
-		InsecureSkipVerify: cmd.InsecureSkipVerify,
-	}
-
-	// Load configuration with overrides
-	cfg, err := config.LoadConfigWithOverrides(cmd.Config, cmd.Verbose, autocertOverrides)
+	// Load configuration, allowing config package to consider environment
+	// autocert overrides internally.
+	cfg, err := config.LoadConfig(cmd.Config, cmd.Verbose)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -149,18 +134,9 @@ func (cmd *ServeCmd) setupConfigWatcher(srv *server.Server) error {
 func (cmd *ServeCmd) reloadConfig(srv *server.Server) {
 	color.Cyan("\n🔄 Configuration file changed, reloading...")
 
-	// Prepare autocert overrides from environment variables
-	autocertOverrides := &config.AutocertOverrides{
-		ACMEDirectoryURL:   cmd.ACMEDirectoryURL,
-		Email:              cmd.Email,
-		Domain:             cmd.Domain,
-		CacheDir:           cmd.CacheDir,
-		AgreeTOS:           cmd.AgreeTOS,
-		InsecureSkipVerify: cmd.InsecureSkipVerify,
-	}
-
-	// Load new configuration with overrides
-	newCfg, err := config.LoadConfigWithOverrides(cmd.Config, cmd.Verbose, autocertOverrides)
+	// Load new configuration; config package will apply environment overrides
+	// internally when present.
+	newCfg, err := config.LoadConfig(cmd.Config, cmd.Verbose)
 	if err != nil {
 		color.Red("❌ Failed to reload configuration: %v", err)
 		color.Red("   Keeping previous configuration")

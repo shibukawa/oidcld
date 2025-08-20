@@ -450,7 +450,7 @@ func TestAutocertConfig_FileOperations(t *testing.T) {
 	}
 
 	// Load configuration from file
-	loadedConfig, err := LoadConfig(configPath)
+	loadedConfig, err := LoadConfig(configPath, false)
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}

@@ -137,28 +137,20 @@ func (cmd *HealthCmd) buildHealthURL() (string, error) {
 	port := "18888"
 	hostname := "localhost"
 
-	// Try to load configuration for auto-detection first
-	if _, err := os.Stat(cmd.Config); err == nil {
-		cfg, err := config.LoadConfig(cmd.Config)
-		if err == nil {
-			// Check if autocert is enabled (implies HTTPS)
-			if cfg.Autocert != nil && cfg.Autocert.Enabled {
-				protocol = "https"
-				port = "443"
-				// Use the first domain from autocert config
-				if len(cfg.Autocert.Domains) > 0 {
-					hostname = cfg.Autocert.Domains[0]
-				}
-			}
-		}
+	// Load configuration; let config package consider environment overrides.
+	cfg, err := config.LoadConfig(cmd.Config, false)
+	if err != nil {
+		return "", fmt.Errorf("failed to load configuration for auto-detection: %w", err)
 	}
 
-	// Check environment variables (overrides config)
-	if acmeURL := os.Getenv("OIDCLD_ACME_DIRECTORY_URL"); acmeURL != "" {
-		protocol = "https"
-		port = "443"
-		if domain := os.Getenv("OIDCLD_ACME_DOMAIN"); domain != "" {
-			hostname = domain
+	// Use loaded config
+	if cfg != nil {
+		if cfg.Autocert != nil && cfg.Autocert.Enabled {
+			protocol = "https"
+			port = "443"
+			if len(cfg.Autocert.Domains) > 0 {
+				hostname = cfg.Autocert.Domains[0]
+			}
 		}
 	}
 

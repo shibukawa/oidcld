@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -121,7 +122,7 @@ const (
 )
 
 // LoadConfig loads configuration from a YAML file.
-func LoadConfig(configPath string) (*Config, error) {
+func loadConfig(configPath string) (*Config, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -346,7 +347,7 @@ users:{{range $userID, $user := .Users}}
 
 // AddUser adds a new user to the configuration
 func AddUser(configPath, userID string, user User) error {
-	config, err := LoadConfig(configPath)
+	config, err := loadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -362,7 +363,7 @@ func AddUser(configPath, userID string, user User) error {
 
 // RemoveUser removes a user from the configuration
 func RemoveUser(configPath, userID string) error {
-	config, err := LoadConfig(configPath)
+	config, err := loadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -382,7 +383,7 @@ func RemoveUser(configPath, userID string) error {
 
 // ModifyConfig modifies configuration settings
 func ModifyConfig(configPath string, updates map[string]any) error {
-	config, err := LoadConfig(configPath)
+	config, err := loadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -706,10 +707,12 @@ func GetAutocertDefaults() *AutocertConfig {
 	}
 }
 
-// LoadConfigWithOverrides loads configuration from file and applies environment variable overrides
-func LoadConfigWithOverrides(configPath string, verbose bool, autocertOverrides *AutocertOverrides) (*Config, error) {
-	// Load base configuration
-	cfg, err := LoadConfig(configPath)
+// LoadConfig loads configuration from file, applying environment-based
+// autocert overrides (OIDCLD_ACME_ prefixed vars) and optional verbose
+// logging. This consolidates the previous split helper functions.
+func LoadConfig(configPath string, verbose bool) (*Config, error) {
+	// Load base configuration from file
+	cfg, err := loadConfig(configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -719,9 +722,50 @@ func LoadConfigWithOverrides(configPath string, verbose bool, autocertOverrides 
 		cfg.OIDCLD.VerboseLogging = true
 	}
 
-	// Apply autocert environment variable overrides
-	if autocertOverrides != nil {
-		if err := applyAutocertOverrides(cfg, autocertOverrides); err != nil {
+	// Collect environment-based autocert overrides
+	var any bool
+	o := &AutocertOverrides{RenewalThreshold: -1}
+
+	if v := os.Getenv("OIDCLD_ACME_DIRECTORY_URL"); v != "" {
+		o.ACMEDirectoryURL = v
+		any = true
+	}
+	if v := os.Getenv("OIDCLD_ACME_EMAIL"); v != "" {
+		o.Email = v
+		any = true
+	}
+	if v := os.Getenv("OIDCLD_ACME_DOMAIN"); v != "" {
+		o.Domain = v
+		any = true
+	}
+	if v := os.Getenv("OIDCLD_ACME_CACHE_DIR"); v != "" {
+		o.CacheDir = v
+		any = true
+	}
+	if v := os.Getenv("OIDCLD_ACME_AGREE_TOS"); v != "" {
+		b, _ := strconv.ParseBool(v)
+		o.AgreeTOS = b
+		if b {
+			any = true
+		}
+	}
+	if v := os.Getenv("OIDCLD_ACME_INSECURE_SKIP_VERIFY"); v != "" {
+		b, _ := strconv.ParseBool(v)
+		o.InsecureSkipVerify = b
+		if b {
+			any = true
+		}
+	}
+	if v := os.Getenv("OIDCLD_ACME_RENEWAL_THRESHOLD"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			o.RenewalThreshold = n
+			any = true
+		}
+	}
+
+	// If any overrides were found, apply them. If none, do nothing.
+	if any {
+		if err := applyAutocertOverrides(cfg, o); err != nil {
 			return nil, fmt.Errorf("failed to apply autocert overrides: %w", err)
 		}
 	}
@@ -739,6 +783,11 @@ type AutocertOverrides struct {
 	InsecureSkipVerify bool
 	RenewalThreshold   int
 }
+
+// loadAutocertOverridesFromEnv reads environment variables with the
+// OIDCLD_ACME_ prefix and returns an AutocertOverrides struct if any
+// relevant variables are present. Returns nil if no overrides found.
+// (loadAutocertOverridesFromEnv removed; logic merged into LoadConfig)
 
 // applyAutocertOverrides applies autocert environment variable overrides to configuration
 func applyAutocertOverrides(cfg *Config, overrides *AutocertOverrides) error {

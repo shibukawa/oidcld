@@ -1,13 +1,13 @@
 services:
   # myencrypt - Local ACME server for development
-  myencrypt:
+  myencrypt.localhost:
     image: ghcr.io/shibukawa/myencrypt:latest
     ports:
       - "14000:80"  # ACME server port
     environment:
       - MYENCRYPT_EXPOSE_PORT=14000  # Required: Host-accessible port
       - MYENCRYPT_PROJECT_NAME=oidcld  # Required: Project name for Docker mode
-      - MYENCRYPT_HOSTNAME=myencrypt  # Required: Hostname for ACME directory URLs
+      - MYENCRYPT_HOSTNAME=myencrypt.localhost  # Required: Hostname for ACME directory URLs
       - MYENCRYPT_INDIVIDUAL_CERT_TTL=168h  # 7 days (7 * 24h)
       - MYENCRYPT_CA_CERT_TTL=19200h
       - MYENCRYPT_ALLOWED_DOMAINS=localhost,*.localhost
@@ -31,7 +31,7 @@ services:
       - OIDCLD_CONFIG=/app/config.yaml
       # Minimal autocert environment variables (TLS-ALPN challenge)
       - OIDCLD_ACME_DOMAIN=oidc.localhost
-      - OIDCLD_ACME_DIRECTORY_URL=http://myencrypt:80/acme/directory
+      - OIDCLD_ACME_DIRECTORY_URL=http://myencrypt.localhost/acme/directory
       - OIDCLD_ACME_CACHE_DIR=/tmp/autocert-cache  # Temporary cache directory (no persistence)
       - OIDCLD_ACME_EMAIL=dev@localhost
       - OIDCLD_ACME_AGREE_TOS=true
@@ -50,7 +50,7 @@ services:
       args:
         VITE_OIDC_AUTHORITY: "https://localhost:8443"  # Use the external port for HTTPS
         VITE_OIDC_CLIENT_ID: "12345678-1234-1234-1234-123456789abc"
-        VITE_REDIRECT_URI: "http://localhost:3000"
+        VITE_REDIRECT_URI: "http://app.localhost:3000/redirect"
         VITE_OIDC_SCOPES: "openid,profile,email,read,write,admin"  # Add admin scope for testing
     ports:
       - "3000:80"   # nginx serves on port 80, exposed as 3000
