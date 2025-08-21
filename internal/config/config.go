@@ -632,7 +632,7 @@ func (c *Config) ValidateAutocertConfig() error {
 
 	// If not set (0) or negative, default to 30 days
 	if c.Autocert.RenewalThreshold <= 0 {
-		c.Autocert.RenewalThreshold = 30 // Default to 30 days
+		c.Autocert.RenewalThreshold = 1 // Default to 1 day
 	}
 
 	// Set ACME server based on staging flag if not explicitly set
@@ -696,7 +696,7 @@ func GetAutocertDefaults() *AutocertConfig {
 		CacheDir:         "./autocert-cache",
 		ACMEServer:       "https://acme-v02.api.letsencrypt.org/directory",
 		Staging:          false,
-		RenewalThreshold: 30,
+		RenewalThreshold: 1,
 		Challenge: &AutocertChallengeConfig{
 			Port:    80,
 			Path:    "/.well-known/acme-challenge/",

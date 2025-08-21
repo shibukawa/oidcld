@@ -5,10 +5,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+
+	// ...existing code...
 	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
+
+	// ...existing code...
 	"net/http"
 	"slices"
 	"strings"
@@ -100,9 +104,6 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 
 		// Start renewal monitor
 		am.StartRenewalMonitor(ctx)
-
-		// Trigger an initial certificate obtain attempt for configured domains.
-		am.TriggerInitialObtain(ctx)
 	}
 
 	return server, nil
@@ -525,6 +526,7 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 
 	// Use colorful logging for server startup
 	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true)
+
 	// If autocert manager is configured, prefer it when no cert/key provided.
 	if s.autocertManager != nil {
 		// If both autocert and explicit cert/key are provided, that's ambiguous — error out.
@@ -532,8 +534,15 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 			return fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
 		}
 
-		// Use autocert-provided TLS config and let net/http handle ACME TLS handshake.
+		// Use autocert TLSConfig and let the standard library's ListenAndServeTLS
+		// drive certificate obtains during TLS handshakes. This matches the
+		// myencrypt example: TLSConfig provides GetCertificate and autocert will
+		// obtain certificates on-demand during incoming connections.
 		server.TLSConfig = s.autocertManager.GetTLSConfig()
+
+		// Start HTTPS server; autocert's GetCertificate will perform obtains as
+		// necessary. We call ListenAndServeTLS with empty cert/key so the TLSConfig
+		// is used.
 		return server.ListenAndServeTLS("", "")
 	}
 

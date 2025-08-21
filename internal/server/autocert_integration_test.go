@@ -46,7 +46,7 @@ func TestServer_AutocertIntegration(t *testing.T) {
 			Email:            "admin@example.com",
 			AgreeTOS:         true,
 			CacheDir:         filepath.Join(tempDir, "autocert-cache"),
-			RenewalThreshold: 30,
+			RenewalThreshold: 1,
 		},
 		Users: map[string]config.User{
 			"testuser": {

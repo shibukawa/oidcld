@@ -41,7 +41,7 @@ func TestAutocertConfig_Validation(t *testing.T) {
 					AgreeTOS:         true,
 					ACMEServer:       "https://acme-v02.api.letsencrypt.org/directory",
 					CacheDir:         "./autocert-cache",
-					RenewalThreshold: 30,
+					RenewalThreshold: 1,
 				},
 			},
 			expectError: false,
@@ -172,8 +172,8 @@ func TestAutocertConfig_DefaultValues(t *testing.T) {
 		t.Errorf("expected default cache dir, got %s", autocert.CacheDir)
 	}
 
-	if autocert.RenewalThreshold != 30 {
-		t.Errorf("expected default renewal threshold 30, got %d", autocert.RenewalThreshold)
+	if autocert.RenewalThreshold != 1 {
+		t.Errorf("expected default renewal threshold 1, got %d", autocert.RenewalThreshold)
 	}
 }
 
@@ -303,8 +303,8 @@ func TestGetAutocertDefaults(t *testing.T) {
 		t.Errorf("expected default cache dir, got %s", defaults.CacheDir)
 	}
 
-	if defaults.RenewalThreshold != 30 {
-		t.Errorf("expected default renewal threshold 30, got %d", defaults.RenewalThreshold)
+	if defaults.RenewalThreshold != 1 {
+		t.Errorf("expected default renewal threshold 1, got %d", defaults.RenewalThreshold)
 	}
 
 	if defaults.AgreeTOS {

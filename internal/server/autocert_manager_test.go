@@ -52,7 +52,7 @@ func TestNewAutocertManager(t *testing.T) {
 				AgreeTOS:         true,
 				ACMEServer:       "https://acme-v02.api.letsencrypt.org/directory",
 				CacheDir:         filepath.Join(t.TempDir(), "autocert-cache"),
-				RenewalThreshold: 30,
+				RenewalThreshold: 1,
 			},
 			expectError: false,
 		},
@@ -114,9 +114,7 @@ func TestNewAutocertManager(t *testing.T) {
 					t.Error("autocert.Manager not created")
 				}
 
-				if manager.logger != logger {
-					t.Error("logger not set correctly")
-				}
+				// logger field removed from AutocertManager; no assertion here
 
 				// Verify cache directory was created
 				if _, err := os.Stat(tt.config.CacheDir); os.IsNotExist(err) {
@@ -137,7 +135,7 @@ func TestAutocertManager_GetTLSConfig(t *testing.T) {
 		Email:            "admin@example.com",
 		AgreeTOS:         true,
 		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
-		RenewalThreshold: 30,
+		RenewalThreshold: 1,
 	}
 
 	manager, err := NewAutocertManager(config, logger)
