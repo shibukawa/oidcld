@@ -252,6 +252,140 @@ func createDefaultConfig(mode Mode) *Config {
 	return config
 }
 
+// InitServerOptions contains the values coming from the CLI init command that
+// influence server-related parts of the configuration.
+type InitServerOptions struct {
+	TenantID         string
+	Port             string
+	Issuer           string
+	HTTPS            bool
+	Mkcert           bool
+	CertAlgorithm    string
+	Autocert         bool
+	ACMEServer       string
+	Domains          []string
+	Email            string
+	AutocertCacheDir string
+}
+
+// HealthOptions contains options related to healthcheck behavior.
+type HealthOptions struct {
+	InsecureSkipVerify bool
+}
+
+// ApplyInitServerOptions applies initialization options (from CLI) to the
+// configuration. mode is the initialization mode that influenced defaults.
+func (c *Config) ApplyInitServerOptions(mode Mode, opts *InitServerOptions) {
+	if opts == nil {
+		return
+	}
+
+	// Tenant / EntraID handling
+	if opts.TenantID != "" {
+		if c.EntraID == nil {
+			c.EntraID = &EntraIDConfig{Version: "v1"}
+		}
+		c.EntraID.TenantID = opts.TenantID
+		// For EntraID v2 set issuer if not explicitly overridden
+		if mode == ModeEntraIDv2 {
+			c.OIDCLD.Issuer = fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", opts.TenantID)
+		}
+	}
+
+	// Issuer selection precedence mirrors init wizard logic
+	switch {
+	case opts.Port != "" && opts.Issuer != "":
+		c.OIDCLD.Issuer = opts.Issuer
+	case opts.Port != "" && mode == ModeStandard:
+		if opts.HTTPS {
+			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", opts.Port)
+		} else {
+			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
+		}
+	case opts.Issuer != "":
+		c.OIDCLD.Issuer = opts.Issuer
+	case mode == ModeStandard:
+		defaultPort := "18888"
+		if opts.HTTPS {
+			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", defaultPort)
+		} else {
+			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", defaultPort)
+		}
+	}
+
+	// Autocert mapping
+	if opts.Autocert {
+		if c.Autocert == nil {
+			c.Autocert = &AutocertConfig{}
+		}
+		c.Autocert.Enabled = true
+		if opts.ACMEServer != "" {
+			c.Autocert.ACMEServer = opts.ACMEServer
+		}
+		if opts.Email != "" {
+			c.Autocert.Email = opts.Email
+		}
+		// Default cache dir if not provided by caller
+		if opts.AutocertCacheDir != "" {
+			c.Autocert.CacheDir = opts.AutocertCacheDir
+		} else if c.Autocert.CacheDir == "" {
+			c.Autocert.CacheDir = "/tmp/autocert"
+		}
+		if len(opts.Domains) > 0 {
+			c.Autocert.Domains = opts.Domains
+		}
+	}
+}
+
+// ApplyHealthOptions applies healthcheck-related options to the configuration.
+func (c *Config) ApplyHealthOptions(opts *HealthOptions) {
+	if opts == nil {
+		return
+	}
+	if c.Autocert == nil {
+		return
+	}
+	if opts.InsecureSkipVerify {
+		c.Autocert.InsecureSkipVerify = true
+	}
+}
+
+// ServeOptions contains parameters used by the serve command to prepare the
+// configuration before starting the server.
+type ServeOptions struct {
+	Port        string
+	PreferHTTPS bool
+	Verbose     bool
+}
+
+// PrepareForServe applies serve-time defaults to the configuration and returns
+// whether HTTPS should be used and an optional message (e.g., auto-enable hint).
+func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message string) {
+	if opts == nil {
+		return false, ""
+	}
+
+	// Start with preference provided by caller
+	useHTTPS = opts.PreferHTTPS
+
+	// If autocert is configured, prefer HTTPS and inform operator
+	if c.Autocert != nil && c.Autocert.Enabled {
+		useHTTPS = true
+		message = "🔧 Auto-enabling HTTPS mode due to autocert configuration"
+	}
+
+	// Ensure issuer is set appropriately if missing
+	if c.OIDCLD.Issuer == "" {
+		if useHTTPS {
+			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", opts.Port)
+		} else {
+			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
+		}
+	}
+
+	return useHTTPS, message
+}
+
 // generateConfigYAML generates YAML configuration using text template
 func generateConfigYAML(config *Config) (string, error) {
 	tmpl := `# OpenID Connect IdP settings

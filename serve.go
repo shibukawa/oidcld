@@ -31,17 +31,16 @@ func (cmd *ServeCmd) Run() error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Auto-enable HTTPS if autocert is configured
-	if cfg.Autocert != nil && cfg.Autocert.Enabled {
-		cmd.HTTPS = true
-		color.Cyan("🔧 Auto-enabling HTTPS mode due to autocert configuration")
+	// Let config package prepare serve-time defaults and determine HTTPS
+	useHTTPS, msg := cfg.PrepareForServe(&config.ServeOptions{Port: cmd.Port, PreferHTTPS: cmd.HTTPS, Verbose: cmd.Verbose})
+	if msg != "" {
+		color.Cyan(msg)
 	}
+	cmd.HTTPS = useHTTPS
 
-	// Update issuer URL based on HTTPS setting if not explicitly set
-	if cmd.HTTPS && cfg.OIDCLD.Issuer == "" {
-		cfg.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", cmd.Port)
-	} else if !cmd.HTTPS && cfg.OIDCLD.Issuer == "" {
-		cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", cmd.Port)
+	// If autocert is enabled, log the renewal threshold days for operator visibility
+	if cfg.Autocert != nil && cfg.Autocert.Enabled {
+		color.Cyan("🔁 Autocert renewal threshold: %d days", cfg.Autocert.RenewalThreshold)
 	}
 
 	// Create server

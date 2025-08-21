@@ -65,35 +65,28 @@ func (cmd *InitCmd) Run() error {
 		return fmt.Errorf("failed to create default configuration: %w", err)
 	}
 
-	// Apply custom settings
-	if cmd.TenantID != "" && cfg.EntraID != nil {
-		cfg.EntraID.TenantID = cmd.TenantID
-		// Update issuer for EntraID modes
-		if mode == config.ModeEntraIDv2 {
-			cfg.OIDCLD.Issuer = fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", cmd.TenantID)
+	// Apply CLI-provided initialization options into the config object
+	opts := &config.InitServerOptions{
+		TenantID:         cmd.TenantID,
+		Port:             cmd.Port,
+		Issuer:           cmd.Issuer,
+		HTTPS:            cmd.HTTPS,
+		Mkcert:           cmd.Mkcert,
+		CertAlgorithm:    cmd.Cert,
+		Autocert:         cmd.Autocert,
+		ACMEServer:       cmd.ACMEServer,
+		Email:            cmd.Email,
+		AutocertCacheDir: "/tmp/autocert",
+	}
+	if cmd.Domains != "" {
+		ds := strings.Split(cmd.Domains, ",")
+		for i := range ds {
+			ds[i] = strings.TrimSpace(ds[i])
 		}
+		opts.Domains = ds
 	}
 
-	switch {
-	case cmd.Port != "" && cmd.Issuer != "":
-		cfg.OIDCLD.Issuer = cmd.Issuer
-	case cmd.Port != "" && mode == config.ModeStandard:
-		if cmd.HTTPS {
-			cfg.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", cmd.Port)
-		} else {
-			cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", cmd.Port)
-		}
-	case cmd.Issuer != "":
-		cfg.OIDCLD.Issuer = cmd.Issuer
-	case mode == config.ModeStandard:
-		// Set default issuer based on HTTPS setting
-		defaultPort := "18888"
-		if cmd.HTTPS {
-			cfg.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", defaultPort)
-		} else {
-			cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", defaultPort)
-		}
-	}
+	cfg.ApplyInitServerOptions(mode, opts)
 
 	// Handle certificate generation
 	if cmd.Cert != "" {
@@ -110,25 +103,12 @@ func (cmd *InitCmd) Run() error {
 		}
 	}
 
-	// Handle autocert configuration
-	if cmd.Autocert {
-		if cfg.Autocert == nil {
-			cfg.Autocert = &config.AutocertConfig{}
-		}
-		cfg.Autocert.Enabled = true
-		cfg.Autocert.ACMEServer = cmd.ACMEServer
-		cfg.Autocert.Email = cmd.Email
-		cfg.Autocert.CacheDir = "/tmp/autocert"
-
-		// Parse domains
-		if cmd.Domains != "" {
-			domains := strings.Split(cmd.Domains, ",")
-			for i, domain := range domains {
-				domains[i] = strings.TrimSpace(domain)
-			}
-			cfg.Autocert.Domains = domains
-		}
+	// Health / autocert related flags (e.g., allowing insecure skip verify for health checks)
+	healthOpts := &config.HealthOptions{
+		InsecureSkipVerify: false,
 	}
+	// If environment variable or future flags set insecure skip verify, apply here.
+	cfg.ApplyHealthOptions(healthOpts)
 
 	// Save configuration
 	if err := config.SaveConfig(cmd.Config, cfg); err != nil {
@@ -140,8 +120,8 @@ func (cmd *InitCmd) Run() error {
 	fmt.Printf("  File: %s\n", cmd.Config)
 	fmt.Printf("  Template: %s\n", cmd.Template)
 
-	if cmd.TenantID != "" {
-		color.Cyan("  Tenant ID: %s", cmd.TenantID)
+	if cfg.EntraID != nil && cfg.EntraID.TenantID != "" {
+		color.Cyan("  Tenant ID: %s", cfg.EntraID.TenantID)
 	}
 
 	if cmd.Cert != "" {
@@ -152,26 +132,42 @@ func (cmd *InitCmd) Run() error {
 
 	if cmd.HTTPS {
 		fmt.Printf("  HTTPS: enabled\n")
-		if cmd.Mkcert {
-			fmt.Printf("  TLS Certificate: localhost.pem\n")
-			fmt.Printf("  TLS Private Key: localhost-key.pem\n")
+		// Derive HTTPS / certificate status from resulting configuration
+		httpsEnabled := false
+		if cfg.Autocert != nil && cfg.Autocert.Enabled {
+			httpsEnabled = true
 		}
-		if cmd.Autocert {
-			fmt.Printf("  Autocert: enabled\n")
-			fmt.Printf("  ACME Server: %s\n", cmd.ACMEServer)
-			fmt.Printf("  Domains: %s\n", cmd.Domains)
-			fmt.Printf("  Email: %s\n", cmd.Email)
+		if cfg.OIDCLD.TLSCertFile != "" || strings.HasPrefix(cfg.OIDCLD.Issuer, "https://") {
+			httpsEnabled = true
+		}
+		if httpsEnabled {
+			fmt.Printf("  HTTPS: enabled\n")
+			// If explicit TLS cert/key were set in the config, show them
+			if cfg.OIDCLD.TLSCertFile != "" || cfg.OIDCLD.TLSKeyFile != "" {
+				if cfg.OIDCLD.TLSCertFile != "" {
+					fmt.Printf("  TLS Certificate: %s\n", cfg.OIDCLD.TLSCertFile)
+				}
+				if cfg.OIDCLD.TLSKeyFile != "" {
+					fmt.Printf("  TLS Private Key: %s\n", cfg.OIDCLD.TLSKeyFile)
+				}
+			} else {
+				// Detect mkcert-generated default files if present
+				if _, err := os.Stat("localhost.pem"); err == nil {
+					fmt.Printf("  TLS Certificate: localhost.pem\n")
+				}
+				if _, err := os.Stat("localhost-key.pem"); err == nil {
+					fmt.Printf("  TLS Private Key: localhost-key.pem\n")
+				}
+			}
+
+			if cfg.Autocert != nil && cfg.Autocert.Enabled {
+				fmt.Printf("  Autocert: enabled\n")
+				fmt.Printf("  ACME Server: %s\n", cfg.Autocert.ACMEServer)
+				fmt.Printf("  Domains: %s\n", strings.Join(cfg.Autocert.Domains, ","))
+				fmt.Printf("  Email: %s\n", cfg.Autocert.Email)
+			}
 		}
 	}
-
-	fmt.Printf("  Issuer: %s\n", cfg.OIDCLD.Issuer)
-	algorithm := cfg.OIDCLD.Algorithm
-	if algorithm == "" {
-		algorithm = "RS256" // Default
-	}
-	fmt.Printf("  Algorithm: %s\n", algorithm)
-	fmt.Printf("  Users: %d\n", len(cfg.Users))
-
 	if cfg.EntraID != nil {
 		fmt.Printf("  EntraID Mode: %s\n", cfg.EntraID.Version)
 	}
