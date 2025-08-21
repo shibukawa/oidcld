@@ -8,12 +8,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/shibukawa/oidcld/internal/config"
 )
@@ -61,13 +59,6 @@ type AutocertManager struct {
 	config  *config.AutocertConfig
 	manager *autocert.Manager
 	logger  *Logger
-	sf      singleflight.Group
-	// Protects lastObtain map
-	mu sync.Mutex
-	// Last successful obtain timestamp per domain
-	lastObtain map[string]time.Time
-	// cooldown window to avoid rapid repeated obtains
-	obtainCooldown time.Duration
 }
 
 // NewAutocertManager creates a new autocert manager with the given configuration.
@@ -118,12 +109,9 @@ func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertMa
 	}
 
 	am := &AutocertManager{
-		config:         cfg,
-		manager:        manager,
-		logger:         logger,
-		sf:             singleflight.Group{},
-		lastObtain:     make(map[string]time.Time),
-		obtainCooldown: 2 * time.Second,
+		config:  cfg,
+		manager: manager,
+		logger:  logger,
 	}
 
 	return am, nil
@@ -146,40 +134,11 @@ func (am *AutocertManager) HTTPHandler(fallback http.Handler) http.Handler {
 func (am *AutocertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	domain := hello.ServerName
 
-	// Check cooldown to avoid rapid repeated obtains
-	am.mu.Lock()
-	last := am.lastObtain[domain]
-	cooldown := am.obtainCooldown
-	am.mu.Unlock()
-	if time.Since(last) < cooldown {
-		// Fast-path to manager.GetCertificate without triggering a new obtain
-		cert, err := am.manager.GetCertificate(hello)
-		if err != nil {
-			log.Printf("[autocert] Failed to get certificate for %s: %v", domain, err)
-		}
-		return cert, err
-	}
-
-	// Use unified singleflight key for obtains
-	key := fmt.Sprintf("obtain:%s", domain)
-	v, err, _ := am.sf.Do(key, func() (interface{}, error) {
-		cert, err := am.manager.GetCertificate(hello)
-		if err != nil {
-			return nil, err
-		}
-
-		// Update lastObtain on success
-		am.mu.Lock()
-		am.lastObtain[domain] = time.Now()
-		am.mu.Unlock()
-
-		return cert, nil
-	})
+	cert, err := am.manager.GetCertificate(hello)
 	if err != nil {
 		log.Printf("[autocert] Failed to get certificate for %s: %v", domain, err)
 		return nil, err
 	}
-	cert := v.(*tls.Certificate)
 
 	// Determine certificate serial for deduplicated logging
 	serial := ""
@@ -251,20 +210,8 @@ func (am *AutocertManager) TriggerInitialObtain(ctx context.Context) error {
 
 		// Rely on manager.GetCertificate which will consult the cache internally.
 
-		// Use unified singleflight key for obtains.
-		key := fmt.Sprintf("obtain:%s", domain)
-		_, err, _ := am.sf.Do(key, func() (interface{}, error) {
-			hello := &tls.ClientHelloInfo{ServerName: domain}
-			cert, err := am.manager.GetCertificate(hello)
-			if err != nil {
-				return nil, err
-			}
-			// Update lastObtain timestamp
-			am.mu.Lock()
-			am.lastObtain[domain] = time.Now()
-			am.mu.Unlock()
-			return cert, nil
-		})
+		hello := &tls.ClientHelloInfo{ServerName: domain}
+		_, err := am.manager.GetCertificate(hello)
 		if err != nil {
 			log.Printf("[autocert] Initial certificate obtain failed for %s: %v", domain, err)
 			return err
@@ -315,25 +262,21 @@ func (am *AutocertManager) checkDomainCertificate(ctx context.Context, domain st
 	// Diagnostic: log which cache dir and host policy
 	log.Printf("[autocert] cacheDir=%s, hostPolicy=%v", am.config.CacheDir, am.config.Domains)
 
-	// Obtain the current certificate via manager.GetCertificate wrapped in singleflight.
+	// Obtain the current certificate via manager.GetCertificate.
 	// Rationale: autocert writes multiple variant keys (domain+token, domain+rsa) and
 	// may delete token files quickly; probing a single "domain" cache key returns
 	// false misses. Using manager.GetCertificate avoids relying on internal cache key
 	// layout and gives us the authoritative certificate (or triggers obtain when
-	// necessary). We wrap with singleflight to avoid concurrent obtains.
-	key := fmt.Sprintf("info:%s", domain)
-	v, err, _ := am.sf.Do(key, func() (interface{}, error) {
-		hello := &tls.ClientHelloInfo{ServerName: domain}
-		return am.manager.GetCertificate(hello)
-	})
+	// necessary).
+	hello := &tls.ClientHelloInfo{ServerName: domain}
+	tlsCert, err := am.manager.GetCertificate(hello)
 	if err != nil {
 		log.Printf("[autocert] Failed to retrieve certificate for %s: %v", domain, err)
 		return
 	}
 
-	tlsCert, ok := v.(*tls.Certificate)
-	if !ok {
-		log.Printf("[autocert] Unexpected certificate type for %s: %T", domain, v)
+	if tlsCert == nil {
+		log.Printf("[autocert] No certificate returned for %s", domain)
 		return
 	}
 
@@ -381,22 +324,13 @@ func (am *AutocertManager) checkDomainCertificate(ctx context.Context, domain st
 		}
 
 		// Use singleflight so concurrent renewals for the same domain are coalesced.
-		key := fmt.Sprintf("obtain:%s", domain)
-		log.Printf("[autocert] Renewal singleflight key=%s", key)
-		_, err, _ := am.sf.Do(key, func() (interface{}, error) {
-			log.Printf("[autocert] singleflight: obtaining certificate for %s (using key=%s)", domain, key)
-			cert, err := am.manager.GetCertificate(hello)
-			if err != nil {
-				log.Printf("[autocert] manager.GetCertificate returned error for %s: %v", domain, err)
-				return nil, err
-			}
-			// Update lastObtain on success
-			am.mu.Lock()
-			am.lastObtain[domain] = time.Now()
-			am.mu.Unlock()
+		log.Printf("[autocert] Renewal: obtaining certificate for %s", domain)
+		cert, err := am.manager.GetCertificate(hello)
+		if err != nil {
+			log.Printf("[autocert] manager.GetCertificate returned error for %s: %v", domain, err)
+		} else {
 			log.Printf("[autocert] manager.GetCertificate returned certificate for %s: certlen=%d", domain, len(cert.Certificate))
-			return cert, nil
-		})
+		}
 		if err != nil {
 			log.Printf("[autocert] Failed to renew certificate for %s: %v", domain, err)
 		} else {
@@ -433,11 +367,9 @@ func (am *AutocertManager) getDomainCertificateInfo(ctx context.Context, domain 
 	// Use manager.GetCertificate (via singleflight) to obtain the authoritative
 	// certificate rather than probing the cache by key. This avoids false
 	// "not_found" results caused by autocert's transient token files.
-	key := fmt.Sprintf("info:%s", domain)
-	v, err, _ := am.sf.Do(key, func() (interface{}, error) {
-		hello := &tls.ClientHelloInfo{ServerName: domain}
-		return am.manager.GetCertificate(hello)
-	})
+	// Obtain certificate directly from manager
+	hello := &tls.ClientHelloInfo{ServerName: domain}
+	tlsCert, err := am.manager.GetCertificate(hello)
 	if err != nil {
 		return CertificateInfo{
 			Domain: domain,
@@ -446,9 +378,8 @@ func (am *AutocertManager) getDomainCertificateInfo(ctx context.Context, domain 
 		}, nil
 	}
 
-	tlsCert, ok := v.(*tls.Certificate)
-	if !ok {
-		return CertificateInfo{}, fmt.Errorf("unexpected certificate type: %T", v)
+	if tlsCert == nil || len(tlsCert.Certificate) == 0 {
+		return CertificateInfo{}, fmt.Errorf("empty or missing certificate for %s", domain)
 	}
 
 	if len(tlsCert.Certificate) == 0 {
