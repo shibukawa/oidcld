@@ -458,15 +458,12 @@ func TestServer_AutocertRenewalMonitor(t *testing.T) {
 		t.Fatalf("failed to create autocert manager: %v", err)
 	}
 
-	// Test renewal monitor startup and shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-
-	// Start renewal monitor
-	autocertManager.StartRenewalMonitor(ctx)
-
-	// Wait for context to be cancelled
-	<-ctx.Done()
-
-	// Test passes if no panic occurs and monitor stops gracefully
+	// The renewal monitor was removed; assert RenewBefore is configured.
+	expected := time.Duration(cfg.Autocert.RenewalThreshold) * 24 * time.Hour
+	if autocertManager.manager == nil {
+		t.Fatal("autocert.Manager is nil")
+	}
+	if autocertManager.manager.RenewBefore != expected {
+		t.Errorf("expected RenewBefore=%v, got %v", expected, autocertManager.manager.RenewBefore)
+	}
 }

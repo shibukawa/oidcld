@@ -102,8 +102,7 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 		server.autocertCtx = ctx
 		server.autocertCancel = cancel
 
-		// Start renewal monitor
-		am.StartRenewalMonitor(ctx)
+		// The renewal monitor is now handled via RenewBefore, so we do not start it here.
 	}
 
 	return server, nil

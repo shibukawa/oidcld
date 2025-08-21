@@ -114,6 +114,12 @@ func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertMa
 		logger:  logger,
 	}
 
+	// Configure autocert.Manager's RenewBefore so autocert handles renewals.
+	// RenewBefore is a duration before expiry when manager will attempt to renew.
+	if cfg.RenewalThreshold > 0 {
+		manager.RenewBefore = time.Duration(cfg.RenewalThreshold) * 24 * time.Hour
+	}
+
 	return am, nil
 }
 
@@ -185,12 +191,6 @@ func (am *AutocertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Cert
 	return cert, nil
 }
 
-// StartRenewalMonitor starts a background goroutine that monitors certificate expiration
-// and triggers renewal when certificates are close to expiring.
-func (am *AutocertManager) StartRenewalMonitor(ctx context.Context) {
-	go am.renewalMonitor(ctx)
-}
-
 // TriggerInitialObtain attempts to obtain certificates for all configured domains
 // once at startup. It performs obtains sequentially and returns an error when
 // an obtain fails so the caller can fail fast on misconfiguration.
@@ -224,121 +224,6 @@ func (am *AutocertManager) TriggerInitialObtain(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// renewalMonitor runs in the background and checks for certificates that need renewal.
-func (am *AutocertManager) renewalMonitor(ctx context.Context) {
-	ticker := time.NewTicker(24 * time.Hour) // Check daily
-	defer ticker.Stop()
-
-	log.Printf("[autocert] Started certificate renewal monitor (checking every 24 hours)")
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("[autocert] Certificate renewal monitor stopped")
-			return
-		case <-ticker.C:
-			am.checkAndRenewCertificates(ctx)
-		}
-	}
-}
-
-// checkAndRenewCertificates checks all configured domains for certificate expiration
-// and renews certificates that are close to expiring.
-func (am *AutocertManager) checkAndRenewCertificates(ctx context.Context) {
-	for _, domain := range am.config.Domains {
-		// Diagnostic: log config snapshot for this cycle
-		log.Printf("[autocert] Renewal check triggered for domain=%s (ACME=%s, InsecureSkipVerify=%v, RenewalThresholdDays=%d)",
-			domain, am.config.ACMEServer, am.config.InsecureSkipVerify, am.config.RenewalThreshold)
-		am.checkDomainCertificate(ctx, domain)
-	}
-}
-
-// checkDomainCertificate checks a single domain's certificate and renews if necessary.
-func (am *AutocertManager) checkDomainCertificate(ctx context.Context, domain string) {
-	log.Printf("[autocert] Checking certificate for domain=%s", domain)
-
-	// Diagnostic: log which cache dir and host policy
-	log.Printf("[autocert] cacheDir=%s, hostPolicy=%v", am.config.CacheDir, am.config.Domains)
-
-	// Obtain the current certificate via manager.GetCertificate.
-	// Rationale: autocert writes multiple variant keys (domain+token, domain+rsa) and
-	// may delete token files quickly; probing a single "domain" cache key returns
-	// false misses. Using manager.GetCertificate avoids relying on internal cache key
-	// layout and gives us the authoritative certificate (or triggers obtain when
-	// necessary).
-	hello := &tls.ClientHelloInfo{ServerName: domain}
-	tlsCert, err := am.manager.GetCertificate(hello)
-	if err != nil {
-		log.Printf("[autocert] Failed to retrieve certificate for %s: %v", domain, err)
-		return
-	}
-
-	if tlsCert == nil {
-		log.Printf("[autocert] No certificate returned for %s", domain)
-		return
-	}
-
-	if len(tlsCert.Certificate) == 0 {
-		log.Printf("[autocert] Empty certificate chain for %s", domain)
-		return
-	}
-
-	// Derive expiration date safely: prefer Leaf, otherwise parse first certificate
-	var expiresAt time.Time
-	if tlsCert.Leaf != nil {
-		expiresAt = tlsCert.Leaf.NotAfter
-		log.Printf("[autocert] Using tlsCert.Leaf for %s, expires=%s", domain, expiresAt.Format(time.RFC3339))
-	} else {
-		cert0, err := x509.ParseCertificate(tlsCert.Certificate[0])
-		if err != nil {
-			log.Printf("[autocert] Failed to parse x509 certificate for %s: %v", domain, err)
-			return
-		}
-		expiresAt = cert0.NotAfter
-		log.Printf("[autocert] Parsed x509 certificate for %s, expires=%s", domain, expiresAt.Format(time.RFC3339))
-	}
-
-	// Diagnostic: log certificate serial and issuer if available
-	if tlsCert.Leaf != nil {
-		log.Printf("[autocert] Certificate details for %s: serial=%s issuer=%s", domain, tlsCert.Leaf.SerialNumber.String(), tlsCert.Leaf.Issuer.String())
-	}
-
-	// Check if certificate needs renewal
-	renewalThreshold := time.Duration(am.config.RenewalThreshold) * 24 * time.Hour
-	log.Printf("[autocert] Renewal threshold (days) = %d, duration=%v", am.config.RenewalThreshold, renewalThreshold)
-	timeUntilExpiry := time.Until(expiresAt)
-	log.Printf("[autocert] Time until expiry for %s = %v", domain, timeUntilExpiry)
-
-	// Diagnostic: compute days to expiry and log
-	daysToExpiry := int(timeUntilExpiry.Hours() / 24)
-	log.Printf("[autocert] Days to expiry for %s = %d", domain, daysToExpiry)
-
-	if timeUntilExpiry <= renewalThreshold {
-		log.Printf("[autocert] Certificate for %s expires within threshold (%v <= %v), triggering renewal", domain, timeUntilExpiry, renewalThreshold)
-
-		// Trigger certificate renewal by making a fake TLS handshake
-		hello := &tls.ClientHelloInfo{
-			ServerName: domain,
-		}
-
-		// Use singleflight so concurrent renewals for the same domain are coalesced.
-		log.Printf("[autocert] Renewal: obtaining certificate for %s", domain)
-		cert, err := am.manager.GetCertificate(hello)
-		if err != nil {
-			log.Printf("[autocert] manager.GetCertificate returned error for %s: %v", domain, err)
-		} else {
-			log.Printf("[autocert] manager.GetCertificate returned certificate for %s: certlen=%d", domain, len(cert.Certificate))
-		}
-		if err != nil {
-			log.Printf("[autocert] Failed to renew certificate for %s: %v", domain, err)
-		} else {
-			log.Printf("[autocert] Successfully renewed certificate for %s", domain)
-		}
-	} else {
-		log.Printf("[autocert] Certificate for %s is not due for renewal (timeUntilExpiry=%v > threshold=%v)", domain, timeUntilExpiry, renewalThreshold)
-	}
 }
 
 // GetCertificateInfo returns information about certificates for all configured domains.
