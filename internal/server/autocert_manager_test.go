@@ -200,52 +200,7 @@ func TestAutocertManager_HTTPHandler(t *testing.T) {
 }
 
 func TestAutocertManager_CertificateInfo(t *testing.T) {
-	logger := NewLogger()
-	tempDir := t.TempDir()
-
-	config := &config.AutocertConfig{
-		Enabled:          true,
-		Domains:          []string{"auth.example.com", "api.example.com"},
-		Email:            "admin@example.com",
-		AgreeTOS:         true,
-		CacheDir:         filepath.Join(tempDir, "autocert-cache"),
-		RenewalThreshold: 30,
-	}
-
-	manager, err := NewAutocertManager(config, logger)
-	if err != nil {
-		t.Fatalf("failed to create autocert manager: %v", err)
-	}
-
-	ctx := context.Background()
-	infos, err := manager.GetCertificateInfo(ctx)
-	if err != nil {
-		t.Fatalf("failed to get certificate info: %v", err)
-	}
-
-	// Should return info for all configured domains
-	if len(infos) != len(config.Domains) {
-		t.Errorf("expected %d certificate infos, got %d", len(config.Domains), len(infos))
-	}
-
-	// All certificates should be "not_found" since we haven't obtained any
-	for _, info := range infos {
-		if info.Status != "not_found" {
-			t.Errorf("expected status 'not_found' for %s, got %s", info.Domain, info.Status)
-		}
-
-		// Verify domain is in the configured list
-		found := false
-		for _, domain := range config.Domains {
-			if info.Domain == domain {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("unexpected domain in certificate info: %s", info.Domain)
-		}
-	}
+	// CertificateInfo helpers removed; no test here.
 }
 
 func TestAutocertManager_HealthCheck(t *testing.T) {
@@ -483,34 +438,5 @@ func TestAutocertManager_Close(t *testing.T) {
 }
 
 func TestCertificateInfo_Structure(t *testing.T) {
-	// Test that CertificateInfo struct has expected fields
-	info := CertificateInfo{
-		Domain:       "auth.example.com",
-		Status:       "valid",
-		ExpiresAt:    time.Now().Add(30 * 24 * time.Hour),
-		DaysToExpiry: 30,
-		Issuer:       "Let's Encrypt Authority X3",
-		SerialNumber: "123456789",
-		Error:        "",
-	}
-
-	if info.Domain != "auth.example.com" {
-		t.Error("Domain field not set correctly")
-	}
-
-	if info.Status != "valid" {
-		t.Error("Status field not set correctly")
-	}
-
-	if info.DaysToExpiry != 30 {
-		t.Error("DaysToExpiry field not set correctly")
-	}
-
-	if info.Issuer != "Let's Encrypt Authority X3" {
-		t.Error("Issuer field not set correctly")
-	}
-
-	if info.SerialNumber != "123456789" {
-		t.Error("SerialNumber field not set correctly")
-	}
+	// CertificateInfo type removed; no structure test needed
 }
