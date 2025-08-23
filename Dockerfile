@@ -39,7 +39,7 @@ EXPOSE 18888
 
 # Health check using the built-in health command
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"] || exit 1
+    CMD ["/usr/local/bin/oidcld", "health"]
 
 # Set the entrypoint
 ENTRYPOINT ["/usr/local/bin/oidcld"]

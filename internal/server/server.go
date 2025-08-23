@@ -6,6 +6,8 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 
+	// "log" was removed (diagnostic logs cleaned up)
+
 	// ...existing code...
 	"encoding/json"
 	"fmt"
@@ -487,6 +489,15 @@ func (s *Server) handleLoggedOut(w http.ResponseWriter, _ *http.Request) {
 
 // handleHealth handles health check requests
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	// Emit a log line for health probe activity only when verbose logging is enabled.
+	if s != nil && s.config != nil && s.config.OIDCLD.VerboseLogging {
+		// Use pretty logger if available
+		if s.prettyLog != nil {
+			s.prettyLog.RequestLog(http.MethodGet, "/health", http.StatusOK, 0)
+		} else if s.logger != nil {
+			s.logger.Info("health probe received")
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"healthy","service":"oidcld","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))

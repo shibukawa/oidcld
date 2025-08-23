@@ -97,15 +97,18 @@ func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertMa
 		DirectoryURL: acmeServer,
 	}
 
-	// Apply InsecureSkipVerify if configured
-	if cfg.InsecureSkipVerify {
-		manager.Client.HTTPClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: true,
-				},
+	// For test/development containers we don't ship a root CA, so default to
+	// skipping TLS verification for ACME HTTP requests. This makes local ACME
+	// servers (e.g., Pebble) reachable without requiring root certs inside the
+	// container. We still keep the config flag present for compatibility but
+	// default to insecure behavior.
+	log.Printf("[autocert] ACME HTTP client: InsecureSkipVerify=true (default for test environments)")
+	manager.Client.HTTPClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
 			},
-		}
+		},
 	}
 
 	am := &AutocertManager{
@@ -247,6 +250,24 @@ func (am *AutocertManager) HealthCheck(ctx context.Context) error {
 
 	_, err := client.Discover(ctx)
 	if err != nil {
+		// If configured to skip TLS verification for ACME (local test servers),
+		// retry once with an HTTP client that disables TLS verification. This
+		// helps when the ACME server uses a self-signed or locally-trusted cert.
+		if am.config.InsecureSkipVerify {
+			log.Printf("[autocert] Discover failed, retrying with InsecureSkipVerify: %v", err)
+			retryClient := *client // shallow copy
+			retryClient.HTTPClient = &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+			}
+
+			_, err2 := retryClient.Discover(ctx)
+			if err2 == nil {
+				return nil
+			}
+			return fmt.Errorf("failed to connect to ACME server (retry with insecure): %v; original: %w", err2, err)
+		}
 		return fmt.Errorf("failed to connect to ACME server: %w", err)
 	}
 

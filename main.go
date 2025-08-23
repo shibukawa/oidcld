@@ -6,11 +6,13 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	neturl "net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -75,9 +77,18 @@ type HealthCmd struct {
 
 // Run executes the health check command
 func (cmd *HealthCmd) Run() error {
-	// Auto-detect URL if not provided; buildHealthURL now returns whether HTTPS is used
-	healthURL, isHTTPS, err := cmd.buildHealthURL()
+	// Capture environment for potential diagnostics (do not print by default).
+	// Detailed environment output is emitted only on failure to avoid noisy
+	// successful health checks in container logs.
+	env := os.Environ()
+
+	// Auto-detect URL if not provided; buildHealthURL now returns whether HTTPS
+	// is used, whether we should dial localhost, and an optional SNI hostname
+	// to use for TLS ServerName (so we can dial 127.0.0.1 while preserving
+	// the certificate's expected name).
+	healthURL, isHTTPS, dialLocalhost, sniHost, err := cmd.buildHealthURL()
 	if err != nil {
+		log.Printf("[health] failed to build health URL: %v", err)
 		return fmt.Errorf("failed to build health URL: %w", err)
 	}
 
@@ -87,14 +98,43 @@ func (cmd *HealthCmd) Run() error {
 	if isHTTPS {
 		tlsConfig.InsecureSkipVerify = true
 	}
+	transport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+
+	// If buildHealthURL requested dialing localhost (connect to 127.0.0.1)
+	// we override DialContext so the TCP connection goes to the local IP but
+	// we do not alter the TLS ServerName (so SNI remains the hostname used
+	// in the health URL).
+	if dialLocalhost {
+		// If we have an explicit SNI hostname, configure it on the TLS
+		// client so the ServerName used during the TLS handshake matches
+		// the certificate the server presents.
+		if sniHost != "" {
+			transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: tlsConfig.InsecureSkipVerify, ServerName: sniHost}
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// Parse the requested address to extract port
+			_, p, err := net.SplitHostPort(addr)
+			if err != nil {
+				// If parsing failed, fall back to dialing original addr
+				d := &net.Dialer{}
+				return d.DialContext(ctx, network, addr)
+			}
+			target := net.JoinHostPort("127.0.0.1", p)
+			d := &net.Dialer{}
+			return d.DialContext(ctx, network, target)
+		}
+	}
+
 	client := &http.Client{
-		Timeout: cmd.Timeout,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
+		Timeout:   cmd.Timeout,
+		Transport: transport,
 	}
 
 	color.Cyan("🔍 Checking server health at %s", healthURL)
+	// Emit the exact URL being probed at info level.
+	log.Printf("[health] probing %s", healthURL)
 
 	// Create request with context for timeout
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.Timeout)
@@ -109,6 +149,33 @@ func (cmd *HealthCmd) Run() error {
 	resp, err := client.Do(req)
 	if err != nil {
 		color.Red("❌ Failed to connect to server: %v", err)
+		// Emit diagnostics only on failure: env, args, config, URL parts, SNI
+		log.Printf("[health][error] %v", err)
+		log.Printf("[health][cmd] args=%v config=%q url_flag=%q port_flag=%q", os.Args, cmd.Config, cmd.URL, cmd.Port)
+
+		// Selectively print relevant environment variables (reuse env snapshot)
+		for _, e := range env {
+			if strings.HasPrefix(e, "OIDCLD_") || strings.HasPrefix(e, "SSL_CERT_FILE") || strings.HasPrefix(e, "HOSTNAME") || strings.HasPrefix(e, "PATH=") {
+				log.Printf("[health][env] %s", e)
+			}
+		}
+
+		// Parse healthURL to show host/port
+		if parsed, perr := neturl.Parse(healthURL); perr == nil {
+			hostPort := parsed.Host
+			h, p, serr := net.SplitHostPort(hostPort)
+			if serr == nil {
+				log.Printf("[health][target] host=%s port=%s scheme=%s", h, p, parsed.Scheme)
+			} else {
+				// No explicit port
+				log.Printf("[health][target] host=%s scheme=%s", hostPort, parsed.Scheme)
+			}
+		} else {
+			log.Printf("[health][target] failed to parse URL %q: %v", healthURL, perr)
+		}
+
+		log.Printf("[health][transport] is_https=%t dial_localhost=%t sni=%q", isHTTPS, dialLocalhost, sniHost)
+
 		return fmt.Errorf("health check failed: %w", err)
 	}
 	defer func() {
@@ -118,15 +185,37 @@ func (cmd *HealthCmd) Run() error {
 	}()
 
 	if resp.StatusCode == http.StatusOK {
+		// Keep success output minimal
 		color.Green("✅ Server is healthy")
 		return nil
 	}
+
+	// Non-200: emit diagnostics similar to connection errors
 	color.Red("❌ Server returned status: %d", resp.StatusCode)
+	log.Printf("[health][cmd] args=%v config=%q url_flag=%q port_flag=%q", os.Args, cmd.Config, cmd.URL, cmd.Port)
+	for _, e := range env {
+		if strings.HasPrefix(e, "OIDCLD_") || strings.HasPrefix(e, "SSL_CERT_FILE") || strings.HasPrefix(e, "HOSTNAME") || strings.HasPrefix(e, "PATH=") {
+			log.Printf("[health][env] %s", e)
+		}
+	}
+	if parsed, perr := neturl.Parse(healthURL); perr == nil {
+		hostPort := parsed.Host
+		h, p, serr := net.SplitHostPort(hostPort)
+		if serr == nil {
+			log.Printf("[health][target] host=%s port=%s scheme=%s status=%d", h, p, parsed.Scheme, resp.StatusCode)
+		} else {
+			log.Printf("[health][target] host=%s scheme=%s status=%d", hostPort, parsed.Scheme, resp.StatusCode)
+		}
+	} else {
+		log.Printf("[health][target] failed to parse URL %q: %v", healthURL, perr)
+	}
+	log.Printf("[health][transport] is_https=%t dial_localhost=%t sni=%q status=%d", isHTTPS, dialLocalhost, sniHost, resp.StatusCode)
+
 	return fmt.Errorf("%w: status %d", ErrHealthCheckFailed, resp.StatusCode)
 }
 
 // buildHealthURL constructs the health check URL with auto-detection
-func (cmd *HealthCmd) buildHealthURL() (string, bool, error) {
+func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 	// If URL is explicitly provided, use it
 	if cmd.URL != "" {
 		healthURL := cmd.URL
@@ -138,10 +227,10 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, error) {
 		// Determine if HTTPS
 		parsed, err := neturl.Parse(healthURL)
 		if err != nil {
-			return "", false, fmt.Errorf("invalid URL provided: %w", err)
+			return "", false, false, "", fmt.Errorf("invalid URL provided: %w", err)
 		}
 		isHTTPS := parsed.Scheme == "https"
-		return healthURL, isHTTPS, nil
+		return healthURL, isHTTPS, false, "", nil
 	}
 
 	// Auto-detect from configuration and environment variables
@@ -149,10 +238,28 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, error) {
 	port := "18888"
 	hostname := "localhost"
 
-	// Load configuration; let config package consider environment overrides.
+	// Load configuration; prefer explicit CLI flag but fall back to OIDCLD_CONFIG
+	// environment variable if present. Attempt cmd.Config first, and if that
+	// fails and the env var points to a different file, retry with it.
+	cfgPathTried := ""
 	cfg, err := config.LoadConfig(cmd.Config, false)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to load configuration for auto-detection: %w", err)
+		log.Printf("[health] failed to load configuration from %q: %v", cmd.Config, err)
+		cfg = nil
+		cfgPathTried = cmd.Config
+		// If environment variable points to another config file, try it.
+		if envPath := os.Getenv("OIDCLD_CONFIG"); envPath != "" && envPath != cmd.Config {
+			log.Printf("[health] attempting to load configuration from OIDCLD_CONFIG=%s", envPath)
+			if cfg2, err2 := config.LoadConfig(envPath, false); err2 == nil {
+				cfg = cfg2
+				log.Printf("[health] loaded configuration from %s", envPath)
+			} else {
+				log.Printf("[health] failed to load configuration from %s: %v", envPath, err2)
+				if cfgPathTried == "" {
+					cfgPathTried = envPath
+				}
+			}
+		}
 	}
 
 	// Use loaded config. Prefer explicit issuer if set.
@@ -195,7 +302,36 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, error) {
 		}
 	}
 
-	// Override port if specified
+	dialLocalhost := false
+	sniHost := ""
+
+	// If we detect we're running in a container with an explicit config file
+	// provided via OIDCLD_CONFIG, prefer localhost as the host for health
+	// checks so the probe targets the local service inside the container
+	// rather than an external DNS name. When we do this, set dialLocalhost
+	// so the HTTP transport can connect to 127.0.0.1 while preserving TLS
+	// ServerName (SNI) as the original hostname.
+	if os.Getenv("OIDCLD_CONFIG") != "" {
+		if hostname != "localhost" {
+			log.Printf("[health] overriding hostname %q -> localhost because OIDCLD_CONFIG is set", hostname)
+			// Preserve the original hostname for SNI
+			sniHost = hostname
+			hostname = "localhost"
+			dialLocalhost = true
+		}
+
+		// If the CLI user didn't explicitly override port, prefer the
+		// container-internal HTTPS port 443 so probes hit the service
+		// inside the container (the host may map it to 8443 externally).
+		if cmd.Port == "" && protocol == "https" {
+			if port != "443" {
+				log.Printf("[health] overriding port %q -> 443 because OIDCLD_CONFIG is set and no explicit port provided", port)
+				port = "443"
+			}
+		}
+	}
+
+	// Override port if specified by CLI
 	if cmd.Port != "" {
 		port = cmd.Port
 	}
@@ -203,7 +339,7 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, error) {
 	// Construct URL
 	healthURL := fmt.Sprintf("%s://%s:%s/health", protocol, hostname, port)
 	isHTTPS := protocol == "https"
-	return healthURL, isHTTPS, nil
+	return healthURL, isHTTPS, dialLocalhost, sniHost, nil
 }
 
 func main() {
