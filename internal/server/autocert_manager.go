@@ -3,9 +3,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -16,43 +14,7 @@ import (
 	"github.com/shibukawa/oidcld/internal/config"
 )
 
-// loggingCache wraps an autocert.Cache and logs Get/Put/Delete operations for diagnostics.
-type loggingCache struct {
-	inner autocert.Cache
-}
-
-func (lc *loggingCache) Get(ctx context.Context, key string) ([]byte, error) {
-	log.Printf("[autocert][cache] Get key=%s", key)
-	data, err := lc.inner.Get(ctx, key)
-	if err != nil {
-		log.Printf("[autocert][cache] Get key=%s error=%v", key, err)
-	} else {
-		log.Printf("[autocert][cache] Get key=%s returned %d bytes", key, len(data))
-	}
-	return data, err
-}
-
-func (lc *loggingCache) Put(ctx context.Context, key string, data []byte) error {
-	log.Printf("[autocert][cache] Put key=%s bytes=%d", key, len(data))
-	err := lc.inner.Put(ctx, key, data)
-	if err != nil {
-		log.Printf("[autocert][cache] Put key=%s error=%v", key, err)
-	} else {
-		log.Printf("[autocert][cache] Put key=%s OK", key)
-	}
-	return err
-}
-
-func (lc *loggingCache) Delete(ctx context.Context, key string) error {
-	log.Printf("[autocert][cache] Delete key=%s", key)
-	err := lc.inner.Delete(ctx, key)
-	if err != nil {
-		log.Printf("[autocert][cache] Delete key=%s error=%v", key, err)
-	} else {
-		log.Printf("[autocert][cache] Delete key=%s OK", key)
-	}
-	return err
-}
+// (No local transport or cache logging: let autocert manage caching and HTTP)
 
 // AutocertManager manages automatic HTTPS certificate acquisition and renewal.
 type AutocertManager struct {
@@ -81,7 +43,7 @@ func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertMa
 	// Create autocert manager
 	dirCache := autocert.DirCache(cfg.CacheDir)
 	manager := &autocert.Manager{
-		Cache:      &loggingCache{inner: dirCache},
+		Cache:      dirCache,
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist(cfg.Domains...),
 		Email:      cfg.Email,
@@ -102,14 +64,11 @@ func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertMa
 	// servers (e.g., Pebble) reachable without requiring root certs inside the
 	// container. We still keep the config flag present for compatibility but
 	// default to insecure behavior.
-	log.Printf("[autocert] ACME HTTP client: InsecureSkipVerify=true (default for test environments)")
-	manager.Client.HTTPClient = &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		},
+	// Set up ACME HTTP client (insecure for test environments by default).
+	baseTransport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
+	manager.Client.HTTPClient = &http.Client{Transport: baseTransport}
 
 	am := &AutocertManager{
 		config:  cfg,
@@ -141,57 +100,7 @@ func (am *AutocertManager) HTTPHandler(fallback http.Handler) http.Handler {
 
 // GetCertificate returns a certificate for the given hello info.
 func (am *AutocertManager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-	domain := hello.ServerName
-
-	cert, err := am.manager.GetCertificate(hello)
-	if err != nil {
-		log.Printf("[autocert] Failed to get certificate for %s: %v", domain, err)
-		return nil, err
-	}
-
-	// Determine certificate serial for deduplicated logging
-	serial := ""
-	if cert.Leaf != nil {
-		serial = cert.Leaf.SerialNumber.String()
-	} else if len(cert.Certificate) > 0 {
-		if c0, err := x509.ParseCertificate(cert.Certificate[0]); err == nil {
-			serial = c0.SerialNumber.String()
-		}
-	}
-
-	// Emit plain log for every certificate obtain event so operators can see all
-	if cert.Leaf != nil {
-		log.Printf("[autocert] Certificate obtained: %s serial=%s expires=%s", hello.ServerName, serial, cert.Leaf.NotAfter.Format("2006-01-02 15:04:05"))
-	} else {
-		log.Printf("[autocert] Certificate obtained: %s serial=%s", hello.ServerName, serial)
-	}
-
-	// Diagnostic: if using DirCache, list files in the cache directory so we can
-	// see whether the certificate was written to disk.
-	// Try to unwrap loggingCache to get the underlying DirCache path, if present.
-	var cachePath string
-	switch c := am.manager.Cache.(type) {
-	case *loggingCache:
-		if dc, ok := c.inner.(autocert.DirCache); ok {
-			cachePath = string(dc)
-		}
-	case autocert.DirCache:
-		cachePath = string(c)
-	}
-	if cachePath != "" {
-		if entries, err := os.ReadDir(cachePath); err == nil {
-			var names []string
-			for _, e := range entries {
-				names = append(names, e.Name())
-			}
-			log.Printf("[autocert] cacheDir=%s entries=%v", cachePath, names)
-		} else {
-			log.Printf("[autocert] failed to read cacheDir %s: %v", cachePath, err)
-		}
-	} else {
-		log.Printf("[autocert] cache implementation is not DirCache: %T", am.manager.Cache)
-	}
-	return cert, nil
+	return am.manager.GetCertificate(hello)
 }
 
 // TriggerInitialObtain attempts to obtain certificates for all configured domains
@@ -204,23 +113,20 @@ func (am *AutocertManager) TriggerInitialObtain(ctx context.Context) error {
 	for _, domain := range am.config.Domains {
 		select {
 		case <-ctx.Done():
-			log.Printf("[autocert] Initial certificate obtain canceled")
+			// intentionally silent
 			return ctx.Err()
 		default:
 		}
 
-		log.Printf("[autocert] Attempting initial certificate obtain for %s", domain)
+		// intentionally silent
 
 		// Rely on manager.GetCertificate which will consult the cache internally.
 
 		hello := &tls.ClientHelloInfo{ServerName: domain}
 		_, err := am.manager.GetCertificate(hello)
 		if err != nil {
-			log.Printf("[autocert] Initial certificate obtain failed for %s: %v", domain, err)
 			return err
 		}
-
-		log.Printf("[autocert] Initial certificate obtained for %s", domain)
 
 		// Small pause between domains to avoid hammering ACME server
 		time.Sleep(500 * time.Millisecond)
@@ -254,7 +160,7 @@ func (am *AutocertManager) HealthCheck(ctx context.Context) error {
 		// retry once with an HTTP client that disables TLS verification. This
 		// helps when the ACME server uses a self-signed or locally-trusted cert.
 		if am.config.InsecureSkipVerify {
-			log.Printf("[autocert] Discover failed, retrying with InsecureSkipVerify: %v", err)
+			// intentionally silent
 			retryClient := *client // shallow copy
 			retryClient.HTTPClient = &http.Client{
 				Transport: &http.Transport{
@@ -277,6 +183,5 @@ func (am *AutocertManager) HealthCheck(ctx context.Context) error {
 // Close cleans up resources used by the autocert manager.
 func (am *AutocertManager) Close() error {
 	// Currently no cleanup needed, but this method is provided for future use
-	log.Printf("[autocert] Autocert manager closed")
 	return nil
 }

@@ -77,10 +77,8 @@ type HealthCmd struct {
 
 // Run executes the health check command
 func (cmd *HealthCmd) Run() error {
-	// Capture environment for potential diagnostics (do not print by default).
-	// Detailed environment output is emitted only on failure to avoid noisy
-	// successful health checks in container logs.
-	env := os.Environ()
+	// Do not capture environment until needed for failure diagnostics to
+	// avoid noisy successful health check logs in containers.
 
 	// Auto-detect URL if not provided; buildHealthURL now returns whether HTTPS
 	// is used, whether we should dial localhost, and an optional SNI hostname
@@ -132,9 +130,7 @@ func (cmd *HealthCmd) Run() error {
 		Transport: transport,
 	}
 
-	color.Cyan("🔍 Checking server health at %s", healthURL)
-	// Emit the exact URL being probed at info level.
-	log.Printf("[health] probing %s", healthURL)
+	// Keep success path quiet: do not emit info-level probe logs here.
 
 	// Create request with context for timeout
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.Timeout)
@@ -153,7 +149,8 @@ func (cmd *HealthCmd) Run() error {
 		log.Printf("[health][error] %v", err)
 		log.Printf("[health][cmd] args=%v config=%q url_flag=%q port_flag=%q", os.Args, cmd.Config, cmd.URL, cmd.Port)
 
-		// Selectively print relevant environment variables (reuse env snapshot)
+		// Selectively print relevant environment variables (capture lazily)
+		env := os.Environ()
 		for _, e := range env {
 			if strings.HasPrefix(e, "OIDCLD_") || strings.HasPrefix(e, "SSL_CERT_FILE") || strings.HasPrefix(e, "HOSTNAME") || strings.HasPrefix(e, "PATH=") {
 				log.Printf("[health][env] %s", e)
@@ -193,6 +190,7 @@ func (cmd *HealthCmd) Run() error {
 	// Non-200: emit diagnostics similar to connection errors
 	color.Red("❌ Server returned status: %d", resp.StatusCode)
 	log.Printf("[health][cmd] args=%v config=%q url_flag=%q port_flag=%q", os.Args, cmd.Config, cmd.URL, cmd.Port)
+	env := os.Environ()
 	for _, e := range env {
 		if strings.HasPrefix(e, "OIDCLD_") || strings.HasPrefix(e, "SSL_CERT_FILE") || strings.HasPrefix(e, "HOSTNAME") || strings.HasPrefix(e, "PATH=") {
 			log.Printf("[health][env] %s", e)

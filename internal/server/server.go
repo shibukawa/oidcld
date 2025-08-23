@@ -647,8 +647,17 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		// Call the next handler
 		next.ServeHTTP(wrapper, r)
 
-		// Log the request with colorful output
+		// Log the request with colorful output, but avoid noisy health probe
+		// access logs unless verbose logging is explicitly enabled in config.
 		duration := time.Since(start)
+
+		// If this is the health endpoint and verbose logging is not enabled,
+		// skip emitting the access log entirely.
+		if r.URL != nil && r.URL.Path == "/health" {
+			if s == nil || s.config == nil || !s.config.OIDCLD.VerboseLogging {
+				return
+			}
+		}
 
 		// Check for CORS-related information for debugging
 		origin := r.Header.Get("Origin")
