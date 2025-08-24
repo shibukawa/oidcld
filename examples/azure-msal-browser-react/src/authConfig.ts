@@ -9,10 +9,12 @@ import { LogLevel } from "@azure/msal-browser";
 export const msalConfig: Configuration = {
     auth: {
         clientId: "my-client-app", // This is the client ID for oidcld
-        authority: "https://localhost:18888", // OIDC server URL (HTTPS required for MSAL)
+        // Read authority from Vite environment variable so Docker build args or
+        // runtime envs can override the target OIDC server.
+        authority: import.meta.env.VITE_OIDC_AUTHORITY || "https://localhost:18888",
         redirectUri: "http://localhost:5173", // Vite dev server default port (HTTP is OK for localhost)
         postLogoutRedirectUri: "http://localhost:5173",
-        knownAuthorities: ["localhost:18888"], // Allow localhost authority (without protocol)
+        knownAuthorities: [new URL(import.meta.env.VITE_OIDC_AUTHORITY || "https://localhost:18888").host],
         protocolMode: "OIDC" // Use OIDC protocol mode for better compatibility
     },
     cache: {
@@ -59,6 +61,7 @@ export const loginRequest: PopupRequest = {
  * EntraID v2.0 compatible configuration for API calls
  * Using oidcld userinfo endpoint which provides EntraID-compatible claims
  */
+const authority = import.meta.env.VITE_OIDC_AUTHORITY || "https://localhost:18888";
 export const graphConfig = {
-    graphMeEndpoint: "https://localhost:18888/userinfo" // Using oidcld userinfo endpoint with EntraID v2 claims
+    graphMeEndpoint: `${authority.replace(/\/$/, "")}/userinfo`
 };

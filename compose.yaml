@@ -49,10 +49,11 @@ services:
       context: ./examples/azure-msal-browser-react
       dockerfile: Dockerfile
       args:
-        VITE_OIDC_AUTHORITY: "https://localhost:8443"  # Use the external port for HTTPS
-        VITE_OIDC_CLIENT_ID: "12345678-1234-1234-1234-123456789abc"
-        VITE_REDIRECT_URI: "http://app.localhost:3000/redirect"
-        VITE_OIDC_SCOPES: "openid,profile,email,read,write,admin"  # Add admin scope for testing
+        VITE_OIDC_AUTHORITY: "https://oidc.localhost:8443"
+        VITE_OIDC_CLIENT_ID: "test-client-id"
+        VITE_OIDC_REDIRECT_URI: "http://app.localhost:3000/redirect"
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "http://app.localhost:3000/"
+        VITE_OIDC_SCOPES: "openid,profile,email,read,write,admin"
     ports:
       - "3000:80"   # nginx serves on port 80, exposed as 3000
     depends_on:

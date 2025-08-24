@@ -2,6 +2,7 @@ import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from "@azure/
 import { SignInButton } from "./SignInButton";
 import { SignOutButton } from "./SignOutButton";
 import { ProfileData } from "./ProfileData";
+import { msalConfig, loginRequest } from "../authConfig";
 
 /**
  * Renders the navbar component with a sign-in or sign-out button depending on whether or not a user is authenticated
@@ -98,19 +99,19 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                                 <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">OIDC Server:</span>
-                                        <span className="text-gray-900">https://localhost:18888</span>
+                                                <span className="text-gray-900">{msalConfig.auth.authority}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Client ID:</span>
-                                        <span className="text-gray-900">my-client-app</span>
+                                        <span className="text-gray-900">{msalConfig.auth.clientId}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Redirect URI:</span>
-                                        <span className="text-gray-900">http://localhost:5173</span>
+                                        <span className="text-gray-900">{msalConfig.auth.redirectUri}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Scopes:</span>
-                                        <span className="text-gray-900">openid, profile, email, read, write</span>
+                                        <span className="text-gray-900">{Array.isArray(loginRequest.scopes) ? loginRequest.scopes.join(', ') : 'openid, profile, email'}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Mode:</span>
