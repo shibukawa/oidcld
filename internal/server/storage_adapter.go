@@ -18,17 +18,15 @@ import (
 
 // Static errors for OIDC storage adapter
 var (
-	ErrAuthRequestNotFound       = errors.New("auth request not found")
-	ErrCodeNotFound              = errors.New("code not found")
-	ErrRefreshTokenNotFound      = errors.New("refresh token not found")
-	ErrRefreshTokenExpired       = errors.New("refresh token expired")
-	ErrTokenNotFound             = errors.New("token not found")
-	ErrClientKeyNotFound         = errors.New("client key not found")
-	ErrClientNotFound            = errors.New("client not found")
-	ErrClientAuthorizationFailed = errors.New("client authorization failed")
-	ErrDeviceAuthNotFound        = errors.New("device authorization not found")
-	ErrDeviceAuthExpired         = errors.New("device authorization expired")
-	ErrUserCodeNotFound          = errors.New("user code not found")
+	ErrAuthRequestNotFound  = errors.New("auth request not found")
+	ErrCodeNotFound         = errors.New("code not found")
+	ErrRefreshTokenNotFound = errors.New("refresh token not found")
+	ErrRefreshTokenExpired  = errors.New("refresh token expired")
+	ErrTokenNotFound        = errors.New("token not found")
+	ErrClientKeyNotFound    = errors.New("client key not found")
+	ErrDeviceAuthNotFound   = errors.New("device authorization not found")
+	ErrDeviceAuthExpired    = errors.New("device authorization expired")
+	ErrUserCodeNotFound     = errors.New("user code not found")
 )
 
 // StorageAdapter adapts our MemoryStorage to zitadel/oidc storage interface
@@ -544,46 +542,38 @@ func (s *StorageAdapter) Health(ctx context.Context) error {
 
 // GetClientByClientID implements op.OPStorage interface (renamed from GetClientByID)
 func (s *StorageAdapter) GetClientByClientID(ctx context.Context, clientID string) (op.Client, error) {
-	// Check if client ID is in valid audiences
-	if slices.Contains(s.config.OIDCLD.ValidAudiences, clientID) {
-		return &Client{
-			id: clientID,
-			// For test identity provider, we allow any redirect URI for development flexibility
-			// This makes it easier to test with different frameworks and ports
-			redirectURIs:    []string{"*"}, // Special wildcard to accept any redirect URI
-			applicationType: op.ApplicationTypeWeb,
-			authMethod:      oidc.AuthMethodNone, // Public client
-			responseTypes:   []oidc.ResponseType{oidc.ResponseTypeCode},
-			grantTypes: []oidc.GrantType{
-				oidc.GrantTypeCode,
-				oidc.GrantTypeClientCredentials,
-				oidc.GrantTypeRefreshToken,
-				oidc.GrantTypeDeviceCode,
-			},
-			loginURL: func(id string) string {
-				return "/login?authRequestID=" + id
-			},
-			accessTokenType:                op.AccessTokenTypeJWT,
-			devMode:                        true, // Allow non-compliant configs for testing
-			idTokenUserinfoClaimsAssertion: true,
-			clockSkew:                      time.Minute,
-			scopes:                         s.buildScopes(),
-		}, nil
+	// For testing purposes, accept any client ID and return a permissive client
+	// Return nil error so this satisfies the op.Storage interface while remaining permissive for tests
+	client := &Client{
+		id: clientID,
+		// For test identity provider, we allow any redirect URI for development flexibility
+		// This makes it easier to test with different frameworks and ports
+		redirectURIs:    []string{"*"}, // Special wildcard to accept any redirect URI
+		applicationType: op.ApplicationTypeWeb,
+		authMethod:      oidc.AuthMethodNone, // Public client
+		responseTypes:   []oidc.ResponseType{oidc.ResponseTypeCode},
+		grantTypes: []oidc.GrantType{
+			oidc.GrantTypeCode,
+			oidc.GrantTypeClientCredentials,
+			oidc.GrantTypeRefreshToken,
+			oidc.GrantTypeDeviceCode,
+		},
+		loginURL: func(id string) string {
+			return "/login?authRequestID=" + id
+		},
+		accessTokenType:                op.AccessTokenTypeJWT,
+		devMode:                        true, // Allow non-compliant configs for testing
+		idTokenUserinfoClaimsAssertion: true,
+		clockSkew:                      time.Minute,
+		scopes:                         s.buildScopes(),
 	}
-
-	return nil, fmt.Errorf("%w: %s", ErrClientNotFound, clientID)
+	return client, nil
 }
 
 // AuthorizeClientIDSecret implements op.OPStorage interface
 func (s *StorageAdapter) AuthorizeClientIDSecret(ctx context.Context, clientID, clientSecret string) error {
-	// For testing purposes, we'll allow any client ID that's in valid audiences
-	// In a real implementation, you'd verify the client secret
-	if slices.Contains(s.config.OIDCLD.ValidAudiences, clientID) {
-		// For public clients (device flow, SPAs), accept empty or any secret
-		// This is a test identity provider, so we're lenient with authentication
-		return nil
-	}
-	return ErrClientAuthorizationFailed
+	// For testing purposes, always allow the client (do not perform existence/secret checks)
+	return nil
 }
 
 // buildScopes builds the complete list of supported scopes
