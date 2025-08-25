@@ -39,7 +39,6 @@ type Config struct {
 // OIDCLDConfig represents the core OpenID Connect configuration.
 type OIDCLDConfig struct {
 	Issuer         string   `yaml:"iss,omitempty"`
-	ValidAudiences []string `yaml:"valid_audiences,omitempty"`
 	PKCERequired   bool     `yaml:"pkce_required,omitempty"`
 	NonceRequired  bool     `yaml:"nonce_required,omitempty"`
 	ExpiredIn      int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
@@ -186,7 +185,6 @@ func CreateDefaultConfig(mode Mode) (*Config, error) {
 func createDefaultConfig(mode Mode) *Config {
 	config := &Config{
 		OIDCLD: OIDCLDConfig{
-			ValidAudiences:            []string{"test-client"},
 			PKCERequired:              false,
 			NonceRequired:             false,
 			ExpiredIn:                 3600,
@@ -391,9 +389,7 @@ func generateConfigYAML(config *Config) (string, error) {
 	tmpl := `# OpenID Connect IdP settings
 oidcld:{{if .OIDCLD.Issuer}}
   iss: "{{.OIDCLD.Issuer}}"{{else}}
-  # iss: "http://localhost:18888"{{end}}{{if .OIDCLD.ValidAudiences}}
-  valid_audiences:{{range .OIDCLD.ValidAudiences}}
-    - "{{.}}"{{end}}{{end}}
+  # iss: "http://localhost:18888"{{end}}
   pkce_required: {{.OIDCLD.PKCERequired}}
   nonce_required: {{.OIDCLD.NonceRequired}}
   expired_in: {{.OIDCLD.ExpiredIn}}  # Token expiration in seconds{{if .OIDCLD.Algorithm}}

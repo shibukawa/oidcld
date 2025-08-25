@@ -19,8 +19,7 @@ func TestStorageAdapter_CreateAuthRequest(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-			ValidScopes:    []string{"read", "write"},
+			ValidScopes: []string{"read", "write"},
 		},
 	}, privateKey)
 
@@ -62,9 +61,7 @@ func TestStorageAdapter_AuthRequestByID(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -97,9 +94,7 @@ func TestStorageAdapter_SaveAuthCode_And_AuthRequestByCode(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -143,9 +138,7 @@ func TestStorageAdapter_DeleteAuthRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -179,8 +172,7 @@ func TestStorageAdapter_CreateAccessToken(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-			ExpiredIn:      3600,
+			ExpiredIn: 3600,
 		},
 	}, privateKey)
 
@@ -217,7 +209,6 @@ func TestStorageAdapter_CreateAccessAndRefreshTokens(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences:      []string{"test-client"},
 			ExpiredIn:           3600,
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
@@ -265,7 +256,6 @@ func TestStorageAdapter_TokenRequestByRefreshToken(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences:      []string{"test-client"},
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
 		},
@@ -334,8 +324,7 @@ func TestStorageAdapter_GetClientByID(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client", "web-app"},
-			ValidScopes:    []string{"read", "write", "admin"},
+			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}, privateKey)
 

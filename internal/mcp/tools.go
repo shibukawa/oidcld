@@ -173,7 +173,6 @@ func (t *QueryConfigTool) Execute(ctx context.Context, args map[string]any) (any
 	result := map[string]any{
 		"oidcld": map[string]any{
 			"issuer":                       cfg.OIDCLD.Issuer,
-			"valid_audiences":              cfg.OIDCLD.ValidAudiences,
 			"pkce_required":                cfg.OIDCLD.PKCERequired,
 			"nonce_required":               cfg.OIDCLD.NonceRequired,
 			"expired_in":                   cfg.OIDCLD.ExpiredIn,
@@ -416,15 +415,7 @@ func (t *ModifyConfigTool) Execute(ctx context.Context, args map[string]any) (an
 
 	// Apply updates (simplified implementation)
 	if oidcldUpdates, ok := updates["oidcld"].(map[string]any); ok {
-		if validAudiences, ok := oidcldUpdates["valid_audiences"].([]any); ok {
-			cfg.OIDCLD.ValidAudiences = make([]string, 0, len(validAudiences))
-			for _, audience := range validAudiences {
-				if audienceStr, ok := audience.(string); ok {
-					cfg.OIDCLD.ValidAudiences = append(cfg.OIDCLD.ValidAudiences, audienceStr)
-				}
-			}
-		}
-
+		// Note: valid_audiences removed from configuration. Ignore if present.
 		if pkceRequired, ok := oidcldUpdates["pkce_required"].(bool); ok {
 			cfg.OIDCLD.PKCERequired = pkceRequired
 		}

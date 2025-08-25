@@ -637,11 +637,6 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 		changes = append(changes, fmt.Sprintf("Valid Scopes: %d → %d", len(s.config.OIDCLD.ValidScopes), len(newConfig.OIDCLD.ValidScopes)))
 	}
 
-	// Check for audience changes
-	if len(s.config.OIDCLD.ValidAudiences) != len(newConfig.OIDCLD.ValidAudiences) {
-		changes = append(changes, fmt.Sprintf("Valid Audiences: %d → %d", len(s.config.OIDCLD.ValidAudiences), len(newConfig.OIDCLD.ValidAudiences)))
-	}
-
 	// Check token expiration changes
 	if s.config.OIDCLD.ExpiredIn != newConfig.OIDCLD.ExpiredIn {
 		changes = append(changes, fmt.Sprintf("Token Expiry: %ds → %ds", s.config.OIDCLD.ExpiredIn, newConfig.OIDCLD.ExpiredIn))
@@ -1055,11 +1050,8 @@ func (s *Server) handleDeviceFlowTokenRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Check if client is valid
-	if !slices.Contains(s.config.OIDCLD.ValidAudiences, clientID) {
-		s.writeTokenError(w, "invalid_client", "invalid client_id")
-		return
-	}
+	// In test/permissive mode we do not validate client against configured audiences here.
+	// The StorageAdapter is responsible for client validation; for testing we accept any client.
 
 	// Get device authorization from storage
 	s.storage.lock.Lock()

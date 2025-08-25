@@ -157,13 +157,12 @@ func TestCORSMiddlewareIntegration(t *testing.T) {
 	// Create a minimal config with CORS enabled
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			Issuer:         "http://localhost:18888",
-			ValidAudiences: []string{"test-client"},
-			ExpiredIn:      3600,
-			ValidScopes:    []string{"read", "write"},
-			PKCERequired:   false,
-			NonceRequired:  false,
-			Algorithm:      "RS256",
+			Issuer:        "http://localhost:18888",
+			ExpiredIn:     3600,
+			ValidScopes:   []string{"read", "write"},
+			PKCERequired:  false,
+			NonceRequired: false,
+			Algorithm:     "RS256",
 		},
 		CORS: &config.CORSConfig{
 			Enabled:        true,

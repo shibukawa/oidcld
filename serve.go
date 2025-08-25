@@ -165,7 +165,6 @@ func (cmd *ServeCmd) reloadConfig(srv *server.Server) {
 	color.Cyan("📋 Updated configuration:")
 	color.Cyan("   Issuer: %s", newCfg.OIDCLD.Issuer)
 	color.Cyan("   Users: %d", len(newCfg.Users))
-	color.Cyan("   Valid Audiences: %v", newCfg.OIDCLD.ValidAudiences)
 	color.Cyan("   Valid Scopes: %v", newCfg.OIDCLD.ValidScopes)
 	if newCfg.Autocert != nil && newCfg.Autocert.Enabled {
 		color.Cyan("   Autocert: enabled (%v)", newCfg.Autocert.Domains)

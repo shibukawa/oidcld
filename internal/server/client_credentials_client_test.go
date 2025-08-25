@@ -78,7 +78,6 @@ func TestNewClientCredentialsClient(t *testing.T) {
 	// Test redirect URIs (should be empty for client credentials)
 	assert.Equal(t, []string{}, client.RedirectURIs())
 	assert.Equal(t, []string{}, client.PostLogoutRedirectURIs())
-
 	// Test response types (should be empty for client credentials)
 	assert.Equal(t, []oidc.ResponseType{}, client.ResponseTypes())
 
@@ -156,7 +155,6 @@ func TestUpdateClientCredentialsClient(t *testing.T) {
 			ValidScopes: []string{"read", "write"},
 		},
 	}
-
 	client := NewClientCredentialsClient("test-client", "test-secret", cfg)
 
 	restrictFunc := client.RestrictAdditionalAccessTokenScopes()
@@ -228,8 +226,7 @@ func TestStorageAdapter_ClientCredentials(t *testing.T) {
 	// Create test configuration
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidScopes:    []string{"read", "write", "admin"},
-			ValidAudiences: []string{"test-audience"},
+			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
 
@@ -293,8 +290,7 @@ func TestStorageAdapter_ClientCredentialsTokenRequest(t *testing.T) {
 	// Create test configuration
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidScopes:    []string{"read", "write", "admin"},
-			ValidAudiences: []string{"test-audience"},
+			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
 
@@ -316,15 +312,15 @@ func TestStorageAdapter_ClientCredentialsTokenRequest(t *testing.T) {
 	// Verify token request properties
 	assert.Equal(t, clientID, tokenReq.GetSubject())
 	assert.Equal(t, scopes, tokenReq.GetScopes())
-	assert.Equal(t, cfg.OIDCLD.ValidAudiences, tokenReq.GetAudience())
+	// Audience is empty by default after config change
+	assert.Equal(t, []string{}, tokenReq.GetAudience())
 }
 
 func TestStorageAdapter_ClientCredentialsIntegration(t *testing.T) {
 	// Create test configuration
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidScopes:    []string{"read", "write", "admin"},
-			ValidAudiences: []string{"test-audience"},
+			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
 
@@ -358,7 +354,8 @@ func TestStorageAdapter_ClientCredentialsIntegration(t *testing.T) {
 	// Verify final token request
 	assert.Equal(t, clientID, tokenReq.GetSubject())
 	assert.Equal(t, allowedScopes, tokenReq.GetScopes())
-	assert.Equal(t, cfg.OIDCLD.ValidAudiences, tokenReq.GetAudience())
+	// Audience is empty by default after config change
+	assert.Equal(t, []string{}, tokenReq.GetAudience())
 }
 
 // Test that the storage adapter implements the required interfaces

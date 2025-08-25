@@ -25,14 +25,8 @@ func TestResponseModeFragmentIntegration(t *testing.T) {
 	// Create test server with minimal config
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			Issuer:    "http://localhost:18888",
-			ExpiredIn: 3600,
-			ValidAudiences: []string{
-				"test-client",
-				"msal-client",
-				"traditional-client",
-				"invalid-client",
-			},
+			Issuer:      "http://localhost:18888",
+			ExpiredIn:   3600,
 			ValidScopes: []string{"read", "write", "openid", "profile", "email"},
 		},
 		Users: map[string]config.User{
@@ -186,10 +180,8 @@ func TestResponseModeFragmentIntegration(t *testing.T) {
 // TestResponseModeErrorHandling tests error responses with different response modes
 func TestResponseModeErrorHandling(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
-		Users: map[string]config.User{},
+		OIDCLD: config.OIDCLDConfig{},
+		Users:  map[string]config.User{},
 	}
 	server := createTestServer(cfg)
 	t.Run("Fragment Mode Error Response", func(t *testing.T) {
@@ -220,8 +212,7 @@ func TestResponseModeErrorHandling(t *testing.T) {
 func TestResponseModeCompatibility(t *testing.T) {
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"msal-client", "traditional-client"},
-			ValidScopes:    []string{"read", "write"},
+			ValidScopes: []string{"read", "write"},
 		},
 		Users: map[string]config.User{
 			"user1": {
@@ -268,9 +259,7 @@ func TestResponseModeCompatibility(t *testing.T) {
 // TestResponseModeValidation tests validation of response_mode parameter
 func TestResponseModeValidation(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 		Users: map[string]config.User{
 			"user1": {
 				DisplayName: "User One",

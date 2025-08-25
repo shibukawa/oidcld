@@ -91,7 +91,7 @@ func (s *StorageAdapter) ClientCredentialsTokenRequest(_ context.Context, client
 	tokenReq := NewClientCredentialsTokenRequest(
 		clientID,
 		scopes,
-		s.config.OIDCLD.ValidAudiences,
+		[]string{},
 	)
 
 	return tokenReq, nil
