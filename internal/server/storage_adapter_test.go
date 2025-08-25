@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"slices"
@@ -19,8 +20,7 @@ func TestStorageAdapter_CreateAuthRequest(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-			ValidScopes:    []string{"read", "write"},
+			ValidScopes: []string{"read", "write"},
 		},
 	}, privateKey)
 
@@ -62,9 +62,7 @@ func TestStorageAdapter_AuthRequestByID(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -97,9 +95,7 @@ func TestStorageAdapter_SaveAuthCode_And_AuthRequestByCode(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -143,9 +139,7 @@ func TestStorageAdapter_DeleteAuthRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -179,8 +173,7 @@ func TestStorageAdapter_CreateAccessToken(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-			ExpiredIn:      3600,
+			ExpiredIn: 3600,
 		},
 	}, privateKey)
 
@@ -217,7 +210,6 @@ func TestStorageAdapter_CreateAccessAndRefreshTokens(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences:      []string{"test-client"},
 			ExpiredIn:           3600,
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
@@ -265,7 +257,6 @@ func TestStorageAdapter_TokenRequestByRefreshToken(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences:      []string{"test-client"},
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
 		},
@@ -334,12 +325,12 @@ func TestStorageAdapter_GetClientByID(t *testing.T) {
 
 	adapter := NewStorageAdapter(&config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client", "web-app"},
-			ValidScopes:    []string{"read", "write", "admin"},
+			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}, privateKey)
 
-	ctx := t.Context()
+	// Provide a context with redirect_uri so GetClientByClientID uses it
+	ctx := context.WithValue(t.Context(), redirectURIContextKey, "http://localhost:3000/callback")
 
 	// Test successful client retrieval
 	client, err := adapter.GetClientByClientID(ctx, "test-client")
@@ -369,10 +360,10 @@ func TestStorageAdapter_GetClientByID(t *testing.T) {
 	assert.True(t, slices.Contains(grantTypes, oidc.GrantTypeRefreshToken), "should contain refresh_token grant")
 	assert.True(t, slices.Contains(grantTypes, oidc.GrantTypeDeviceCode), "should contain device_code grant")
 
-	// Test non-existent client
-	_, err = adapter.GetClientByClientID(ctx, "non-existent-client")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "client not found")
+	// Non-existent client is accepted in test mode; ensure no panic and ID matches
+	client2, err := adapter.GetClientByClientID(ctx, "non-existent-client")
+	assert.NoError(t, err)
+	assert.Equal(t, "non-existent-client", client2.GetID())
 }
 
 func TestStorageAdapter_SigningKey_And_KeySet(t *testing.T) {

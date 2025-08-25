@@ -45,10 +45,14 @@ export const ProfileData = () => {
 
         try {
             // First, try to get a token silently
+            console.log("🐎")
+            console.log(loginRequest)
+            console.log(account)
             const response = await instance.acquireTokenSilent({
                 ...loginRequest,
                 account: account
             });
+            console.log("🐍")
 
             // Call the userinfo endpoint
             const userInfoResponse = await fetch(graphConfig.graphMeEndpoint, {

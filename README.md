@@ -106,9 +106,6 @@ docker pull ghcr.io/shibukawa/oidcld
 # OpenID Connect IdP settings
 oidcld:
   # iss: "http://localhost:18888"
-  valid_audiences:
-    - "my-client-app"
-    - "another-app"
   pkce_required: false
   nonce_required: false
   expired_in: 3600  # Token expiration in seconds
@@ -1003,8 +1000,6 @@ Create an Azure AD compatible configuration:
 # oidcld.yaml
 oidcld:
   issuer: "https://localhost:18888"
-  valid_audiences:
-    - "your-azure-app-id"
   valid_scopes:
     - "openid"
     - "profile"

@@ -183,7 +183,7 @@ func TestMCPServer_InitTool(t *testing.T) {
 	}
 
 	// Verify config content
-	cfg, err := config.LoadConfig(configPath)
+	cfg, err := config.LoadConfig(configPath, false)
 	if err != nil {
 		t.Fatalf("Failed to load created config: %v", err)
 	}

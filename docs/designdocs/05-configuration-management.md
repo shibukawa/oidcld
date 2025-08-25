@@ -49,7 +49,6 @@ The configuration management system provides flexible, YAML-based configuration 
 openidld:
   # Core OpenID Connect settings
   iss: "http://localhost:18888"
-  valid_audiences: ["client1", "client2"]
   pkce_required: true
   nonce_required: false
   expired_in: 3600
@@ -82,12 +81,6 @@ users:
 openidld:
   # Issuer identifier (REQUIRED)
   iss: "http://localhost:18888"
-  
-  # Valid audiences for tokens (OPTIONAL)
-  valid_audiences:
-    - "my-client-app"
-    - "another-app"
-    - "api-server"
   
   # PKCE requirement (OPTIONAL, default: false)
   pkce_required: true
@@ -727,7 +720,6 @@ func applyConfigUpdate(config *Config, key string, value interface{}) error {
 # Standard OpenID Connect Configuration Template
 openidld:
   iss: "http://localhost:18888"
-  valid_audiences: ["test-client"]
   pkce_required: true
   nonce_required: false
   expired_in: 3600
@@ -761,7 +753,6 @@ users:
 # EntraID v2.0 Compatible Configuration Template
 openidld:
   iss: "https://login.microsoftonline.com/{{TENANT_ID}}/v2.0"
-  valid_audiences: ["api://default"]
   pkce_required: true
   nonce_required: true
   expired_in: 3600

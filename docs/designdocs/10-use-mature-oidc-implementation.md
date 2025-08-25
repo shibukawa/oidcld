@@ -285,8 +285,6 @@ Existing configurations continue to work without changes:
 ```yaml
 # Existing oidcld.yaml files work unchanged
 oidcld:
-  valid_audiences:
-    - "my-client-app"
   valid_scopes:
     - "read"
     - "write"

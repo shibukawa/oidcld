@@ -120,8 +120,6 @@ This example works out-of-the-box with the default oidcld configuration:
 
 ```yaml
 oidcld:
-  valid_audiences:
-    - "my-client-app"
   valid_scopes:
     - "read"
     - "write"

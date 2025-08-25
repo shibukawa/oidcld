@@ -3,6 +3,11 @@ import { RouterLink } from 'vue-router';
 import { useAuth } from './authService';
 
 const { isAuthenticated } = useAuth();
+
+// Expose build/runtime configuration to template via Vite env
+const AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:18888';
+const CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID || 'vue-demo-app';
+const REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI || 'http://localhost:5173/callback';
 </script>
 
 <template>
@@ -19,7 +24,7 @@ const { isAuthenticated } = useAuth();
           </p>
         </div>
         
-        <div class="grid md:grid-cols-3 gap-8 mb-8">
+  <div class="grid md:grid-cols-3 gap-8 mb-8">
           <div class="text-center p-6">
             <div class="text-5xl mb-4">🔒</div>
             <h3 class="text-xl font-semibold mb-2 text-slate-800">Secure Authentication</h3>
@@ -95,15 +100,15 @@ const { isAuthenticated } = useAuth();
         <div class="space-y-4">
           <div class="flex justify-between items-center py-3 border-b border-slate-200">
             <strong class="text-slate-700">Authority:</strong>
-            <code class="bg-slate-100 px-3 py-1 rounded-md text-sm text-blue-600 border">http://localhost:18888</code>
+            <code class="bg-slate-100 px-3 py-1 rounded-md text-sm text-blue-600 border">{{ AUTHORITY }}</code>
           </div>
           <div class="flex justify-between items-center py-3 border-b border-slate-200">
             <strong class="text-slate-700">Client ID:</strong>
-            <code class="bg-slate-100 px-3 py-1 rounded-md text-sm text-blue-600 border">vue-demo-app</code>
+            <code class="bg-slate-100 px-3 py-1 rounded-md text-sm text-blue-600 border">{{ CLIENT_ID }}</code>
           </div>
           <div class="flex justify-between items-center py-3">
             <strong class="text-slate-700">Redirect URI:</strong>
-            <code class="bg-slate-100 px-3 py-1 rounded-md text-sm text-blue-600 border break-all">http://localhost:5173/callback</code>
+            <code class="bg-slate-100 px-3 py-1 rounded-md text-sm text-blue-600 border break-all">{{ REDIRECT_URI }}</code>
           </div>
         </div>
       </div>
