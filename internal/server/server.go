@@ -210,7 +210,28 @@ func (s *Server) Handler() http.Handler {
 			"method", r.Method,
 			"remote_addr", r.RemoteAddr)
 
-		// Forward to the provider for normal processing
+		// Insert redirect parameters into the request context so storage
+		// can return a client permitting the exact redirect URIs for this
+		// request. This allows dynamic, per-request redirect handling.
+		ctx := r.Context()
+		if redirectURI != "" {
+			ctx = context.WithValue(ctx, redirectURIContextKey, redirectURI)
+		}
+		// Also capture optional post_logout_redirect_uri if present
+		postLogout := r.URL.Query().Get("post_logout_redirect_uri")
+		if r.Method == http.MethodPost {
+			// Parse form quietly if needed
+			_ = r.ParseForm()
+			if postLogout == "" {
+				postLogout = r.FormValue("post_logout_redirect_uri")
+			}
+		}
+		if postLogout != "" {
+			ctx = context.WithValue(ctx, postLogoutRedirectURIContextKey, postLogout)
+		}
+
+		// Forward to the provider with the enriched context
+		r = r.WithContext(ctx)
 		s.provider.ServeHTTP(w, r)
 	})
 
@@ -1144,6 +1165,14 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
+	}
+	// If the token request includes a redirect_uri (authorization_code flow),
+	// inject it into the request context so storage.GetClientByClientID can
+	// return a client that permits that exact redirect URI for validation.
+	if redirectURI := r.FormValue("redirect_uri"); redirectURI != "" {
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, redirectURIContextKey, redirectURI)
+		r = r.WithContext(ctx)
 	}
 
 	grantType := r.FormValue("grant_type")

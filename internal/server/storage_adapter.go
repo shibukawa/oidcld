@@ -16,6 +16,16 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
+// context key used to pass incoming redirect_uri from HTTP handler into storage
+type ctxKeyRedirectURI struct{}
+
+var redirectURIContextKey = &ctxKeyRedirectURI{}
+
+// context key used to pass incoming post_logout_redirect_uri from HTTP handler into storage
+type ctxKeyPostLogoutRedirectURI struct{}
+
+var postLogoutRedirectURIContextKey = &ctxKeyPostLogoutRedirectURI{}
+
 // Static errors for OIDC storage adapter
 var (
 	ErrAuthRequestNotFound  = errors.New("auth request not found")
@@ -544,14 +554,33 @@ func (s *StorageAdapter) Health(ctx context.Context) error {
 func (s *StorageAdapter) GetClientByClientID(ctx context.Context, clientID string) (op.Client, error) {
 	// For testing purposes, accept any client ID and return a permissive client
 	// Return nil error so this satisfies the op.Storage interface while remaining permissive for tests
+	// If an incoming redirect_uri was placed into the context by the HTTP handler,
+	// expose that specific value as the client's allowed redirect URI for this
+	// request. Otherwise leave redirectURIs nil so RedirectURIGlobs() can be used.
+	var dynRedirects []string
+	if v := ctx.Value(redirectURIContextKey); v != nil {
+		if uri, ok := v.(string); ok && uri != "" {
+			dynRedirects = []string{uri}
+		}
+	}
+
+	var dynPostLogout []string
+	if v := ctx.Value(postLogoutRedirectURIContextKey); v != nil {
+		if uri, ok := v.(string); ok && uri != "" {
+			dynPostLogout = []string{uri}
+		}
+	}
+
 	client := &Client{
 		id: clientID,
-		// For test identity provider, we allow any redirect URI for development flexibility
-		// This makes it easier to test with different frameworks and ports
-		redirectURIs:    []string{"*"}, // Special wildcard to accept any redirect URI
-		applicationType: op.ApplicationTypeWeb,
-		authMethod:      oidc.AuthMethodNone, // Public client
-		responseTypes:   []oidc.ResponseType{oidc.ResponseTypeCode},
+		// For test identity provider, use any redirect URI supplied in the
+		// request context. If none is supplied, leave empty and rely on
+		// RedirectURIGlobs for permissive behavior in dev mode.
+		redirectURIs:           dynRedirects,
+		postLogoutRedirectURIs: dynPostLogout,
+		applicationType:        op.ApplicationTypeWeb,
+		authMethod:             oidc.AuthMethodNone, // Public client
+		responseTypes:          []oidc.ResponseType{oidc.ResponseTypeCode},
 		grantTypes: []oidc.GrantType{
 			oidc.GrantTypeCode,
 			oidc.GrantTypeClientCredentials,
@@ -735,6 +764,7 @@ func (k *Key) ID() string { return k.id }
 type Client struct {
 	id                             string
 	redirectURIs                   []string
+	postLogoutRedirectURIs         []string
 	applicationType                op.ApplicationType
 	authMethod                     oidc.AuthMethod
 	responseTypes                  []oidc.ResponseType
@@ -753,43 +783,6 @@ func (c *Client) GetID() string { return c.id }
 // RedirectURIs returns the redirect URIs for the client
 // For test identity provider, we're flexible with redirect URIs to support development
 func (c *Client) RedirectURIs() []string {
-	// If we have a wildcard, return a comprehensive list of common development URIs
-	if len(c.redirectURIs) == 1 && c.redirectURIs[0] == "*" {
-		return []string{
-			// Common development ports for various frameworks
-			"http://localhost:3000/callback",  // React (Create React App)
-			"http://localhost:5173/callback",  // Vite (Vue, React, etc.)
-			"http://localhost:4173/callback",  // Vite preview
-			"http://localhost:8080/callback",  // Webpack dev server
-			"http://localhost:4200/callback",  // Angular CLI
-			"http://localhost:3001/callback",  // Alternative React port
-			"http://localhost:8000/callback",  // Django/Python
-			"http://localhost:9000/callback",  // Alternative port
-			"http://localhost:18888/callback", // Self-testing
-			// HTTPS versions
-			"https://localhost:3000/callback",
-			"https://localhost:5173/callback",
-			"https://localhost:4173/callback",
-			"https://localhost:8080/callback",
-			"https://localhost:4200/callback",
-			// Common callback paths
-			"http://localhost:3000/auth/callback",
-			"http://localhost:5173/auth/callback",
-			"http://localhost:8080/auth/callback",
-			// Root paths for logout
-			"http://localhost:3000",
-			"http://localhost:5173",
-			"http://localhost:8080",
-			"http://localhost:4200",
-			"https://localhost:3000",
-			"https://localhost:5173",
-			"https://localhost:8080",
-			"https://localhost:4200",
-			// Example domains for testing
-			"https://app.example.com/auth/callback",
-			"https://legacy.example.com/callback",
-		}
-	}
 	return c.redirectURIs
 }
 
@@ -797,19 +790,7 @@ func (c *Client) RedirectURIs() []string {
 // For test identity provider, we're flexible to support development
 func (c *Client) PostLogoutRedirectURIs() []string {
 	// Return common development logout URIs
-	return []string{
-		"http://localhost:3000",
-		"http://localhost:5173",
-		"http://localhost:4173",
-		"http://localhost:8080",
-		"http://localhost:4200",
-		"https://localhost:3000",
-		"https://localhost:5173",
-		"https://localhost:8080",
-		"https://localhost:4200",
-		"https://app.example.com",
-		"https://legacy.example.com",
-	}
+	return c.postLogoutRedirectURIs
 }
 
 // ApplicationType returns the application type of the client
