@@ -1,13 +1,15 @@
 # syntax=docker/dockerfile:1
 
 ARG NODE_VERSION=24.1.0
+
+FROM node:${NODE_VERSION}-alpine AS build
+
+# Re-declare build args inside the build stage so they are available to ENV and RUN
 ARG VITE_OIDC_AUTHORITY
 ARG VITE_OIDC_CLIENT_ID
 ARG VITE_OIDC_REDIRECT_URI
 ARG VITE_OIDC_SCOPES
 ARG VITE_OIDC_POST_LOGOUT_REDIRECT_URI
-
-FROM node:${NODE_VERSION}-alpine as build
 
 # Provide VITE_* build args to the build stage so Vite can embed them
 ENV VITE_OIDC_AUTHORITY=${VITE_OIDC_AUTHORITY}
