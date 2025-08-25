@@ -106,9 +106,6 @@ docker pull ghcr.io/shibukawa/oidcld
 # OpenID Connect IdP設定
 oidcld:
   # iss: "http://localhost:18888"
-  valid_audiences:
-    - "my-client-app"
-    - "another-app"
   pkce_required: false
   nonce_required: false
   expired_in: 3600  # トークン有効期限（秒）

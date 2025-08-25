@@ -415,7 +415,6 @@ func (t *ModifyConfigTool) Execute(ctx context.Context, args map[string]any) (an
 
 	// Apply updates (simplified implementation)
 	if oidcldUpdates, ok := updates["oidcld"].(map[string]any); ok {
-		// Note: valid_audiences removed from configuration. Ignore if present.
 		if pkceRequired, ok := oidcldUpdates["pkce_required"].(bool); ok {
 			cfg.OIDCLD.PKCERequired = pkceRequired
 		}

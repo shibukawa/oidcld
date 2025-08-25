@@ -177,8 +177,6 @@ Works with EntraID v2.0 compatible configuration:
 # EntraID v2.0 compatible mode
 oidcld:
   iss: "https://localhost:18888"
-  valid_audiences:
-    - "my-client-app"
   pkce_required: true
   nonce_required: true
 
