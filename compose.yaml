@@ -53,7 +53,7 @@ services:
         VITE_OIDC_CLIENT_ID: "test-client-id"
         VITE_OIDC_REDIRECT_URI: "http://app.localhost:3000/redirect"
         VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "http://app.localhost:3000/"
-        VITE_OIDC_SCOPES: "openid,profile,email,read,write,admin"
+        VITE_OIDC_SCOPES: "openid,profile,email,offline_access,User.Read"
     ports:
       - "3000:80"   # nginx serves on port 80, exposed as 3000
     depends_on:

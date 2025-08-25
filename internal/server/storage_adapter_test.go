@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"slices"
@@ -328,7 +329,8 @@ func TestStorageAdapter_GetClientByID(t *testing.T) {
 		},
 	}, privateKey)
 
-	ctx := t.Context()
+	// Provide a context with redirect_uri so GetClientByClientID uses it
+	ctx := context.WithValue(t.Context(), redirectURIContextKey, "http://localhost:3000/callback")
 
 	// Test successful client retrieval
 	client, err := adapter.GetClientByClientID(ctx, "test-client")

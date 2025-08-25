@@ -51,8 +51,15 @@ export const msalConfig: Configuration = {
  * For more information about OIDC scopes, visit: 
  * https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-permissions-and-consent#openid-connect-scopes
  */
+// Build scopes from VITE_OIDC_SCOPES (comma-separated) if provided, otherwise fall back to defaults
+const envScopes = import.meta.env.VITE_OIDC_SCOPES as string | undefined;
+const defaultScopes = ["openid", "profile", "email", "offline_access"];
+export const parsedScopes = envScopes && envScopes.length > 0
+    ? envScopes.split(',').map(s => s.trim()).filter(Boolean)
+    : defaultScopes;
+
 export const loginRequest: PopupRequest = {
-    scopes: ["openid", "profile", "email", "read", "write"]
+    scopes: parsedScopes
 };
 
 /**

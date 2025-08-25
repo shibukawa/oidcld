@@ -56,6 +56,37 @@ type OIDCLDConfig struct {
 	VerboseLogging            bool   `yaml:"verbose_logging,omitempty"`
 }
 
+// ensureDefaultScopes ensures that standard OIDC scopes are present in the provided config.
+// When isEntra is true (EntraID compatibility modes), `address` and `phone` are not added
+// because EntraID does not expose them in the same way.
+func ensureDefaultScopes(cfg *OIDCLDConfig, isEntra bool) {
+	if cfg == nil {
+		return
+	}
+
+	// base standard OIDC scopes we want to guarantee
+	std := []string{"openid", "profile", "email", "offline_access"}
+
+	// include address/phone only for non-Entra configurations
+	if !isEntra {
+		std = append(std, "address", "phone")
+	}
+
+	// build a set of existing scopes (lowercased for safety)
+	exist := map[string]bool{}
+	for _, s := range cfg.ValidScopes {
+		exist[strings.ToLower(s)] = true
+	}
+
+	// append missing standard scopes preserving existing order
+	for _, s := range std {
+		if !exist[strings.ToLower(s)] {
+			cfg.ValidScopes = append(cfg.ValidScopes, s)
+			exist[strings.ToLower(s)] = true
+		}
+	}
+}
+
 // EntraIDConfig represents EntraID/AzureAD compatibility settings.
 type EntraIDConfig struct {
 	TenantID string `yaml:"tenant_id"`
@@ -134,6 +165,11 @@ func loadConfig(configPath string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+
+	// Ensure default OIDC scopes are present. If EntraID compatibility is configured,
+	// do not add address/phone by passing isEntra=true.
+	isEntra := config.EntraID != nil
+	ensureDefaultScopes(&config.OIDCLD, isEntra)
 
 	return &config, nil
 }
@@ -246,6 +282,10 @@ func createDefaultConfig(mode Mode) *Config {
 	default:
 		config.OIDCLD.Issuer = "http://localhost:18888"
 	}
+
+	// ensure standard OIDC scopes are present on generated defaults
+	isEntra := mode == ModeEntraIDv1 || mode == ModeEntraIDv2
+	ensureDefaultScopes(&config.OIDCLD, isEntra)
 
 	return config
 }

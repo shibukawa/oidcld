@@ -1177,6 +1177,39 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 
 	grantType := r.FormValue("grant_type")
 
+	// Log client_id and scopes for debugging invalid_scope errors
+	clientID := r.FormValue("client_id")
+	scopesStr := r.FormValue("scope")
+	var scopesList []string
+	if scopesStr != "" {
+		for _, s := range strings.Split(scopesStr, " ") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				scopesList = append(scopesList, s)
+			}
+		}
+	}
+
+	s.logger.Info("Token request received",
+		"client_id", clientID,
+		"grant_type", grantType,
+		"scopes", scopesList)
+
+	// If we can obtain a client from storage, check which scopes are not allowed
+	if clientID != "" {
+		if cli, err := s.storage.GetClientByClientID(r.Context(), clientID); err == nil && cli != nil {
+			var disallowed []string
+			for _, sc := range scopesList {
+				if !cli.IsScopeAllowed(sc) {
+					disallowed = append(disallowed, sc)
+				}
+			}
+			if len(disallowed) > 0 {
+				s.prettyLog.Warning(fmt.Sprintf("Token request contains disallowed scopes: %v", disallowed))
+			}
+		}
+	}
+
 	// Handle device flow token requests manually
 	if grantType == "urn:ietf:params:oauth:grant-type:device_code" {
 		s.handleDeviceFlowTokenRequest(w, r)

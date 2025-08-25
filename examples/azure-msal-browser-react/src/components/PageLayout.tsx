@@ -2,7 +2,7 @@ import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from "@azure/
 import { SignInButton } from "./SignInButton";
 import { SignOutButton } from "./SignOutButton";
 import { ProfileData } from "./ProfileData";
-import { msalConfig, loginRequest } from "../authConfig";
+import { msalConfig, loginRequest, parsedScopes } from "../authConfig";
 
 /**
  * Renders the navbar component with a sign-in or sign-out button depending on whether or not a user is authenticated
@@ -111,7 +111,7 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Scopes:</span>
-                                        <span className="text-gray-900">{Array.isArray(loginRequest.scopes) ? loginRequest.scopes.join(', ') : 'openid, profile, email'}</span>
+                                        <span className="text-gray-900">{Array.isArray(parsedScopes) ? parsedScopes.join(', ') : (Array.isArray(loginRequest.scopes) ? loginRequest.scopes.join(', ') : 'openid, profile, email')}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Mode:</span>
