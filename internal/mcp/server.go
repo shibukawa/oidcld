@@ -407,5 +407,5 @@ func (s *MCPServer) loadConfig() (*config.Config, error) {
 		return nil, fmt.Errorf("failed to resolve config path: %w", err)
 	}
 
-	return config.LoadConfig(absPath)
+	return config.LoadConfig(absPath, false)
 }

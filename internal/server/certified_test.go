@@ -19,10 +19,9 @@ func TestCertifiedClientIntegration(t *testing.T) {
 	// Setup test server
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			Issuer:         "http://localhost:18888",
-			ExpiredIn:      3600,
-			ValidAudiences: []string{"certified-test-client"},
-			ValidScopes:    []string{"read", "write", "admin"},
+			Issuer:      "http://localhost:18888",
+			ExpiredIn:   3600,
+			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
 
@@ -195,10 +194,9 @@ func TestCertifiedClientIntegration(t *testing.T) {
 func TestCertifiedClientBenefitsDemo(t *testing.T) {
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			Issuer:         "http://localhost:18888",
-			ExpiredIn:      3600,
-			ValidAudiences: []string{"demo-client"},
-			ValidScopes:    []string{"read", "write"},
+			Issuer:      "http://localhost:18888",
+			ExpiredIn:   3600,
+			ValidScopes: []string{"read", "write"},
 		},
 	}
 
@@ -275,7 +273,6 @@ func TestCertifiedClientStandardsCompliance(t *testing.T) {
 			ExpiredIn:           3600,
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
-			ValidAudiences:      []string{"standards-client"},
 			ValidScopes:         []string{"openid", "profile", "email", "read", "write"},
 		},
 	}

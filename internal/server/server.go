@@ -1,13 +1,20 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+
+	// "log" was removed (diagnostic logs cleaned up)
+
+	// ...existing code...
 	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
+
+	// ...existing code...
 	"net/http"
 	"slices"
 	"strings"
@@ -23,6 +30,8 @@ var (
 	ErrConfigurationCannotBeNil        = fmt.Errorf("configuration cannot be nil")
 	ErrIssuerURLCannotBeChanged        = fmt.Errorf("issuer URL cannot be changed at runtime")
 	ErrSigningAlgorithmCannotBeChanged = fmt.Errorf("signing algorithm cannot be changed at runtime")
+	ErrAutocertConflictTLSProvided     = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
+	ErrTLSMissingWithoutAutocert       = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
 )
 
 // Server represents the new zitadel/oidc-based server implementation
@@ -33,6 +42,16 @@ type Server struct {
 	privateKey *rsa.PrivateKey
 	logger     *slog.Logger
 	prettyLog  *Logger // Add colorful logger
+
+	// Autocert manager (optional)
+	autocertManager *AutocertManager
+	autocertCancel  context.CancelFunc
+}
+
+// SupportsAutocert reports whether this Server was built with autocert support
+// and currently has an initialized autocert manager.
+func (s *Server) SupportsAutocert() bool {
+	return s != nil && s.autocertManager != nil
 }
 
 // generatePrivateKey generates a new RSA private key for JWT signing
@@ -74,6 +93,20 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 	}
 
 	server.provider = provider
+
+	// Initialize AutocertManager if autocert is enabled in configuration.
+	if cfg.Autocert != nil && cfg.Autocert.Enabled {
+		am, err := NewAutocertManager(cfg.Autocert, server.prettyLog)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize autocert manager: %w", err)
+		}
+		_, cancel := context.WithCancel(context.Background())
+		server.autocertManager = am
+		server.autocertCancel = cancel
+
+		// The renewal monitor is now handled via RenewBefore, so we do not start it here.
+	}
+
 	return server, nil
 }
 
@@ -147,6 +180,60 @@ func (s *Server) Handler() http.Handler {
 
 	// Add custom discovery handler for pretty-printed JSON
 	mux.HandleFunc("/.well-known/openid-configuration", s.handleDiscovery)
+
+	// Intercept /authorize so we can log incoming client_id, redirect_uri, scope for debugging
+	// then forward the request to the provider. This avoids modifying provider internals.
+	mux.HandleFunc("/authorize", func(w http.ResponseWriter, r *http.Request) {
+		// Prefer query params for GET; for POST try parsing the form as well.
+		clientID := r.URL.Query().Get("client_id")
+		redirectURI := r.URL.Query().Get("redirect_uri")
+		scope := r.URL.Query().Get("scope")
+
+		if r.Method == http.MethodPost {
+			// Try parsing form but ignore errors to avoid interfering with provider handling.
+			_ = r.ParseForm()
+			if clientID == "" {
+				clientID = r.FormValue("client_id")
+			}
+			if redirectURI == "" {
+				redirectURI = r.FormValue("redirect_uri")
+			}
+			if scope == "" {
+				scope = r.FormValue("scope")
+			}
+		}
+
+		s.logger.Info("Authorize request received",
+			"client_id", clientID,
+			"redirect_uri", redirectURI,
+			"scope", scope,
+			"method", r.Method,
+			"remote_addr", r.RemoteAddr)
+
+		// Insert redirect parameters into the request context so storage
+		// can return a client permitting the exact redirect URIs for this
+		// request. This allows dynamic, per-request redirect handling.
+		ctx := r.Context()
+		if redirectURI != "" {
+			ctx = context.WithValue(ctx, redirectURIContextKey, redirectURI)
+		}
+		// Also capture optional post_logout_redirect_uri if present
+		postLogout := r.URL.Query().Get("post_logout_redirect_uri")
+		if r.Method == http.MethodPost {
+			// Parse form quietly if needed
+			_ = r.ParseForm()
+			if postLogout == "" {
+				postLogout = r.FormValue("post_logout_redirect_uri")
+			}
+		}
+		if postLogout != "" {
+			ctx = context.WithValue(ctx, postLogoutRedirectURIContextKey, postLogout)
+		}
+
+		// Forward to the provider with the enriched context
+		r = r.WithContext(ctx)
+		s.provider.ServeHTTP(w, r)
+	})
 
 	// Add custom login UI handler (both with and without trailing slash)
 	loginHandler := s.createLoginHandler()
@@ -341,7 +428,6 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Device Verification - OIDC Test Identity Provider</title>
-    <style>
         body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
         .container { text-align: center; }
         input[type="text"] { padding: 15px; font-size: 18px; width: 300px; text-align: center; letter-spacing: 2px; font-family: monospace; }
@@ -374,32 +460,12 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
         
         <form method="POST">
             <input type="text" name="user_code" value="%s" placeholder="XXXX-XXXX" required maxlength="9" style="text-transform: uppercase;">
-            <button type="submit">Verify Device</button>
-        </form>
-        
-        <div id="user-selection" style="display: none;">
-            <h2>Select User to Authorize</h2>
-            <ul class="user-list">`, userCode)
+			<button type="submit">Verify Device</button>
+			<button onclick="denyDevice()" style="background-color: #dc3545; margin-top: 20px;">Deny Authorization</button>
+		</div>
+	</div>
 
-	// Add user selection options as buttons with aria-label containing user-id for E2E testing
-	for userID, user := range s.config.Users {
-		email := getEmailFromClaims(user.ExtraClaims)
-		html += fmt.Sprintf(`
-                <li>
-                    <button type="button" onclick="authorizeDevice('%s', '%s')" class="user-button" aria-label="%s">
-                        <span class="user-name">%s</span>
-                        <span class="user-email">%s</span>
-                    </button>
-                </li>`, userID, userCode, userID, user.DisplayName, email)
-	}
-
-	html += `
-            </ul>
-            <button onclick="denyDevice()" style="background-color: #dc3545; margin-top: 20px;">Deny Authorization</button>
-        </div>
-    </div>
-
-    <script>
+	<script>
         // Auto-focus on the input field
         document.querySelector('input[name="user_code"]').focus();
         
@@ -444,7 +510,8 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
         }
     </script>
 </body>
-</html>`
+
+</html>`, html.EscapeString(userCode))
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(html))
@@ -476,6 +543,15 @@ func (s *Server) handleLoggedOut(w http.ResponseWriter, _ *http.Request) {
 
 // handleHealth handles health check requests
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	// Emit a log line for health probe activity only when verbose logging is enabled.
+	if s != nil && s.config != nil && s.config.OIDCLD.VerboseLogging {
+		// Use pretty logger if available
+		if s.prettyLog != nil {
+			s.prettyLog.RequestLog(http.MethodGet, "/health", http.StatusOK, 0)
+		} else if s.logger != nil {
+			s.logger.Info("health probe received")
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"healthy","service":"oidcld","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))
@@ -514,6 +590,31 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 
 	// Use colorful logging for server startup
 	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true)
+
+	// If autocert manager is configured, prefer it when no cert/key provided.
+	if s.autocertManager != nil {
+		// If both autocert and explicit cert/key are provided, that's ambiguous — error out.
+		if certFile != "" || keyFile != "" {
+			return ErrAutocertConflictTLSProvided
+		}
+
+		// Use autocert TLSConfig and let the standard library's ListenAndServeTLS
+		// drive certificate obtains during TLS handshakes. This matches the
+		// myencrypt example: TLSConfig provides GetCertificate and autocert will
+		// obtain certificates on-demand during incoming connections.
+		server.TLSConfig = s.autocertManager.GetTLSConfig()
+
+		// Start HTTPS server; autocert's GetCertificate will perform obtains as
+		// necessary. We call ListenAndServeTLS with empty cert/key so the TLSConfig
+		// is used.
+		return server.ListenAndServeTLS("", "")
+	}
+
+	// No autocert manager configured: require certFile and keyFile.
+	if certFile == "" || keyFile == "" {
+		return ErrTLSMissingWithoutAutocert
+	}
+
 	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
@@ -557,11 +658,6 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 		changes = append(changes, fmt.Sprintf("Valid Scopes: %d → %d", len(s.config.OIDCLD.ValidScopes), len(newConfig.OIDCLD.ValidScopes)))
 	}
 
-	// Check for audience changes
-	if len(s.config.OIDCLD.ValidAudiences) != len(newConfig.OIDCLD.ValidAudiences) {
-		changes = append(changes, fmt.Sprintf("Valid Audiences: %d → %d", len(s.config.OIDCLD.ValidAudiences), len(newConfig.OIDCLD.ValidAudiences)))
-	}
-
 	// Check token expiration changes
 	if s.config.OIDCLD.ExpiredIn != newConfig.OIDCLD.ExpiredIn {
 		changes = append(changes, fmt.Sprintf("Token Expiry: %ds → %ds", s.config.OIDCLD.ExpiredIn, newConfig.OIDCLD.ExpiredIn))
@@ -600,8 +696,17 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		// Call the next handler
 		next.ServeHTTP(wrapper, r)
 
-		// Log the request with colorful output
+		// Log the request with colorful output, but avoid noisy health probe
+		// access logs unless verbose logging is explicitly enabled in config.
 		duration := time.Since(start)
+
+		// If this is the health endpoint and verbose logging is not enabled,
+		// skip emitting the access log entirely.
+		if r.URL != nil && r.URL.Path == "/health" {
+			if s == nil || s.config == nil || !s.config.OIDCLD.VerboseLogging {
+				return
+			}
+		}
 
 		// Check for CORS-related information for debugging
 		origin := r.Header.Get("Origin")
@@ -619,6 +724,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 // responseWriter wraps http.ResponseWriter to capture status code
 type responseWriter struct {
 	http.ResponseWriter
+
 	statusCode int
 }
 
@@ -966,11 +1072,8 @@ func (s *Server) handleDeviceFlowTokenRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Check if client is valid
-	if !slices.Contains(s.config.OIDCLD.ValidAudiences, clientID) {
-		s.writeTokenError(w, "invalid_client", "invalid client_id")
-		return
-	}
+	// In test/permissive mode we do not validate client against configured audiences here.
+	// The StorageAdapter is responsible for client validation; for testing we accept any client.
 
 	// Get device authorization from storage
 	s.storage.lock.Lock()
@@ -1064,8 +1167,49 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
+	// If the token request includes a redirect_uri (authorization_code flow),
+	// inject it into the request context so storage.GetClientByClientID can
+	// return a client that permits that exact redirect URI for validation.
+	if redirectURI := r.FormValue("redirect_uri"); redirectURI != "" {
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, redirectURIContextKey, redirectURI)
+		r = r.WithContext(ctx)
+	}
 
 	grantType := r.FormValue("grant_type")
+
+	// Log client_id and scopes for debugging invalid_scope errors
+	clientID := r.FormValue("client_id")
+	scopesStr := r.FormValue("scope")
+	var scopesList []string
+	if scopesStr != "" {
+		for _, s := range strings.Split(scopesStr, " ") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				scopesList = append(scopesList, s)
+			}
+		}
+	}
+
+	s.logger.Info("Token request received",
+		"client_id", clientID,
+		"grant_type", grantType,
+		"scopes", scopesList)
+
+	// If we can obtain a client from storage, check which scopes are not allowed
+	if clientID != "" {
+		if cli, err := s.storage.GetClientByClientID(r.Context(), clientID); err == nil && cli != nil {
+			var disallowed []string
+			for _, sc := range scopesList {
+				if !cli.IsScopeAllowed(sc) {
+					disallowed = append(disallowed, sc)
+				}
+			}
+			if len(disallowed) > 0 {
+				s.prettyLog.Warning(fmt.Sprintf("Token request contains disallowed scopes: %v", disallowed))
+			}
+		}
+	}
 
 	// Handle device flow token requests manually
 	if grantType == "urn:ietf:params:oauth:grant-type:device_code" {

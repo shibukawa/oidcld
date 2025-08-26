@@ -212,9 +212,6 @@ func (c *ClientCredentialsClient) ValidateScope(scopes []string) error {
 ```yaml
 # OpenID Connect IdP settings
 oidcld:
-  valid_audiences:
-    - "service-client"
-    - "api-client"
   valid_scopes:
     - "read"
     - "write"

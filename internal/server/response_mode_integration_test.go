@@ -1,13 +1,14 @@
 package server
 
 import (
-	"github.com/alecthomas/assert/v2"
-	"github.com/shibukawa/oidcld/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/alecthomas/assert/v2"
+	"github.com/shibukawa/oidcld/internal/config"
 )
 
 // createTestServer creates a test server with the given config
@@ -25,14 +26,8 @@ func TestResponseModeFragmentIntegration(t *testing.T) {
 	// Create test server with minimal config
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			Issuer:    "http://localhost:18888",
-			ExpiredIn: 3600,
-			ValidAudiences: []string{
-				"test-client",
-				"msal-client",
-				"traditional-client",
-				"invalid-client",
-			},
+			Issuer:      "http://localhost:18888",
+			ExpiredIn:   3600,
 			ValidScopes: []string{"read", "write", "openid", "profile", "email"},
 		},
 		Users: map[string]config.User{
@@ -186,10 +181,8 @@ func TestResponseModeFragmentIntegration(t *testing.T) {
 // TestResponseModeErrorHandling tests error responses with different response modes
 func TestResponseModeErrorHandling(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
-		Users: map[string]config.User{},
+		OIDCLD: config.OIDCLDConfig{},
+		Users:  map[string]config.User{},
 	}
 	server := createTestServer(cfg)
 	t.Run("Fragment Mode Error Response", func(t *testing.T) {
@@ -198,10 +191,10 @@ func TestResponseModeErrorHandling(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, authURL, nil)
 		w := httptest.NewRecorder()
 		server.Handler().ServeHTTP(w, req)
-		// Invalid client should return 400 (Bad Request) - this is correct behavior
-		// The OIDC library properly validates clients before processing requests
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		t.Logf("✅ Fragment mode error handling: Status %d (correct for invalid client)", w.Code)
+		// Storage is permissive in test mode; invalid client will be accepted by storage
+		// and the server will proceed to the normal authorization flow (200 or 302).
+		assert.True(t, w.Code == http.StatusOK || w.Code == http.StatusFound)
+		t.Logf("✅ Fragment mode permissive handling: Status %d (accepted in test mode)", w.Code)
 	})
 	t.Run("Query Mode Error Response", func(t *testing.T) {
 		// Make invalid authorization request with response_mode=query
@@ -209,10 +202,10 @@ func TestResponseModeErrorHandling(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, authURL, nil)
 		w := httptest.NewRecorder()
 		server.Handler().ServeHTTP(w, req)
-		// Invalid client should return 400 (Bad Request) - this is correct behavior
-		// The OIDC library properly validates clients before processing requests
-		assert.Equal(t, http.StatusBadRequest, w.Code)
-		t.Logf("✅ Query mode error handling: Status %d (correct for invalid client)", w.Code)
+		// Storage is permissive in test mode; invalid client will be accepted by storage
+		// and the server will proceed to the normal authorization flow (200 or 302).
+		assert.True(t, w.Code == http.StatusOK || w.Code == http.StatusFound)
+		t.Logf("✅ Query mode permissive handling: Status %d (accepted in test mode)", w.Code)
 	})
 }
 
@@ -220,8 +213,7 @@ func TestResponseModeErrorHandling(t *testing.T) {
 func TestResponseModeCompatibility(t *testing.T) {
 	cfg := &config.Config{
 		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"msal-client", "traditional-client"},
-			ValidScopes:    []string{"read", "write"},
+			ValidScopes: []string{"read", "write"},
 		},
 		Users: map[string]config.User{
 			"user1": {
@@ -268,9 +260,7 @@ func TestResponseModeCompatibility(t *testing.T) {
 // TestResponseModeValidation tests validation of response_mode parameter
 func TestResponseModeValidation(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			ValidAudiences: []string{"test-client"},
-		},
+		OIDCLD: config.OIDCLDConfig{},
 		Users: map[string]config.User{
 			"user1": {
 				DisplayName: "User One",
@@ -278,6 +268,7 @@ func TestResponseModeValidation(t *testing.T) {
 		},
 	}
 	server := createTestServer(cfg)
+
 	testCases := []struct {
 		name         string
 		responseMode string

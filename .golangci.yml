@@ -33,6 +33,8 @@ linters:
     - maintidx
     - forbidigo
     - gocritic
+    - wsl_v5
+    - noinlineerr
   settings:
     tagliatelle:
       case:
