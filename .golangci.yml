@@ -1,6 +1,6 @@
 version: "2"
 linters:
-  enable-all: true
+  default: all
   disable:
     - errcheck
     - goconst
@@ -33,12 +33,12 @@ linters:
     - maintidx
     - forbidigo
     - gocritic
-linters-settings:
-  tagliatelle:
-    case:
-      rules:
-        json: snake
-        yaml: snake
+  settings:
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+          yaml: snake
   exclusions:
     rules:
       # Exclude some linters from running on tests files.
