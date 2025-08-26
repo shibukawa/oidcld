@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/zitadel/oidc/v3 v3.44.0
 	golang.org/x/crypto v0.39.0
-	golang.org/x/text v0.27.0
+	golang.org/x/text v0.28.0
 )
 
 require (
