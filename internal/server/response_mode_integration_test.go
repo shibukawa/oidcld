@@ -1,13 +1,14 @@
 package server
 
 import (
-	"github.com/alecthomas/assert/v2"
-	"github.com/shibukawa/oidcld/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/alecthomas/assert/v2"
+	"github.com/shibukawa/oidcld/internal/config"
 )
 
 // createTestServer creates a test server with the given config
@@ -267,6 +268,7 @@ func TestResponseModeValidation(t *testing.T) {
 		},
 	}
 	server := createTestServer(cfg)
+
 	testCases := []struct {
 		name         string
 		responseMode string
