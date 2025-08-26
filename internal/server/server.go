@@ -724,6 +724,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 // responseWriter wraps http.ResponseWriter to capture status code
 type responseWriter struct {
 	http.ResponseWriter
+
 	statusCode int
 }
 
