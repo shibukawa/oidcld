@@ -239,12 +239,10 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 	// Load configuration; prefer explicit CLI flag but fall back to OIDCLD_CONFIG
 	// environment variable if present. Attempt cmd.Config first, and if that
 	// fails and the env var points to a different file, retry with it.
-	cfgPathTried := ""
 	cfg, err := config.LoadConfig(cmd.Config, false)
 	if err != nil {
 		log.Printf("[health] failed to load configuration from %q: %v", cmd.Config, err)
 		cfg = nil
-		cfgPathTried = cmd.Config
 		// If environment variable points to another config file, try it.
 		if envPath := os.Getenv("OIDCLD_CONFIG"); envPath != "" && envPath != cmd.Config {
 			log.Printf("[health] attempting to load configuration from OIDCLD_CONFIG=%s", envPath)
@@ -253,9 +251,6 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 				log.Printf("[health] loaded configuration from %s", envPath)
 			} else {
 				log.Printf("[health] failed to load configuration from %s: %v", envPath, err2)
-				if cfgPathTried == "" {
-					cfgPathTried = envPath
-				}
 			}
 		}
 	}
@@ -279,9 +274,10 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 					} else {
 						// No explicit port
 						hostname = host
-						if protocol == "https" {
+						switch protocol {
+						case "https":
 							port = "443"
-						} else if protocol == "http" {
+						case "http":
 							port = "80"
 						}
 					}

@@ -186,7 +186,7 @@ func TestAutocertManager_HTTPHandler(t *testing.T) {
 
 	// Create a simple fallback handler
 	fallback := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("fallback"))
 	}
 
@@ -256,7 +256,7 @@ func TestAutocertManager_HealthCheck(t *testing.T) {
 				t.Fatalf("failed to create autocert manager: %v", err)
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 
 			err = manager.HealthCheck(ctx)

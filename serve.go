@@ -10,6 +10,11 @@ import (
 	"github.com/shibukawa/oidcld/internal/server"
 )
 
+var (
+	ErrAutocertConflictProvidedFiles = fmt.Errorf("autocert is configured and automatic autocert start is available; do not provide TLS cert/key files when using autocert")
+	ErrAutocertNoCertsUnavailable    = fmt.Errorf("autocert configured but no cert/key provided and automatic autocert start is unavailable")
+)
+
 // ServeCmd represents the command to start the OpenID Connect server
 type ServeCmd struct {
 	Config   string `short:"c" help:"Configuration file path" default:"oidcld.yaml"`
@@ -65,7 +70,7 @@ func (cmd *ServeCmd) Run() error {
 			// If server supports autocert, prefer it — but error if user also provided cert/key.
 			if srv.SupportsAutocert() {
 				if cmd.CertFile != "" || cmd.KeyFile != "" {
-					return fmt.Errorf("autocert is configured and automatic autocert start is available; do not provide TLS cert/key files when using autocert")
+					return ErrAutocertConflictProvidedFiles
 				}
 				color.Cyan("🔄 Autocert is configured and available - starting HTTPS with autocert...")
 				return srv.StartTLS(cmd.Port, "", "")
@@ -77,7 +82,7 @@ func (cmd *ServeCmd) Run() error {
 			if cmd.CertFile != "" && cmd.KeyFile != "" {
 				return srv.StartTLS(cmd.Port, cmd.CertFile, cmd.KeyFile)
 			}
-			return fmt.Errorf("autocert configured but no cert/key provided and automatic autocert start is unavailable")
+			return ErrAutocertNoCertsUnavailable
 		}
 
 		color.Cyan("🔄 Starting server with TLS certificates...")

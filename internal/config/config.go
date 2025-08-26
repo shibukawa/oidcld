@@ -19,6 +19,13 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+var (
+	ErrAutocertDomainsRequired = errors.New("autocert.domains is required when autocert is enabled")
+	ErrAutocertEmailRequired   = errors.New("autocert.email is required when autocert is enabled")
+	ErrAutocertAgreeTOS        = errors.New("autocert.agree_tos must be true when autocert is enabled")
+	ErrAutocertConflict        = errors.New("autocert is enabled but TLS cert/key are also configured in oidcld config; choose one method")
+)
+
 // Static errors for better error handling.
 var (
 	ErrNoUsersConfigured    = errors.New("no users configured")
@@ -784,15 +791,15 @@ func (c *Config) ValidateAutocertConfig() error {
 	}
 
 	if len(c.Autocert.Domains) == 0 {
-		return fmt.Errorf("autocert.domains is required when autocert is enabled")
+		return ErrAutocertDomainsRequired
 	}
 
 	if c.Autocert.Email == "" {
-		return fmt.Errorf("autocert.email is required when autocert is enabled")
+		return ErrAutocertEmailRequired
 	}
 
 	if !c.Autocert.AgreeTOS {
-		return fmt.Errorf("autocert.agree_tos must be true when autocert is enabled")
+		return ErrAutocertAgreeTOS
 	}
 
 	// Set defaults for optional fields
@@ -851,7 +858,7 @@ func (c *Config) ValidateAutocertConfig() error {
 	}
 	// If autocert is enabled, disallow explicit TLS cert/key in OIDCLD config to avoid ambiguity.
 	if c.OIDCLD.TLSCertFile != "" || c.OIDCLD.TLSKeyFile != "" {
-		return fmt.Errorf("autocert is enabled but TLS cert/key are also configured in oidcld config; choose one method")
+		return ErrAutocertConflict
 	}
 	return nil
 }
@@ -900,51 +907,49 @@ func LoadConfig(configPath string, verbose bool) (*Config, error) {
 	}
 
 	// Collect environment-based autocert overrides
-	var any bool
+	var hasOverride bool
 	o := &AutocertOverrides{RenewalThreshold: -1}
 
 	if v := os.Getenv("OIDCLD_ACME_DIRECTORY_URL"); v != "" {
 		o.ACMEDirectoryURL = v
-		any = true
+		hasOverride = true
 	}
 	if v := os.Getenv("OIDCLD_ACME_EMAIL"); v != "" {
 		o.Email = v
-		any = true
+		hasOverride = true
 	}
 	if v := os.Getenv("OIDCLD_ACME_DOMAIN"); v != "" {
 		o.Domain = v
-		any = true
+		hasOverride = true
 	}
 	if v := os.Getenv("OIDCLD_ACME_CACHE_DIR"); v != "" {
 		o.CacheDir = v
-		any = true
+		hasOverride = true
 	}
 	if v := os.Getenv("OIDCLD_ACME_AGREE_TOS"); v != "" {
 		b, _ := strconv.ParseBool(v)
 		o.AgreeTOS = b
 		if b {
-			any = true
+			hasOverride = true
 		}
 	}
 	if v := os.Getenv("OIDCLD_ACME_INSECURE_SKIP_VERIFY"); v != "" {
 		b, _ := strconv.ParseBool(v)
 		o.InsecureSkipVerify = b
 		if b {
-			any = true
+			hasOverride = true
 		}
 	}
 	if v := os.Getenv("OIDCLD_ACME_RENEWAL_THRESHOLD"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			o.RenewalThreshold = n
-			any = true
+			hasOverride = true
 		}
 	}
 
 	// If any overrides were found, apply them. If none, do nothing.
-	if any {
-		if err := applyAutocertOverrides(cfg, o); err != nil {
-			return nil, fmt.Errorf("failed to apply autocert overrides: %w", err)
-		}
+	if hasOverride {
+		applyAutocertOverrides(cfg, o)
 	}
 
 	return cfg, nil
@@ -967,7 +972,7 @@ type AutocertOverrides struct {
 // (loadAutocertOverridesFromEnv removed; logic merged into LoadConfig)
 
 // applyAutocertOverrides applies autocert environment variable overrides to configuration
-func applyAutocertOverrides(cfg *Config, overrides *AutocertOverrides) error {
+func applyAutocertOverrides(cfg *Config, overrides *AutocertOverrides) {
 	// Determine whether any autocert-related environment variables are present.
 	// If so, prefer environment (Docker) and enable autocert even when the
 	// file config explicitly disables it.
@@ -1034,6 +1039,4 @@ func applyAutocertOverrides(cfg *Config, overrides *AutocertOverrides) error {
 			cfg.Autocert.CacheDir = "/tmp/autocert"
 		}
 	}
-
-	return nil
 }

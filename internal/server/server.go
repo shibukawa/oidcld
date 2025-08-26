@@ -30,6 +30,8 @@ var (
 	ErrConfigurationCannotBeNil        = fmt.Errorf("configuration cannot be nil")
 	ErrIssuerURLCannotBeChanged        = fmt.Errorf("issuer URL cannot be changed at runtime")
 	ErrSigningAlgorithmCannotBeChanged = fmt.Errorf("signing algorithm cannot be changed at runtime")
+	ErrAutocertConflictTLSProvided     = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
+	ErrTLSMissingWithoutAutocert       = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
 )
 
 // Server represents the new zitadel/oidc-based server implementation
@@ -43,7 +45,6 @@ type Server struct {
 
 	// Autocert manager (optional)
 	autocertManager *AutocertManager
-	autocertCtx     context.Context
 	autocertCancel  context.CancelFunc
 }
 
@@ -99,9 +100,8 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize autocert manager: %w", err)
 		}
-		ctx, cancel := context.WithCancel(context.Background())
+		_, cancel := context.WithCancel(context.Background())
 		server.autocertManager = am
-		server.autocertCtx = ctx
 		server.autocertCancel = cancel
 
 		// The renewal monitor is now handled via RenewBefore, so we do not start it here.
@@ -595,7 +595,7 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 	if s.autocertManager != nil {
 		// If both autocert and explicit cert/key are provided, that's ambiguous — error out.
 		if certFile != "" || keyFile != "" {
-			return fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
+			return ErrAutocertConflictTLSProvided
 		}
 
 		// Use autocert TLSConfig and let the standard library's ListenAndServeTLS
@@ -612,7 +612,7 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 
 	// No autocert manager configured: require certFile and keyFile.
 	if certFile == "" || keyFile == "" {
-		return fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+		return ErrTLSMissingWithoutAutocert
 	}
 
 	return server.ListenAndServeTLS(certFile, keyFile)

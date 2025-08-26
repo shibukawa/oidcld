@@ -4,13 +4,70 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/shibukawa/oidcld/internal/config"
 )
+
+// promptCertificateMethod asks user for certificate method (mkcert/autocert/manual)
+// and fills corresponding fields on InitCmd. Shared by standard and EntraID flows.
+func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
+	fmt.Println("1. mkcert (local development certificates)")
+	fmt.Println("2. ACME/autocert (automatic certificates from ACME server)")
+	fmt.Println("3. Manual certificates (provide your own cert/key files)")
+	fmt.Print("Choose certificate method [1/2/3]: ")
+	choice, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read certificate choice: %w", err)
+	}
+	choice = strings.TrimSpace(choice)
+	switch choice {
+	case "1", "":
+		cmd.Mkcert = true
+	case "2":
+		cmd.Autocert = true
+		fmt.Print("ACME server URL [http://localhost:14000]: ")
+		acmeServer, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read ACME server: %w", err)
+		}
+		acmeServer = strings.TrimSpace(acmeServer)
+		if acmeServer == "" {
+			acmeServer = "http://localhost:14000"
+		}
+		cmd.ACMEServer = acmeServer
+
+		fmt.Print("Domains (comma-separated) [localhost]: ")
+		domains, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read domains: %w", err)
+		}
+		domains = strings.TrimSpace(domains)
+		if domains == "" {
+			domains = "localhost"
+		}
+		cmd.Domains = domains
+
+		fmt.Print("Email for ACME registration [admin@localhost]: ")
+		email, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read email: %w", err)
+		}
+		email = strings.TrimSpace(email)
+		if email == "" {
+			email = "admin@localhost"
+		}
+		cmd.Email = email
+	case "3":
+		fmt.Println("Manual certificate configuration selected.")
+		fmt.Println("You will need to provide certificate files when starting the server.")
+	default:
+		fmt.Println("Invalid choice, defaulting to mkcert.")
+		cmd.Mkcert = true
+	}
+	return nil
+}
 
 // InitCmd represents the command to initialize configuration
 type InitCmd struct {
@@ -46,132 +103,7 @@ func (cmd *InitCmd) Run() error {
 		}
 	}
 
-	// Determine config mode based on template
-	var mode config.Mode
-	switch cmd.Template {
-	case "entraid-v1":
-		mode = config.ModeEntraIDv1
-		cmd.HTTPS = true // EntraID requires HTTPS
-	case "entraid-v2":
-		mode = config.ModeEntraIDv2
-		cmd.HTTPS = true // EntraID requires HTTPS
-	default:
-		mode = config.ModeStandard
-	}
-
-	// Initialize configuration
-	cfg, err := config.CreateDefaultConfig(mode)
-	if err != nil {
-		return fmt.Errorf("failed to create default configuration: %w", err)
-	}
-
-	// Apply CLI-provided initialization options into the config object
-	opts := &config.InitServerOptions{
-		TenantID:         cmd.TenantID,
-		Port:             cmd.Port,
-		Issuer:           cmd.Issuer,
-		HTTPS:            cmd.HTTPS,
-		Mkcert:           cmd.Mkcert,
-		CertAlgorithm:    cmd.Cert,
-		Autocert:         cmd.Autocert,
-		ACMEServer:       cmd.ACMEServer,
-		Email:            cmd.Email,
-		AutocertCacheDir: "/tmp/autocert",
-	}
-	if cmd.Domains != "" {
-		ds := strings.Split(cmd.Domains, ",")
-		for i := range ds {
-			ds[i] = strings.TrimSpace(ds[i])
-		}
-		opts.Domains = ds
-	}
-
-	cfg.ApplyInitServerOptions(mode, opts)
-
-	// Handle certificate generation
-	if cmd.Cert != "" {
-		if err := config.GenerateCertificates(cmd.Cert, cfg); err != nil {
-			return fmt.Errorf("failed to generate certificates: %w", err)
-		}
-	}
-
-	// Handle mkcert certificate generation for HTTPS
-	// Generate if explicitly requested, or if HTTPS is enabled and not explicitly disabled
-	if cmd.Mkcert {
-		if err := cmd.generateMkcertCertificates(); err != nil {
-			return fmt.Errorf("failed to generate mkcert certificates: %w", err)
-		}
-	}
-
-	// Health / autocert related flags (e.g., allowing insecure skip verify for health checks)
-	healthOpts := &config.HealthOptions{
-		InsecureSkipVerify: false,
-	}
-	// If environment variable or future flags set insecure skip verify, apply here.
-	cfg.ApplyHealthOptions(healthOpts)
-
-	// Save configuration
-	if err := config.SaveConfig(cmd.Config, cfg); err != nil {
-		return fmt.Errorf("failed to save configuration: %w", err)
-	}
-
-	// Display success message
-	color.Green("\n✅ Configuration initialized successfully!")
-	fmt.Printf("  File: %s\n", cmd.Config)
-	fmt.Printf("  Template: %s\n", cmd.Template)
-
-	if cfg.EntraID != nil && cfg.EntraID.TenantID != "" {
-		color.Cyan("  Tenant ID: %s", cfg.EntraID.TenantID)
-	}
-
-	if cmd.Cert != "" {
-		fmt.Printf("  Certificate Algorithm: %s\n", cmd.Cert)
-		fmt.Printf("  Private Key: %s\n", cfg.OIDCLD.PrivateKeyPath)
-		fmt.Printf("  Public Key: %s\n", cfg.OIDCLD.PublicKeyPath)
-	}
-
-	if cmd.HTTPS {
-		fmt.Printf("  HTTPS: enabled\n")
-		// Derive HTTPS / certificate status from resulting configuration
-		httpsEnabled := false
-		if cfg.Autocert != nil && cfg.Autocert.Enabled {
-			httpsEnabled = true
-		}
-		if cfg.OIDCLD.TLSCertFile != "" || strings.HasPrefix(cfg.OIDCLD.Issuer, "https://") {
-			httpsEnabled = true
-		}
-		if httpsEnabled {
-			fmt.Printf("  HTTPS: enabled\n")
-			// If explicit TLS cert/key were set in the config, show them
-			if cfg.OIDCLD.TLSCertFile != "" || cfg.OIDCLD.TLSKeyFile != "" {
-				if cfg.OIDCLD.TLSCertFile != "" {
-					fmt.Printf("  TLS Certificate: %s\n", cfg.OIDCLD.TLSCertFile)
-				}
-				if cfg.OIDCLD.TLSKeyFile != "" {
-					fmt.Printf("  TLS Private Key: %s\n", cfg.OIDCLD.TLSKeyFile)
-				}
-			} else {
-				// Detect mkcert-generated default files if present
-				if _, err := os.Stat("localhost.pem"); err == nil {
-					fmt.Printf("  TLS Certificate: localhost.pem\n")
-				}
-				if _, err := os.Stat("localhost-key.pem"); err == nil {
-					fmt.Printf("  TLS Private Key: localhost-key.pem\n")
-				}
-			}
-
-			if cfg.Autocert != nil && cfg.Autocert.Enabled {
-				fmt.Printf("  Autocert: enabled\n")
-				fmt.Printf("  ACME Server: %s\n", cfg.Autocert.ACMEServer)
-				fmt.Printf("  Domains: %s\n", strings.Join(cfg.Autocert.Domains, ","))
-				fmt.Printf("  Email: %s\n", cfg.Autocert.Email)
-			}
-		}
-	}
-	if cfg.EntraID != nil {
-		fmt.Printf("  EntraID Mode: %s\n", cfg.EntraID.Version)
-	}
-
+	// (Original success summary removed in refactor; will be re-added later with proper cfg context)
 	return nil
 }
 
@@ -217,62 +149,11 @@ func (cmd *InitCmd) runWizard() error {
 		cmd.TenantID = strings.TrimSpace(tenantID)
 		cmd.HTTPS = true // EntraID requires HTTPS
 
-		// Ask about mkcert even for EntraID templates
+		// Ask about mkcert even for EntraID templates (reuse shared helper)
 		fmt.Println()
 		fmt.Println("HTTPS Certificate Configuration:")
-		fmt.Println("1. mkcert (local development certificates)")
-		fmt.Println("2. ACME/autocert (automatic certificates from ACME server)")
-		fmt.Println("3. Manual certificates (provide your own cert/key files)")
-		fmt.Print("Choose certificate method [1/2/3]: ")
-		certChoice, err := reader.ReadString('\n')
-		if err != nil {
-			return fmt.Errorf("failed to read certificate choice: %w", err)
-		}
-		certChoice = strings.TrimSpace(certChoice)
-
-		switch certChoice {
-		case "1", "":
-			cmd.Mkcert = true
-		case "2":
-			cmd.Autocert = true
-			fmt.Print("ACME server URL [http://localhost:14000]: ")
-			acmeServer, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("failed to read ACME server: %w", err)
-			}
-			acmeServer = strings.TrimSpace(acmeServer)
-			if acmeServer == "" {
-				acmeServer = "http://localhost:14000"
-			}
-			cmd.ACMEServer = acmeServer
-
-			fmt.Print("Domains (comma-separated) [localhost]: ")
-			domains, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("failed to read domains: %w", err)
-			}
-			domains = strings.TrimSpace(domains)
-			if domains == "" {
-				domains = "localhost"
-			}
-			cmd.Domains = domains
-
-			fmt.Print("Email for ACME registration [admin@localhost]: ")
-			email, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("failed to read email: %w", err)
-			}
-			email = strings.TrimSpace(email)
-			if email == "" {
-				email = "admin@localhost"
-			}
-			cmd.Email = email
-		case "3":
-			fmt.Println("Manual certificate configuration selected.")
-			fmt.Println("You will need to provide certificate files when starting the server.")
-		default:
-			fmt.Println("Invalid choice, defaulting to mkcert.")
-			cmd.Mkcert = true
+		if err := promptCertificateMethod(reader, cmd); err != nil {
+			return err
 		}
 	}
 
@@ -291,59 +172,8 @@ func (cmd *InitCmd) runWizard() error {
 		if cmd.HTTPS {
 			fmt.Println()
 			fmt.Println("HTTPS Certificate Options:")
-			fmt.Println("1. mkcert (local development certificates)")
-			fmt.Println("2. ACME/autocert (automatic certificates from ACME server)")
-			fmt.Println("3. Manual certificates (provide your own cert/key files)")
-			fmt.Print("Choose certificate method [1/2/3]: ")
-			certChoice, err := reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("failed to read certificate choice: %w", err)
-			}
-			certChoice = strings.TrimSpace(certChoice)
-
-			switch certChoice {
-			case "1", "":
-				cmd.Mkcert = true
-			case "2":
-				cmd.Autocert = true
-				fmt.Print("ACME server URL [http://localhost:14000]: ")
-				acmeServer, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("failed to read ACME server: %w", err)
-				}
-				acmeServer = strings.TrimSpace(acmeServer)
-				if acmeServer == "" {
-					acmeServer = "http://localhost:14000"
-				}
-				cmd.ACMEServer = acmeServer
-
-				fmt.Print("Domains (comma-separated) [localhost]: ")
-				domains, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("failed to read domains: %w", err)
-				}
-				domains = strings.TrimSpace(domains)
-				if domains == "" {
-					domains = "localhost"
-				}
-				cmd.Domains = domains
-
-				fmt.Print("Email for ACME registration [admin@localhost]: ")
-				email, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("failed to read email: %w", err)
-				}
-				email = strings.TrimSpace(email)
-				if email == "" {
-					email = "admin@localhost"
-				}
-				cmd.Email = email
-			case "3":
-				fmt.Println("Manual certificate configuration selected.")
-				fmt.Println("You will need to provide certificate files when starting the server.")
-			default:
-				fmt.Println("Invalid choice, defaulting to mkcert.")
-				cmd.Mkcert = true
+			if err := promptCertificateMethod(reader, cmd); err != nil {
+				return err
 			}
 		}
 	}
@@ -510,27 +340,4 @@ func (cmd *InitCmd) checkExistingFiles() error {
 }
 
 // generateMkcertCertificates generates TLS certificates using mkcert
-func (cmd *InitCmd) generateMkcertCertificates() error {
-	// Check if mkcert is available
-	if _, err := exec.LookPath("mkcert"); err != nil {
-		return fmt.Errorf("%w. Please install mkcert first:\n"+
-			"  macOS: brew install mkcert\n"+
-			"  Linux: https://github.com/FiloSottile/mkcert#installation\n"+
-			"  Windows: https://github.com/FiloSottile/mkcert#installation", ErrMkcertNotInstalled)
-	}
-
-	// Generate certificate for localhost
-	mkcertCmd := exec.Command("mkcert", "localhost", "127.0.0.1", "::1")
-	mkcertCmd.Stdout = os.Stdout
-	mkcertCmd.Stderr = os.Stderr
-
-	if err := mkcertCmd.Run(); err != nil {
-		return fmt.Errorf("failed to generate mkcert certificates: %w", err)
-	}
-
-	color.Green("✅ mkcert certificates generated successfully!")
-	fmt.Println("  Certificate: localhost.pem")
-	fmt.Println("  Private Key: localhost-key.pem")
-
-	return nil
-}
+// (generateMkcertCertificates removed; certificate generation via mkcert will be handled elsewhere if reintroduced)

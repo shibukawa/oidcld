@@ -14,6 +14,11 @@ import (
 	"github.com/shibukawa/oidcld/internal/config"
 )
 
+var (
+	ErrAutocertNotEnabled      = fmt.Errorf("autocert is not enabled")
+	ErrACMEClientNotConfigured = fmt.Errorf("ACME client not configured")
+)
+
 // (No local transport or cache logging: let autocert manage caching and HTTP)
 
 // AutocertManager manages automatic HTTPS certificate acquisition and renewal.
@@ -26,7 +31,7 @@ type AutocertManager struct {
 // NewAutocertManager creates a new autocert manager with the given configuration.
 func NewAutocertManager(cfg *config.AutocertConfig, logger *Logger) (*AutocertManager, error) {
 	if cfg == nil || !cfg.Enabled {
-		return nil, fmt.Errorf("autocert is not enabled")
+		return nil, ErrAutocertNotEnabled
 	}
 
 	// Validate configuration
@@ -147,7 +152,7 @@ func (am *AutocertManager) HealthCheck(ctx context.Context) error {
 	// Check if we can reach the ACME server
 	client := am.manager.Client
 	if client == nil {
-		return fmt.Errorf("ACME client not configured")
+		return ErrACMEClientNotConfigured
 	}
 
 	// Try to get directory information from ACME server
@@ -161,18 +166,14 @@ func (am *AutocertManager) HealthCheck(ctx context.Context) error {
 		// helps when the ACME server uses a self-signed or locally-trusted cert.
 		if am.config.InsecureSkipVerify {
 			// intentionally silent
-			retryClient := *client // shallow copy
-			retryClient.HTTPClient = &http.Client{
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-				},
-			}
-
+			retryClient := &acme.Client{DirectoryURL: client.DirectoryURL}
+			retryClient.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
 			_, err2 := retryClient.Discover(ctx)
 			if err2 == nil {
 				return nil
 			}
-			return fmt.Errorf("failed to connect to ACME server (retry with insecure): %v; original: %w", err2, err)
+			// Wrap retry error; include original error message as plain text to avoid second %w/%v errorlint complaint.
+			return fmt.Errorf("failed to connect to ACME server (retry with insecure, original: %s): %w", err.Error(), err2)
 		}
 		return fmt.Errorf("failed to connect to ACME server: %w", err)
 	}
