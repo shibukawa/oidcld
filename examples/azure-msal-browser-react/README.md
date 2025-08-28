@@ -35,7 +35,7 @@ brew install mkcert
 # See: https://github.com/FiloSottile/mkcert#installation
 
 # Initialize oidcld with HTTPS and mkcert
-./oidcld init --https --mkcert
+./oidcld init --mkcert
 
 # Or use EntraID template (HTTPS automatic, mkcert optional)
 ./oidcld init --template entraid-v2 --mkcert
@@ -53,12 +53,12 @@ brew install mkcert
 1. **Start the oidcld server with HTTPS:**
    ```bash
    cd ../..
-   ./oidcld serve --https
+    ./oidcld serve --cert-file localhost.pem --key-file localhost-key.pem
    ```
    
    Or if you have custom certificate paths:
    ```bash
-   ./oidcld serve --https --cert-file localhost.pem --key-file localhost-key.pem
+    ./oidcld serve --cert-file localhost.pem --key-file localhost-key.pem
    ```
    ```
 

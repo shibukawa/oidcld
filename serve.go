@@ -20,7 +20,6 @@ type ServeCmd struct {
 	Config   string `short:"c" help:"Configuration file path" default:"oidcld.yaml"`
 	Port     string `short:"p" help:"Port to listen on" default:"18888"`
 	Watch    bool   `short:"w" help:"Watch configuration file for changes and reload automatically"`
-	HTTPS    bool   `help:"Enable HTTPS server"`
 	CertFile string `help:"Path to TLS certificate file (for HTTPS)"`
 	KeyFile  string `help:"Path to TLS private key file (for HTTPS)"`
 	Verbose  bool   `short:"v" help:"Enable verbose logging (including health check logs)" env:"OIDCLD_VERBOSE"`
@@ -36,12 +35,21 @@ func (cmd *ServeCmd) Run() error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Let config package prepare serve-time defaults and determine HTTPS
-	useHTTPS, msg := cfg.PrepareForServe(&config.ServeOptions{Port: cmd.Port, PreferHTTPS: cmd.HTTPS, Verbose: cmd.Verbose})
+	// Let config package prepare serve-time defaults (autocert may force HTTPS)
+	useHTTPS, msg := cfg.PrepareForServe(&config.ServeOptions{Port: cmd.Port, Verbose: cmd.Verbose})
 	if msg != "" {
 		color.Cyan(msg)
 	}
-	cmd.HTTPS = useHTTPS
+
+	// Auto-enable HTTPS if explicit cert files provided (both) and not already enabled via autocert
+	if !useHTTPS && cmd.CertFile != "" && cmd.KeyFile != "" {
+		useHTTPS = true
+		color.Cyan("🔧 Auto-enabling HTTPS mode due to provided certificate files")
+		// Ensure issuer uses https if previously synthesized
+		if cfg.OIDCLD.Issuer == fmt.Sprintf("http://localhost:%s", cmd.Port) {
+			cfg.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", cmd.Port)
+		}
+	}
 
 	// If autocert is enabled, log the renewal threshold days for operator visibility
 	if cfg.Autocert != nil && cfg.Autocert.Enabled {
@@ -63,7 +71,7 @@ func (cmd *ServeCmd) Run() error {
 	}
 
 	// Start server with HTTPS options
-	if cmd.HTTPS {
+	if useHTTPS {
 		// If autocert is configured but server package doesn't provide an autocert starter,
 		// attempt to start with provided cert/key. If none provided, return helpful error.
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {

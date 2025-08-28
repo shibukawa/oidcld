@@ -9,40 +9,8 @@ services:
       - ./oidcld-config.yaml:/app/oidcld.yaml:ro
     environment:
       - PORT=18888
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:18888/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-    networks:
-      - oidc-demo
-
-  # Vue.js Sample Application (Development)
-  vue-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: development
-    container_name: vue-oidc-demo
-    ports:
-      - "5173:5173"
-    environment:
-      - NODE_ENV=development
-      - VITE_OIDC_AUTHORITY=http://localhost:18888
-      - VITE_OIDC_CLIENT_ID=test-client
-      - VITE_OIDC_REDIRECT_URI=http://localhost:5173/callback
-    depends_on:
-      oidcld:
-        condition: service_healthy
-    networks:
-      - oidc-demo
-    volumes:
-      # Bind mount source code for hot reload
-      - .:/app:rw
-      # Use named volume for node_modules to avoid conflicts
-      - vue_node_modules:/app/node_modules
-    command: npm run dev -- --host 0.0.0.0
+      - OIDCLD_CONFIG=/app/config.yaml
+    cmd: ["serve"]
 
   # Vue.js Sample Application (Production)
   vue-app-prod:
@@ -58,14 +26,8 @@ services:
     depends_on:
       oidcld:
         condition: service_healthy
-    networks:
-      - oidc-demo
     profiles:
       - production
-
-networks:
-  oidc-demo:
-    driver: bridge
 
 volumes:
   vue_node_modules:

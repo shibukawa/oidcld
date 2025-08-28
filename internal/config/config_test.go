@@ -42,8 +42,14 @@ func TestInitializeConfig(t *testing.T) {
 			assert.True(t, hasAdmin, "Should contain admin user")
 			_, hasUser := config.Users["user"]
 			assert.True(t, hasUser, "Should contain user")
-			_, hasTestUser := config.Users["testuser"]
-			assert.True(t, hasTestUser, "Should contain testuser")
+			_, hasManager := config.Users["manager"]
+			assert.True(t, hasManager, "Should contain manager")
+			_, hasDeveloper := config.Users["developer"]
+			assert.True(t, hasDeveloper, "Should contain developer")
+			_, hasAnalyst := config.Users["analyst"]
+			assert.True(t, hasAnalyst, "Should contain analyst")
+			_, hasGuest := config.Users["guest"]
+			assert.True(t, hasGuest, "Should contain guest")
 
 			// Clean up for next test
 			os.Remove(configPath)
@@ -61,9 +67,6 @@ func TestGenerateConfigYAML(t *testing.T) {
 	// Verify structure and comments
 	assert.True(t, strings.Contains(yamlContent, "# OpenID Connect IdP settings"), "Should contain main comment")
 	assert.True(t, strings.Contains(yamlContent, "# Standard scopes (openid, profile, email) are always included"), "Should contain scope comment")
-	assert.True(t, strings.Contains(yamlContent, "# private_key_path:"), "Should contain private key comment")
-	assert.True(t, strings.Contains(yamlContent, "# public_key_path:"), "Should contain public key comment")
-	assert.True(t, strings.Contains(yamlContent, "# algorithm:"), "Should contain algorithm comment")
 
 	// Verify empty line between sections
 	assert.True(t, strings.Contains(yamlContent, "# User definitions\nusers:"), "Should have proper section separation")
@@ -71,7 +74,10 @@ func TestGenerateConfigYAML(t *testing.T) {
 	// Verify users section
 	assert.True(t, strings.Contains(yamlContent, "admin:"), "Should contain admin user")
 	assert.True(t, strings.Contains(yamlContent, "user:"), "Should contain user")
-	assert.True(t, strings.Contains(yamlContent, "testuser:"), "Should contain testuser")
+	assert.True(t, strings.Contains(yamlContent, "manager:"), "Should contain manager")
+	assert.True(t, strings.Contains(yamlContent, "developer:"), "Should contain developer")
+	assert.True(t, strings.Contains(yamlContent, "analyst:"), "Should contain analyst")
+	assert.True(t, strings.Contains(yamlContent, "guest:"), "Should contain guest")
 }
 
 func TestGenerateConfigYAMLWithEntraID(t *testing.T) {
@@ -145,14 +151,14 @@ func TestRemoveUser(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Remove user
-	err = RemoveUser(configPath, "testuser")
+	err = RemoveUser(configPath, "guest")
 	assert.NoError(t, err)
 
 	// Verify user was removed
 	config, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
-	_, hasTestUser := config.Users["testuser"]
-	assert.False(t, hasTestUser, "Should not contain testuser")
+	_, hasGuest := config.Users["guest"]
+	assert.False(t, hasGuest, "Should not contain guest")
 	_, hasAdmin := config.Users["admin"]
 	assert.True(t, hasAdmin, "Should still contain admin user")
 }
@@ -204,12 +210,6 @@ func TestConfigYAMLFormatting(t *testing.T) {
 	// Verify there's an empty line before "# User definitions"
 	assert.True(t, userDefLineIndex > 0, "User definitions section should not be at the beginning")
 	assert.Equal(t, "", strings.TrimSpace(lines[userDefLineIndex-1]), "Should have empty line before user definitions")
-
-	// Verify comments are present for optional fields
-	yamlStr := strings.Join(lines, "\n")
-	assert.True(t, strings.Contains(yamlStr, "# algorithm:"), "Should contain algorithm comment")
-	assert.True(t, strings.Contains(yamlStr, "# private_key_path:"), "Should contain private key comment")
-	assert.True(t, strings.Contains(yamlStr, "# public_key_path:"), "Should contain public key comment")
 }
 
 func TestConfigModes(t *testing.T) {

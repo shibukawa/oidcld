@@ -176,7 +176,6 @@ func (t *QueryConfigTool) Execute(ctx context.Context, args map[string]any) (any
 			"pkce_required":                cfg.OIDCLD.PKCERequired,
 			"nonce_required":               cfg.OIDCLD.NonceRequired,
 			"expired_in":                   cfg.OIDCLD.ExpiredIn,
-			"algorithm":                    cfg.OIDCLD.Algorithm,
 			"valid_scopes":                 cfg.OIDCLD.ValidScopes,
 			"refresh_token_enabled":        cfg.OIDCLD.RefreshTokenEnabled,
 			"refresh_token_expiry":         cfg.OIDCLD.RefreshTokenExpiry,
