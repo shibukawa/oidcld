@@ -162,7 +162,6 @@ func TestCORSMiddlewareIntegration(t *testing.T) {
 			ValidScopes:   []string{"read", "write"},
 			PKCERequired:  false,
 			NonceRequired: false,
-			Algorithm:     "RS256",
 		},
 		CORS: &config.CORSConfig{
 			Enabled:        true,

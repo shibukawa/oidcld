@@ -29,7 +29,6 @@ var (
 	ErrOperationCancelled       = errors.New("operation cancelled by user")
 	ErrConfigFileNotExist       = errors.New("configuration file does not exist")
 	ErrFilesExist               = errors.New("files already exist and would be overwritten")
-	ErrMkcertNotInstalled       = errors.New("mkcert is not installed")
 	ErrHealthCheckFailed        = errors.New("health check failed")
 )
 

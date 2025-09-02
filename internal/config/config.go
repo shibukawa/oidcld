@@ -2,12 +2,6 @@
 package config
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -28,10 +22,9 @@ var (
 
 // Static errors for better error handling.
 var (
-	ErrNoUsersConfigured    = errors.New("no users configured")
-	ErrUserNotFound         = errors.New("user not found")
-	ErrUnknownConfigKey     = errors.New("unknown configuration key")
-	ErrUnsupportedAlgorithm = errors.New("unsupported algorithm")
+	ErrNoUsersConfigured = errors.New("no users configured")
+	ErrUserNotFound      = errors.New("user not found")
+	ErrUnknownConfigKey  = errors.New("unknown configuration key")
 )
 
 // Config represents the OIDCLD configuration.
@@ -45,14 +38,11 @@ type Config struct {
 
 // OIDCLDConfig represents the core OpenID Connect configuration.
 type OIDCLDConfig struct {
-	Issuer         string   `yaml:"iss,omitempty"`
-	PKCERequired   bool     `yaml:"pkce_required,omitempty"`
-	NonceRequired  bool     `yaml:"nonce_required,omitempty"`
-	ExpiredIn      int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
-	Algorithm      string   `yaml:"algorithm,omitempty"`
-	ValidScopes    []string `yaml:"valid_scopes,omitempty"`
-	PrivateKeyPath string   `yaml:"private_key_path,omitempty"`
-	PublicKeyPath  string   `yaml:"public_key_path,omitempty"`
+	Issuer        string   `yaml:"iss,omitempty"`
+	PKCERequired  bool     `yaml:"pkce_required,omitempty"`
+	NonceRequired bool     `yaml:"nonce_required,omitempty"`
+	ExpiredIn     int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
+	ValidScopes   []string `yaml:"valid_scopes,omitempty"`
 	// TLS certificate file paths for serving HTTPS when not using autocert.
 	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
 	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
@@ -226,6 +216,160 @@ func CreateDefaultConfig(mode Mode) (*Config, error) {
 	return createDefaultConfig(mode), nil
 }
 func createDefaultConfig(mode Mode) *Config {
+	// Define base user data
+	baseUsers := map[string]User{
+		"admin": {
+			DisplayName:      "Administrator",
+			ExtraValidScopes: []string{"admin", "read", "write"},
+			ExtraClaims: map[string]any{
+				"email":       "admin@example.com",
+				"role":        "admin",
+				"given_name":  "Admin",
+				"family_name": "User",
+				"department":  "IT",
+			},
+		},
+		"user": {
+			DisplayName:      "Regular User",
+			ExtraValidScopes: []string{"read"},
+			ExtraClaims: map[string]any{
+				"email":       "user@example.com",
+				"role":        "user",
+				"given_name":  "Regular",
+				"family_name": "User",
+				"department":  "General",
+			},
+		},
+		"manager": {
+			DisplayName:      "Project Manager",
+			ExtraValidScopes: []string{"read", "write"},
+			ExtraClaims: map[string]any{
+				"email":       "manager@example.com",
+				"role":        "manager",
+				"given_name":  "Project",
+				"family_name": "Manager",
+				"department":  "Operations",
+				"teams":       []string{"development", "qa"},
+			},
+		},
+		"developer": {
+			DisplayName:      "Software Developer",
+			ExtraValidScopes: []string{"read", "write"},
+			ExtraClaims: map[string]any{
+				"email":       "developer@example.com",
+				"role":        "developer",
+				"given_name":  "John",
+				"family_name": "Doe",
+				"department":  "Engineering",
+				"skills":      []string{"golang", "javascript", "react"},
+				"employee_id": "EMP001",
+			},
+		},
+		"analyst": {
+			DisplayName:      "Data Analyst",
+			ExtraValidScopes: []string{"read"},
+			ExtraClaims: map[string]any{
+				"email":       "analyst@example.com",
+				"role":        "analyst",
+				"given_name":  "Jane",
+				"family_name": "Smith",
+				"department":  "Analytics",
+				"tools":       []string{"sql", "python", "tableau"},
+				"employee_id": "EMP002",
+			},
+		},
+		"guest": {
+			DisplayName: "Guest User",
+			ExtraClaims: map[string]any{
+				"email":       "guest@example.com",
+				"role":        "guest",
+				"given_name":  "Guest",
+				"family_name": "User",
+				"access_type": "temporary",
+			},
+		},
+	}
+
+	// Add EntraID-specific claims when in EntraID mode
+	var users map[string]User
+	if mode == ModeEntraIDv1 || mode == ModeEntraIDv2 {
+		users = make(map[string]User)
+		tenantID := "common"
+		if mode == ModeEntraIDv2 {
+			tenantID = "12345678-1234-1234-1234-123456789abc"
+		}
+
+		for userID, user := range baseUsers {
+			// Create a copy of the user
+			newUser := User{
+				DisplayName:      user.DisplayName,
+				ExtraValidScopes: user.ExtraValidScopes,
+				ExtraClaims:      make(map[string]any),
+			}
+
+			// Copy base claims
+			for k, v := range user.ExtraClaims {
+				newUser.ExtraClaims[k] = v
+			}
+
+			// Add EntraID-specific claims
+			switch userID {
+			case "admin":
+				newUser.ExtraClaims["oid"] = "00000000-0000-0000-0000-000000000001"
+				newUser.ExtraClaims["tid"] = tenantID
+				newUser.ExtraClaims["preferred_username"] = "admin@contoso.com"
+				newUser.ExtraClaims["upn"] = "admin@contoso.com"
+				newUser.ExtraClaims["roles"] = []string{"GlobalAdmin", "UserAdmin"}
+				newUser.ExtraClaims["groups"] = []string{"Administrators", "IT Staff"}
+				newUser.ExtraClaims["app_displayname"] = "OIDCLD Test Server"
+			case "user":
+				newUser.ExtraClaims["oid"] = "00000000-0000-0000-0000-000000000002"
+				newUser.ExtraClaims["tid"] = tenantID
+				newUser.ExtraClaims["preferred_username"] = "user@contoso.com"
+				newUser.ExtraClaims["upn"] = "user@contoso.com"
+				newUser.ExtraClaims["roles"] = []string{"User"}
+				newUser.ExtraClaims["groups"] = []string{"Users"}
+				newUser.ExtraClaims["app_displayname"] = "OIDCLD Test Server"
+			case "manager":
+				newUser.ExtraClaims["oid"] = "00000000-0000-0000-0000-000000000003"
+				newUser.ExtraClaims["tid"] = tenantID
+				newUser.ExtraClaims["preferred_username"] = "manager@contoso.com"
+				newUser.ExtraClaims["upn"] = "manager@contoso.com"
+				newUser.ExtraClaims["roles"] = []string{"ProjectManager", "User"}
+				newUser.ExtraClaims["groups"] = []string{"Managers", "Operations"}
+				newUser.ExtraClaims["app_displayname"] = "OIDCLD Test Server"
+			case "developer":
+				newUser.ExtraClaims["oid"] = "00000000-0000-0000-0000-000000000004"
+				newUser.ExtraClaims["tid"] = tenantID
+				newUser.ExtraClaims["preferred_username"] = "developer@contoso.com"
+				newUser.ExtraClaims["upn"] = "developer@contoso.com"
+				newUser.ExtraClaims["roles"] = []string{"Developer", "User"}
+				newUser.ExtraClaims["groups"] = []string{"Developers", "Engineering"}
+				newUser.ExtraClaims["app_displayname"] = "OIDCLD Test Server"
+			case "analyst":
+				newUser.ExtraClaims["oid"] = "00000000-0000-0000-0000-000000000005"
+				newUser.ExtraClaims["tid"] = tenantID
+				newUser.ExtraClaims["preferred_username"] = "analyst@contoso.com"
+				newUser.ExtraClaims["upn"] = "analyst@contoso.com"
+				newUser.ExtraClaims["roles"] = []string{"Analyst", "User"}
+				newUser.ExtraClaims["groups"] = []string{"Analytics", "DataTeam"}
+				newUser.ExtraClaims["app_displayname"] = "OIDCLD Test Server"
+			case "guest":
+				newUser.ExtraClaims["oid"] = "00000000-0000-0000-0000-000000000006"
+				newUser.ExtraClaims["tid"] = tenantID
+				newUser.ExtraClaims["preferred_username"] = "guest@contoso.com"
+				newUser.ExtraClaims["upn"] = "guest@contoso.com"
+				newUser.ExtraClaims["roles"] = []string{"Guest"}
+				newUser.ExtraClaims["groups"] = []string{"Guests"}
+				newUser.ExtraClaims["app_displayname"] = "OIDCLD Test Server"
+			}
+
+			users[userID] = newUser
+		}
+	} else {
+		users = baseUsers
+	}
+
 	config := &Config{
 		OIDCLD: OIDCLDConfig{
 			PKCERequired:              false,
@@ -243,30 +387,7 @@ func createDefaultConfig(mode Mode) *Config {
 			// Leave origins, methods, and headers empty to use permissive defaults
 			// This allows all origins (*), all common HTTP methods, and all common headers
 		},
-		Users: map[string]User{
-			"admin": {
-				DisplayName:      "Administrator",
-				ExtraValidScopes: []string{"admin", "read", "write"},
-				ExtraClaims: map[string]any{
-					"email": "admin@example.com",
-					"role":  "admin",
-				},
-			},
-			"user": {
-				DisplayName:      "Regular User",
-				ExtraValidScopes: []string{"read"},
-				ExtraClaims: map[string]any{
-					"email": "user@example.com",
-					"role":  "user",
-				},
-			},
-			"testuser": {
-				DisplayName: "Test User",
-				ExtraClaims: map[string]any{
-					"email": "test@example.com",
-				},
-			},
-		},
+		Users: users,
 	}
 
 	switch mode {
@@ -304,8 +425,6 @@ type InitServerOptions struct {
 	Port             string
 	Issuer           string
 	HTTPS            bool
-	Mkcert           bool
-	CertAlgorithm    string
 	Autocert         bool
 	ACMEServer       string
 	Domains          []string
@@ -398,9 +517,8 @@ func (c *Config) ApplyHealthOptions(opts *HealthOptions) {
 // ServeOptions contains parameters used by the serve command to prepare the
 // configuration before starting the server.
 type ServeOptions struct {
-	Port        string
-	PreferHTTPS bool
-	Verbose     bool
+	Port    string
+	Verbose bool
 }
 
 // PrepareForServe applies serve-time defaults to the configuration and returns
@@ -410,10 +528,10 @@ func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message str
 		return false, ""
 	}
 
-	// Start with preference provided by caller
-	useHTTPS = opts.PreferHTTPS
-
-	// If autocert is configured, prefer HTTPS and inform operator
+	// Determine HTTPS from existing issuer or autocert
+	if c.OIDCLD.Issuer != "" && strings.HasPrefix(c.OIDCLD.Issuer, "https://") {
+		useHTTPS = true
+	}
 	if c.Autocert != nil && c.Autocert.Enabled {
 		useHTTPS = true
 		message = "🔧 Auto-enabling HTTPS mode due to autocert configuration"
@@ -439,16 +557,10 @@ oidcld:{{if .OIDCLD.Issuer}}
   # iss: "http://localhost:18888"{{end}}
   pkce_required: {{.OIDCLD.PKCERequired}}
   nonce_required: {{.OIDCLD.NonceRequired}}
-  expired_in: {{.OIDCLD.ExpiredIn}}  # Token expiration in seconds{{if .OIDCLD.Algorithm}}
-  algorithm: "{{.OIDCLD.Algorithm}}"  # JWT signing algorithm{{else}}
-  # algorithm: "RS256"  # Optional, defaults to RS256{{end}}
+  expired_in: {{.OIDCLD.ExpiredIn}}  # Token expiration in seconds
   # Standard scopes (openid, profile, email) are always included
   valid_scopes:  # Optional custom scopes{{range .OIDCLD.ValidScopes}}
-    - "{{.}}"{{end}}{{if .OIDCLD.PrivateKeyPath}}
-  private_key_path: "{{.OIDCLD.PrivateKeyPath}}"      # Path to private key file{{else}}
-  # private_key_path: ".oidcld.key"      # Optional, generates at runtime if empty{{end}}{{if .OIDCLD.PublicKeyPath}}
-  public_key_path: "{{.OIDCLD.PublicKeyPath}}"       # Path to public key file{{else}}
-  # public_key_path: ".openidld.pub.key"   # Optional, generates at runtime if empty{{end}}
+    - "{{.}}"{{end}}
   refresh_token_enabled: {{.OIDCLD.RefreshTokenEnabled}}             # Enable refresh token support
   refresh_token_expiry: {{.OIDCLD.RefreshTokenExpiry}}             # Refresh token expiry in seconds (24 hours)
   end_session_enabled: {{.OIDCLD.EndSessionEnabled}}               # Enable logout/end session functionality
@@ -486,22 +598,13 @@ autocert:
 cors:
   enabled: {{.CORS.Enabled}}{{if .CORS.AllowedOrigins}}
   allowed_origins:{{range .CORS.AllowedOrigins}}
-    - "{{.}}"{{end}}{{else}}
-  # allowed_origins:
-  #   - "http://localhost:3000"
-  #   - "https://example.com"{{end}}{{if .CORS.AllowedMethods}}
+    - "{{.}}"{{end}}{{end}}{{if .CORS.AllowedMethods}}
   allowed_methods:{{range .CORS.AllowedMethods}}
-    - "{{.}}"{{end}}{{else}}
-  # allowed_methods:
-  #   - "GET"
-  #   - "POST"
-  #   - "OPTIONS"{{end}}{{if .CORS.AllowedHeaders}}
+    - "{{.}}"{{end}}{{end}}{{if .CORS.AllowedHeaders}}
   allowed_headers:{{range .CORS.AllowedHeaders}}
-    - "{{.}}"{{end}}{{else}}
-  # allowed_headers:
-  #   - "Content-Type"
-  #   - "Authorization"{{end}}
+    - "{{.}}"{{end}}{{end}}
 {{end}}
+
 # User definitions
 users:{{range $userID, $user := .Users}}
   {{$userID}}:
@@ -629,158 +732,6 @@ func applyConfigUpdate(config *Config, key string, value any) error {
 	default:
 		return fmt.Errorf("%w: %s", ErrUnknownConfigKey, key)
 	}
-	return nil
-}
-
-// GenerateCertificates generates cryptographic keys based on the specified algorithm
-func GenerateCertificates(algorithm string, cfg *Config) error {
-	// Set algorithm in config
-	cfg.OIDCLD.Algorithm = algorithm
-
-	// Set key file paths
-	cfg.OIDCLD.PrivateKeyPath = ".oidcld.key"
-	cfg.OIDCLD.PublicKeyPath = ".openidld.pub.key"
-
-	// Generate keys based on algorithm
-	switch {
-	case strings.HasPrefix(algorithm, "RS"):
-		return generateRSAKeys(algorithm)
-	case strings.HasPrefix(algorithm, "ES"):
-		return generateECDSAKeys(algorithm)
-	default:
-		return fmt.Errorf("%w: %s", ErrUnsupportedAlgorithm, algorithm)
-	}
-}
-
-// generateRSAKeys generates RSA key pair
-func generateRSAKeys(algorithm string) error {
-	// Determine key size based on algorithm
-	var keySize int
-	switch algorithm {
-	case "RS256":
-		keySize = 2048
-	case "RS384":
-		keySize = 3072
-	case "RS512":
-		keySize = 4096
-	default:
-		keySize = 2048
-	}
-
-	// Generate private key
-	privateKey, err := rsa.GenerateKey(rand.Reader, keySize)
-	if err != nil {
-		return fmt.Errorf("failed to generate RSA private key: %w", err)
-	}
-
-	// Save private key
-	privateKeyPEM := &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	}
-
-	privateKeyFile, err := os.Create(".oidcld.key")
-	if err != nil {
-		return fmt.Errorf("failed to create private key file: %w", err)
-	}
-	defer privateKeyFile.Close()
-
-	if err := os.Chmod(".oidcld.key", 0600); err != nil {
-		return fmt.Errorf("failed to set private key file permissions: %w", err)
-	}
-
-	if err := pem.Encode(privateKeyFile, privateKeyPEM); err != nil {
-		return fmt.Errorf("failed to write private key: %w", err)
-	}
-
-	// Save public key
-	publicKeyPKCS1 := x509.MarshalPKCS1PublicKey(&privateKey.PublicKey)
-
-	publicKeyPEM := &pem.Block{
-		Type:  "RSA PUBLIC KEY",
-		Bytes: publicKeyPKCS1,
-	}
-
-	publicKeyFile, err := os.Create(".openidld.pub.key")
-	if err != nil {
-		return fmt.Errorf("failed to create public key file: %w", err)
-	}
-	defer publicKeyFile.Close()
-
-	if err := pem.Encode(publicKeyFile, publicKeyPEM); err != nil {
-		return fmt.Errorf("failed to write public key: %w", err)
-	}
-
-	return nil
-}
-
-// generateECDSAKeys generates ECDSA key pair
-func generateECDSAKeys(algorithm string) error {
-	// Determine curve based on algorithm
-	var curve elliptic.Curve
-	switch algorithm {
-	case "ES256":
-		curve = elliptic.P256()
-	case "ES384":
-		curve = elliptic.P384()
-	case "ES512":
-		curve = elliptic.P521()
-	default:
-		curve = elliptic.P256()
-	}
-
-	// Generate private key
-	privateKey, err := ecdsa.GenerateKey(curve, rand.Reader)
-	if err != nil {
-		return fmt.Errorf("failed to generate ECDSA private key: %w", err)
-	}
-
-	// Save private key
-	privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal ECDSA private key: %w", err)
-	}
-
-	privateKeyPEM := &pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	}
-
-	privateKeyFile, err := os.Create(".oidcld.key")
-	if err != nil {
-		return fmt.Errorf("failed to create private key file: %w", err)
-	}
-	defer privateKeyFile.Close()
-
-	if err := os.Chmod(".oidcld.key", 0600); err != nil {
-		return fmt.Errorf("failed to set private key file permissions: %w", err)
-	}
-
-	if err := pem.Encode(privateKeyFile, privateKeyPEM); err != nil {
-		return fmt.Errorf("failed to write private key: %w", err)
-	}
-
-	// Save public key
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal ECDSA public key: %w", err)
-	}
-
-	publicKeyPEM := &pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyBytes,
-	}
-
-	publicKeyFile, err := os.Create(".openidld.pub.key")
-	if err != nil {
-		return fmt.Errorf("failed to create public key file: %w", err)
-	}
-	defer publicKeyFile.Close()
-
-	if err := pem.Encode(publicKeyFile, publicKeyPEM); err != nil {
-		return fmt.Errorf("failed to write public key: %w", err)
-	}
-
 	return nil
 }
 
@@ -929,25 +880,7 @@ func LoadConfig(configPath string, verbose bool) (*Config, error) {
 	if v := os.Getenv("OIDCLD_ACME_AGREE_TOS"); v != "" {
 		b, _ := strconv.ParseBool(v)
 		o.AgreeTOS = b
-		if b {
-			hasOverride = true
-		}
 	}
-	if v := os.Getenv("OIDCLD_ACME_INSECURE_SKIP_VERIFY"); v != "" {
-		b, _ := strconv.ParseBool(v)
-		o.InsecureSkipVerify = b
-		if b {
-			hasOverride = true
-		}
-	}
-	if v := os.Getenv("OIDCLD_ACME_RENEWAL_THRESHOLD"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			o.RenewalThreshold = n
-			hasOverride = true
-		}
-	}
-
-	// If any overrides were found, apply them. If none, do nothing.
 	if hasOverride {
 		applyAutocertOverrides(cfg, o)
 	}

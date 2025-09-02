@@ -27,11 +27,10 @@ import (
 )
 
 var (
-	ErrConfigurationCannotBeNil        = fmt.Errorf("configuration cannot be nil")
-	ErrIssuerURLCannotBeChanged        = fmt.Errorf("issuer URL cannot be changed at runtime")
-	ErrSigningAlgorithmCannotBeChanged = fmt.Errorf("signing algorithm cannot be changed at runtime")
-	ErrAutocertConflictTLSProvided     = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
-	ErrTLSMissingWithoutAutocert       = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+	ErrConfigurationCannotBeNil    = fmt.Errorf("configuration cannot be nil")
+	ErrIssuerURLCannotBeChanged    = fmt.Errorf("issuer URL cannot be changed at runtime")
+	ErrAutocertConflictTLSProvided = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
+	ErrTLSMissingWithoutAutocert   = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
 )
 
 // Server represents the new zitadel/oidc-based server implementation
@@ -629,20 +628,6 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 	if s.config.OIDCLD.Issuer != newConfig.OIDCLD.Issuer {
 		return fmt.Errorf("%w: old=%s, new=%s",
 			ErrIssuerURLCannotBeChanged, s.config.OIDCLD.Issuer, newConfig.OIDCLD.Issuer)
-	}
-
-	// Validate algorithm hasn't changed (would require new keys)
-	oldAlgorithm := s.config.OIDCLD.Algorithm
-	if oldAlgorithm == "" {
-		oldAlgorithm = "RS256" // Default
-	}
-	newAlgorithm := newConfig.OIDCLD.Algorithm
-	if newAlgorithm == "" {
-		newAlgorithm = "RS256" // Default
-	}
-	if oldAlgorithm != newAlgorithm {
-		return fmt.Errorf("%w: old=%s, new=%s",
-			ErrSigningAlgorithmCannotBeChanged, oldAlgorithm, newAlgorithm)
 	}
 
 	// Track changes for colorful logging

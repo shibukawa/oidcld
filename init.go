@@ -8,15 +8,15 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+	cfgpkg "github.com/shibukawa/oidcld/internal/config"
 )
 
-// promptCertificateMethod asks user for certificate method (mkcert/autocert/manual)
+// promptCertificateMethod asks user for certificate method (manual/ACME)
 // and fills corresponding fields on InitCmd. Shared by standard and EntraID flows.
 func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
-	fmt.Println("1. mkcert (local development certificates)")
-	fmt.Println("2. ACME/autocert (automatic certificates from ACME server)")
-	fmt.Println("3. Manual certificates (provide your own cert/key files)")
-	fmt.Print("Choose certificate method [1/2/3]: ")
+	fmt.Println("1. Manual certificates (provide your own cert/key files)")
+	fmt.Println("2. ACME (Let's Encrypt's protocol for automatic certificates)")
+	fmt.Print("Choose certificate method [1/2]: ")
 	choice, err := reader.ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("failed to read certificate choice: %w", err)
@@ -24,7 +24,14 @@ func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
 	choice = strings.TrimSpace(choice)
 	switch choice {
 	case "1", "":
-		cmd.Mkcert = true
+		fmt.Println("Manual certificate configuration selected.")
+		fmt.Println("You will need to provide certificate files when starting the server.")
+		fmt.Println()
+		fmt.Println("For local development, you can use mkcert:")
+		fmt.Println("  1. Install mkcert: https://github.com/FiloSottile/mkcert")
+		fmt.Println("  2. Run: mkcert -install")
+		fmt.Println("  3. Generate certificates: mkcert localhost")
+		fmt.Println("  4. Start server: ./oidcld serve --cert-file localhost.pem --key-file localhost-key.pem")
 	case "2":
 		cmd.Autocert = true
 		fmt.Print("ACME server URL [http://localhost:14000]: ")
@@ -38,7 +45,7 @@ func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
 		}
 		cmd.ACMEServer = acmeServer
 
-		fmt.Print("Domains (comma-separated) [localhost]: ")
+		fmt.Print("OIDC server domains for certificates (comma-separated) [localhost]: ")
 		domains, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read domains: %w", err)
@@ -59,12 +66,9 @@ func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
 			email = "admin@localhost"
 		}
 		cmd.Email = email
-	case "3":
-		fmt.Println("Manual certificate configuration selected.")
-		fmt.Println("You will need to provide certificate files when starting the server.")
 	default:
-		fmt.Println("Invalid choice, defaulting to mkcert.")
-		cmd.Mkcert = true
+		fmt.Println("Invalid choice, defaulting to manual certificates.")
+		fmt.Println("You will need to provide certificate files when starting the server.")
 	}
 	return nil
 }
@@ -76,9 +80,7 @@ type InitCmd struct {
 	TenantID string `help:"Tenant ID for EntraID templates"`
 	Port     string `short:"p" help:"Port number for issuer URL"`
 	Issuer   string `help:"Custom issuer URL"`
-	Cert     string `help:"Generate certificate with algorithm" enum:"RS256,RS384,RS512,ES256,ES384,ES512," default:""`
 	HTTPS    bool   `help:"Enable HTTPS mode (default for EntraID templates)"`
-	Mkcert   bool   `help:"Generate mkcert certificates for HTTPS"`
 	// ACME/Autocert settings
 	Autocert   bool   `help:"Enable autocert for automatic HTTPS certificates"`
 	ACMEServer string `help:"ACME server URL for autocert" env:"OIDCLD_ACME_DIRECTORY_URL"`
@@ -96,14 +98,74 @@ func (cmd *InitCmd) Run() error {
 		}
 	}
 
-	// Check for existing files unless overwrite is specified
-	if !cmd.Overwrite {
+	// If run non-interactively (template specified) perform existence check
+	if cmd.Template != "" && !cmd.Overwrite {
 		if err := cmd.checkExistingFiles(); err != nil {
 			return err
 		}
 	}
 
-	// (Original success summary removed in refactor; will be re-added later with proper cfg context)
+	// Determine mode from template
+	mode := cfgpkg.ModeStandard
+	switch cmd.Template {
+	case "entraid-v1":
+		mode = cfgpkg.ModeEntraIDv1
+	case "entraid-v2":
+		mode = cfgpkg.ModeEntraIDv2
+	}
+
+	// Create default config for selected mode
+	cfg, err := cfgpkg.CreateDefaultConfig(mode)
+	if err != nil {
+		return fmt.Errorf("failed to create default config: %w", err)
+	}
+
+	// Apply init options (port / issuer / tenant / autocert)
+	var domains []string
+	if strings.TrimSpace(cmd.Domains) != "" {
+		parts := strings.Split(cmd.Domains, ",")
+		for _, p := range parts {
+			d := strings.TrimSpace(p)
+			if d != "" {
+				domains = append(domains, d)
+			}
+		}
+	}
+	cfg.ApplyInitServerOptions(mode, &cfgpkg.InitServerOptions{
+		TenantID:   cmd.TenantID,
+		Port:       cmd.Port,
+		Issuer:     cmd.Issuer,
+		HTTPS:      cmd.HTTPS,
+		Autocert:   cmd.Autocert,
+		ACMEServer: cmd.ACMEServer,
+		Domains:    domains,
+		Email:      cmd.Email,
+	})
+
+	// Save configuration file
+	if err := cfgpkg.SaveConfig(cmd.Config, cfg); err != nil {
+		return fmt.Errorf("failed to save configuration: %w", err)
+	}
+
+	// Success summary
+	color.Green("✅ Initialization complete")
+	fmt.Printf("  Config file: %s\n", cmd.Config)
+	if cmd.Autocert {
+		fmt.Printf("  ACME enabled (server: %s)\n", cmd.ACMEServer)
+		fmt.Println("  Place any required cache dir or ensure ports 80/443 accessible.")
+		fmt.Println("  (For a custom ACME like 'myencrypt', set --acme-server URL appropriately.)")
+	} else if cmd.HTTPS {
+		fmt.Println()
+		fmt.Println("HTTPS enabled - provide certificate files when starting:")
+		fmt.Println("  ./oidcld serve --cert-file <cert.pem> --key-file <key.pem>")
+		fmt.Println()
+		fmt.Println("For local development with mkcert:")
+		fmt.Println("  1. Install mkcert: https://github.com/FiloSottile/mkcert")
+		fmt.Println("  2. Run: mkcert -install")
+		fmt.Println("  3. Generate: mkcert localhost")
+		fmt.Println("  4. Start: ./oidcld serve --cert-file localhost.pem --key-file localhost-key.pem")
+	}
+	fmt.Println()
 	return nil
 }
 
@@ -202,52 +264,9 @@ func (cmd *InitCmd) runWizard() error {
 	}
 	cmd.Issuer = strings.TrimSpace(issuer)
 
-	// Certificate generation
-	fmt.Println()
-	fmt.Println("Certificate generation:")
-	fmt.Println("1. No certificate generation (default)")
-	fmt.Println("2. RS256 (RSA 2048-bit)")
-	fmt.Println("3. RS384 (RSA 3072-bit)")
-	fmt.Println("4. RS512 (RSA 4096-bit)")
-	fmt.Println("5. ES256 (ECDSA P-256)")
-	fmt.Println("6. ES384 (ECDSA P-384)")
-	fmt.Println("7. ES512 (ECDSA P-521)")
-	fmt.Print("Enter choice [1-7] (default: 1): ")
-
-	certChoice, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("failed to read certificate choice: %w", err)
-	}
-	certChoice = strings.TrimSpace(certChoice)
-
-	switch certChoice {
-	case "", "1":
-		cmd.Cert = ""
-	case "2":
-		cmd.Cert = "RS256"
-	case "3":
-		cmd.Cert = "RS384"
-	case "4":
-		cmd.Cert = "RS512"
-	case "5":
-		cmd.Cert = "ES256"
-	case "6":
-		cmd.Cert = "ES384"
-	case "7":
-		cmd.Cert = "ES512"
-	default:
-		return fmt.Errorf("%w: %s", ErrInvalidCertificateChoice, certChoice)
-	}
-
 	// Overwrite confirmation
 	if !cmd.Overwrite {
 		filesToCheck := []string{cmd.Config}
-		if cmd.Cert != "" {
-			filesToCheck = append(filesToCheck, ".oidcld.key", ".oidcld.pub.key")
-		}
-		if cmd.Mkcert || cmd.HTTPS {
-			filesToCheck = append(filesToCheck, "localhost.pem", "localhost-key.pem")
-		}
 
 		var existingFiles []string
 		for _, file := range filesToCheck {
@@ -270,6 +289,8 @@ func (cmd *InitCmd) runWizard() error {
 			if overwriteChoice != "y" && overwriteChoice != "yes" {
 				return ErrOperationCancelled
 			}
+			// Mark overwrite accepted so later run() skip duplicate existence check
+			cmd.Overwrite = true
 		}
 	}
 
@@ -286,16 +307,10 @@ func (cmd *InitCmd) runWizard() error {
 	if cmd.Issuer != "" {
 		fmt.Printf("  Issuer: %s\n", cmd.Issuer)
 	}
-	if cmd.Cert != "" {
-		fmt.Printf("  Certificate: %s\n", cmd.Cert)
-	}
 	if cmd.HTTPS {
 		fmt.Printf("  HTTPS: enabled\n")
-		if cmd.Mkcert {
-			fmt.Printf("  mkcert: enabled\n")
-		}
 		if cmd.Autocert {
-			fmt.Printf("  autocert: enabled\n")
+			fmt.Printf("  ACME: enabled\n")
 			fmt.Printf("  ACME server: %s\n", cmd.ACMEServer)
 			fmt.Printf("  domains: %s\n", cmd.Domains)
 		}
@@ -306,19 +321,9 @@ func (cmd *InitCmd) runWizard() error {
 	return nil
 }
 
-// checkExistingFiles checks if configuration or key files already exist
+// checkExistingFiles checks if configuration files already exist
 func (cmd *InitCmd) checkExistingFiles() error {
 	filesToCheck := []string{cmd.Config}
-
-	// Add key files if certificate generation is requested
-	if cmd.Cert != "" {
-		filesToCheck = append(filesToCheck, ".oidcld.key", ".oidcld.pub.key")
-	}
-
-	// Add mkcert certificate files if HTTPS is enabled
-	if cmd.Mkcert || cmd.HTTPS {
-		filesToCheck = append(filesToCheck, "localhost.pem", "localhost-key.pem")
-	}
 
 	var existingFiles []string
 	for _, file := range filesToCheck {
@@ -339,5 +344,4 @@ func (cmd *InitCmd) checkExistingFiles() error {
 	return nil
 }
 
-// generateMkcertCertificates generates TLS certificates using mkcert
-// (generateMkcertCertificates removed; certificate generation via mkcert will be handled elsewhere if reintroduced)
+// (Automatic mkcert certificate generation removed by request; users are guided to run mkcert manually.)

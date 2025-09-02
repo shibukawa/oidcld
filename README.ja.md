@@ -1,716 +1,295 @@
-# ローカル開発用OpenID Connect: OpenID Connect テスト用アイデンティティプロバイダー
+# ローカル開発用 OpenID Connect: OIDCLD
+
+テストと開発のために設計されたフェイクな OpenID Connect アイデンティティプロバイダー (IdP)。
+
+[![CI](https://github.com/shibukawa/oidcld/actions/workflows/ci.yml/badge.svg)](https://github.com/shibukawa/oidcld/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/shibukawa/oidcld)](https://github.com/shibukawa/oidcld/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/shibukawa/oidcld)](go.mod)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE.md)
+[![Container](https://img.shields.io/badge/GHCR-oidcld-0f5fff?logo=docker)](https://github.com/shibukawa/oidcld/pkgs/container/oidcld)
+
+English: see [README.md](README.md)
+
+## 目次
+- [用語](#用語)
+- [主な機能](#主な機能)
+- [ユースケース](#ユースケース)
+- [3. EntraID 互換モード (MSAL / Azure スタイルのクレーム)](#3-entraid-互換モード-msal--azure-スタイルのクレーム)
+- [HTTPS 設定](#https-設定)
+- [OIDCLD 向けの MSAL 設定例](#oidcld-向けの-msal-設定例)
+- [CLI サマリー](#cli-サマリー)
+- [セキュリティ上の制約](#セキュリティ上の制約)
+- [ライセンス](#ライセンス)
 
 ![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
 
 ## 用語
 
-このプロジェクトでは、xUnitテストパターンの用語を使用して、その目的と機能を明確に説明しています：
+このプロジェクトは xUnit テストパターンの用語を用いて目的と機能を明確にしています。
 
-### **フェイク vs モック**
-- **フェイク**: 簡略化された動作を持つ実用的な実装で、テストに適しています。フェイクは実際のビジネスロジックを持ちますが、ショートカット（例：データベースの代わりにインメモリストレージ）を取ります。
-- **モック**: インタラクションを記録し、期待値をアサートすることで動作を検証するオブジェクト。
+### フェイク vs モック
+- フェイク: 簡略化された動作を持つ実用的な実装でテストに適します。実際のビジネスロジックは持ちますが、インメモリ保管などのショートカットを取ります。
+- モック: 相互作用を記録し期待値で検証するテスト用オブジェクト。
 
-### **このプロジェクトは「フェイク」です**
-このOpenID Connectアイデンティティプロバイダーは**フェイク**実装です。なぜなら：
-- 実際のプロトコル準拠を持つ完全に機能するOpenID Connectサーバーを提供
-- 簡略化された実装（インメモリストレージ、テスト証明書、ユーザー選択UI）を使用
+### このプロジェクトは「フェイク」です
+この OpenID Connect アイデンティティプロバイダーは以下の理由からフェイク実装です:
+- 実際のプロトコル準拠を満たす機能的な OIDC サーバーを提供
+- 簡略化された構成 (インメモリ、テスト証明書、ユーザー選択 UI)
 - テスト目的で実際の認証フローを有効化
-- モックのように特定のインタラクションを検証したり期待値をアサートしたりしない
-
-「フェイク」という用語は、テストシナリオにおけるこのツールの役割を正確に表現しています - 開発およびテスト環境専用に設計された実際の動作するアイデンティティプロバイダーです。
-
-## サービスの目的
-
-### 概要
-テストおよび開発目的で設計されたフェイクOpenID Connectアイデンティティプロバイダー（IdP）。成熟した**zitadel/oidcライブラリ**上に構築され、開発とテストに必要なシンプルさを維持しながら、エンタープライズグレードのOpenID Connect準拠を提供します。
-
-### 主な機能
-- テスト用の標準準拠OpenID Connect認証フローを提供
-- 実際の認証情報なしで簡単なユーザー選択によるログインを有効化
-- ローカルおよびテスト環境の開発ワークフローをサポート
-- OpenID Connect認証を必要とするアプリケーションのE2Eテストを促進
-- Microsoft EntraID/AzureADクライアントおよびMSALライブラリと互換
+- モックのように特定の相互作用検証や期待値アサートは行わない
 
 ----
 
 ![screenshot](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/login-screen.png)
 
-**ログイン画面:** パスワードなしのクリックのみのログイン。テストをスムーズにします。特別な**ローカル時のみのログインなしロジック**とはおさらばです。
+ログイン画面: パスワード不要—クリックでログイン。テストに便利。開発環境だけのログイン回避はもう不要です。
 
 ----
 
-### コア機能
-- **標準準拠実装**: 完全なOpenID Connect Core 1.0準拠のためのzitadel/oidc v3ライブラリ上に構築
-- **複数のOAuth 2.0/OpenID Connectフロー**: 認可コードフロー、クライアント認証情報フロー、デバイスフロー、リフレッシュトークンフロー
-- **レスポンスモードサポート**: クエリモードとフラグメントモード（EntraID/AzureAD互換性に必要）
-- **PKCEサポート**: セキュリティ強化のためのProof Key for Code Exchange実装
-- **リフレッシュトークンサポート**: 長期セッション用のオプションのリフレッシュトークン生成と検証
-- **エンドセッションサポート**: 設定可能なディスカバリ可視性を持つOpenID Connect RP-Initiated Logout
-- **HTTPSサポート**: 信頼できるローカル証明書のためのmkcert統合を持つネイティブHTTPSサーバー
-- **OpenIDディスカバリ**: 標準準拠の`/.well-known/openid-configuration`エンドポイント
-- **カスタムJWTクレーム**: YAML設定でJWTトークンに追加情報をサポート
-- **EntraID/AzureAD互換性**: フラグメントモードサポートによる完全なMicrosoftエコシステム統合
-- **MCPサーバーモード**: 設定管理と自動化のためのModel Context Protocolサーバー
-- **シンプルなユーザー管理**: スコープベースのアクセス制御を持つYAML設定ファイルで定義されたユーザー
-- **エンタープライズ対応**: 実戦テスト済みの暗号化実装による本格的なセキュリティ
+## 主な機能
+- ローカルテスト環境向けの OpenID Connect IdP (❌ 本番環境では使用しないでください)
+  - 複数フロー: Authorization Code / Client Credentials / Device / Refresh Token
+  - PKCE 対応: セキュリティ強化のための Proof Key for Code Exchange
+  - リフレッシュトークン: 長期セッション向けに任意で発行/検証
+  - End Session: RP-Initiated Logout (ディスカバリ掲載は設定可能)
+  - OpenID ディスカバリ: `/.well-known/openid-configuration`
+- ローカルテストに最適
+  - Docker との相性良好: DB などの永続ストレージ不要。単一の設定ファイルで動作
+  - 迅速なログイン: ユーザー名をクリックするだけ (パスワード不要)
+  - カスタム JWT クレーム: YAML で追加クレームを付与可能
+- EntraID/AzureAD 互換:
+  - MSAL.js でのテストに対応
 
-## デプロイメント
+## ユースケース
 
-### 環境要件
-- 単一バイナリ（Go 1.24で記述）
-- データベース不要（インメモリストレージ）
-- ユーザー定義用のYAML設定ファイル
+起動スタイルは「単体バイナリ / コンテナ」の 2 種類、API は「標準 OIDC / EntraID 互換」の 2 モードがあります。
 
-### セットアップ手順
+### 1. シンプルなローカルサーバー (標準 OIDC)
 
-#### インストールオプション
+ローカルに `oidcld` バイナリをそのまま実行。最速の反復と最小の構成で試せます。
 
-**オプション1: Go Get Tool（Go 1.24+）**
-```bash
-go get -tool github.com/shibukawa/oidcld@latest
+```mermaid
+flowchart TB
+  DevApp[Local App (React/Vite, Go, Node, etc)] -->|Auth Code / Device / Client Credentials| OIDCLD[oidcld Binary\nhttp://localhost:18888]
+  OIDCLD --> Config[(oidcld.yaml)]
+  OIDCLD --> Users[In-Memory Users]
 ```
 
-**オプション2: GitHub Releasesからダウンロード**
-1. [GitHubリリースページ](https://github.com/shibukawa/oidcld/releases)にアクセス
-2. お使いのオペレーティングシステムに適したバイナリをダウンロード
-3. バイナリを実行可能にする（Unix系システムの場合）: `chmod +x oidcld`
+ポイント:
+- デフォルトは HTTP (ポート 18888)
+- 必要なのは YAML (`oidcld.yaml`) + 生成される鍵ペアのみ
+- クリックログインのユーザー選択 UI (パスワード不要)
+- プロトタイピングやユニット/統合テストに最適
 
-**オプション3: Docker**
+クイックスタート:
+```bash
+./oidcld init            # 設定と鍵を生成
+./oidcld                 # http://localhost:18888 で起動
+open http://localhost:18888/.well-known/openid-configuration
+```
+
+HTTPS は後から mkcert で証明書を作成し、`--cert-file/--key-file` で指定して有効化できます。
+
+インストール (Option 1: Go install; Go 1.24+):
+```bash
+go install github.com/shibukawa/oidcld@latest
+```
+`$GOBIN` を `PATH` に通してください。
+
+インストール (Option 2: GitHub Releases からダウンロード)
+1. [GitHub Releases](https://github.com/shibukawa/oidcld/releases) へアクセス
+2. ご利用の OS 向けバイナリをダウンロード
+3. (Unix 系) 実行権限付与: `chmod +x oidcld`
+
+### 2. Docker モード (標準 OIDC)
+
+oidcld と SPA/API をコンテナで実行。チーム/CI で再現性のある環境を構築。
+
 ```bash
 docker pull ghcr.io/shibukawa/oidcld
 ```
 
-#### 設定と起動
-1. キーを使用して初期設定を生成: `./oidcld init`
-   - 標準OpenID、EntraID v1、またはEntraID v2のオプションを持つインタラクティブセットアップ
-   - mkcert証明書生成を持つHTTPS設定
-   - 暗号化キーファイル（`.oidcld.key`、`.oidcld.pub.key`）を生成
-   - YAML設定ファイル（`oidcld.yaml`）を作成
-2. 生成されたYAML設定ファイルでユーザーを設定
-3. サービスを開始: `./oidcld` または `./oidcld --config your-config.yaml`
-4. HTTPS用: `./oidcld --https`（デフォルトでlocalhost.pem/localhost-key.pemを使用）
-
-### 設定
-- **ポート**: 18888（デフォルト）
-  - コマンドライン: `--port 8080`
-  - 環境変数: `PORT=8080`
-- **設定ファイル**: oidcld.yaml（デフォルト）
-  - コマンドライン: `--config config.yaml`
-- **暗号化キー**: セキュリティのための外部キーファイル
-  - 秘密キー: `.oidcld.key`（デフォルト、存在しない場合は実行時に生成）
-  - 公開キー: `.oidcld.pub.key`（デフォルト、存在しない場合は実行時に生成）
-- **ユーザー設定**: YAML設定ファイルでユーザーを定義
-
-#### YAML設定サンプル
-```yaml
-# OpenID Connect IdP設定
-oidcld:
-  # iss: "http://localhost:18888"
-  pkce_required: false
-  nonce_required: false
-  expired_in: 3600  # トークン有効期限（秒）
-  # algorithm: "RS256"  # オプション、デフォルトはRS256
-  # 標準スコープ（openid、profile、email）は常に含まれます
-  valid_scopes:  # オプションのカスタムスコープ
-    - "admin"
-    - "read"
-    - "write"
-  # private_key_path: ".oidcld.key"      # オプション、空の場合は実行時に生成
-  # public_key_path: ".oidcld.pub.key"   # オプション、空の場合は実行時に生成
-  refresh_token_enabled: true             # リフレッシュトークンサポートを有効化
-  refresh_token_expiry: 86400             # リフレッシュトークン有効期限（秒、24時間）
-  end_session_enabled: true               # ログアウト/エンドセッション機能を有効化
-  end_session_endpoint_visible: true      # ディスカバリでend_session_endpointを表示（オプション）
-
-# EntraID/AzureAD互換性設定
-entraid:
-  tenant_id: "12345678-1234-1234-1234-123456789abc"
-  version: "v2"
-
-# SPA開発用のCORS（Cross-Origin Resource Sharing）設定
-cors:
-  enabled: true                           # CORSサポートを有効化
-  allowed_origins:                        # 許可されたオリジンのリスト
-    - "http://localhost:3000"             # React/Vue開発サーバー
-    - "http://localhost:5173"             # Vite開発サーバー
-    - "https://localhost:3000"            # HTTPS開発サーバー
-  allowed_methods:                        # 許可されたHTTPメソッド
-    - "GET"
-    - "POST"
-    - "OPTIONS"
-  allowed_headers:                        # 許可されたリクエストヘッダー
-    - "Content-Type"
-    - "Authorization"
-    - "Accept"
-
-# ユーザー定義
-users:
-  user1:
-    display_name: "田中太郎"
-    extra_valid_scopes:
-      - "admin"
-      - "read"
-      - "write"
-    extra_claims:
-      email: "tanaka@example.com"
-      role: "admin"
-      department: "engineering"
-  user2:
-    display_name: "佐藤花子"
-    extra_valid_scopes:
-      - "read"
-    extra_claims:
-      email: "sato@example.com"
-      role: "user"
-      department: "marketing"
-  testuser:
-    display_name: "テストユーザー"
-    extra_claims:
-      email: "test@example.com"
-      groups: ["testers", "developers"]
+```mermaid
+flowchart TB
+  Browser[Browser SPA Container\n:5173 or :80] -->|OIDC Flows| OIDCLDContainer[oidcld Container\n:18888]
+  OIDCLDContainer --> Volume[(Mounted oidcld.yaml)]
 ```
 
-### サービスの実行
-```bash
-./oidcld                           # OpenID Connectサーバーを開始（デフォルト設定: oidcld.yaml）
-./oidcld --config config.yaml     # カスタム設定ファイルで開始
-./oidcld --watch                   # ファイル変更時の自動設定リロードで開始
-./oidcld -w --config config.yaml  # カスタム設定とウォッチモードで開始
-./oidcld --https                   # HTTPSで開始（localhost.pem/localhost-key.pemを使用）
-./oidcld --https --cert-file cert.pem --key-file key.pem  # カスタム証明書で開始
-./oidcld mcp                       # MCPサーバーとして開始（stdin/stdoutモード）
-./oidcld mcp --port 3001          # MCP HTTPサーバーとして開始
-```
+ポイント:
+- `oidcld.yaml` はボリュームで共有 (その他の設定は環境変数で指定可能)
+- ヘルスチェックで依存サービスの起動順制御が可能
+- ローカルモードと同等のフロー。設定ファイルのホットリロードも可能
 
-#### mkcertを使用したHTTPSセットアップ
-
-信頼できる証明書を使用したテスト用HTTPS：
-
-```bash
-# mkcertをインストール（macOS）
-brew install mkcert
-
-# mkcertをインストール（Linux/Windows）
-# 参照: https://github.com/FiloSottile/mkcert#installation
-
-# HTTPSとmkcertで初期化
-./oidcld init --https --mkcert
-
-# mkcertを使用したEntraIDテンプレート（HTTPSは自動）
-./oidcld init --template entraid-v2 --mkcert
-
-# またはインタラクティブウィザードを使用
-./oidcld init
-# 選択: 標準OpenID ConnectまたはEntraIDテンプレート
-# 標準の場合: HTTPSを有効化: y
-# EntraIDの場合: HTTPSは自動的に有効化
-# mkcert証明書を生成: y
-
-# HTTPSサーバーを開始
-./oidcld --https
-```
-
-#### ウォッチモード
-
-`--watch`（`-w`）オプションは、設定ファイルが変更されたときの自動設定リロードを有効にします：
-
-```bash
-./oidcld --watch
-# または
-./oidcld -w
-```
-
-**機能:**
-- **自動リロード**: ファイルが変更されると設定が自動的にリロードされます
-- **デバウンス更新**: 複数の迅速な変更は過度なリロードを避けるためにデバウンスされます
-- **検証**: 無効な設定は拒否され、以前の有効な設定が保持されます
-- **実行時安全性**: 発行者URLや署名アルゴリズムなどの重要な設定は実行時に変更できません
-- **カラー出力**: 設定詳細とともにリロード成功/失敗の明確でカラフルなフィードバック
-- **詳細ログ**: より良い可読性のための視覚的インジケーターと絵文字
-
-**実行時に変更可能なもの:**
-- ユーザー定義とクレーム
-- 有効なオーディエンスとスコープ
-- トークン有効期限設定
-- PKCEとnonce要件
-- リフレッシュトークン設定
-
-**再起動が必要なもの:**
-- 発行者URL
-- 署名アルゴリズム
-- ポート番号
-- 証明書/キーファイル
-
-**ワークフロー例:**
-1. ウォッチモードでサーバーを開始: `./oidcld --watch`
-2. `oidcld.yaml`を編集して新しいユーザーを追加または設定を変更
-3. ファイルを保存 - 設定が自動的にリロードされます
-4. リロード確認と検証エラーのログを確認
-
-**カラー出力例:**
-- 🚀 緑色のサーバー起動メッセージ
-- 🔄 シアン色の設定リロードメッセージ
-- ✅ 緑色の成功メッセージ
-- ❌ 赤色のエラーメッセージ
-- 🌐 カラーコード化されたステータスコードを持つHTTPリクエストログ
-### リフレッシュトークンサポート
-
-リフレッシュトークンが有効な場合、トークンエンドポイントはアクセストークンとリフレッシュトークンの両方を返します：
-
-```json
-{
-  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "refresh_token": "def50200e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
-```
-
-#### リフレッシュトークンの使用
-
-アクセストークンをリフレッシュするには、トークンエンドポイントにPOSTリクエストを送信します：
-
-```bash
-curl -X POST http://localhost:18888/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=refresh_token&refresh_token=def50200e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-```
-
-#### 設定オプション
+Compose 最小例 (抜粋):
 
 ```yaml
-oidcld:
-  refresh_token_enabled: true    # リフレッシュトークン生成を有効/無効
-  refresh_token_expiry: 86400    # リフレッシュトークン有効期限（秒、デフォルト: 24時間）
-  expired_in: 3600               # アクセストークン有効期限（秒、デフォルト: 1時間）
+services:
+  oidcld:
+    image: ghcr.io/shibukawa/oidcld:latest
+    ports:
+      - "18888:18888"
+    volumes:
+      - ./oidcld.yaml:/app/oidcld.yaml:ro
+    command: ["serve", "--config", "/app/oidcld.yaml"]
 ```
 
-### ログアウト / エンドセッションサポート
-
-OpenID Connectテストアイデンティティプロバイダーは、OpenID Connect RP-Initiated Logout仕様に従って、エンドセッションエンドポイントを通じたログアウト機能をサポートしています。
-
-#### 設定
-
-```yaml
-oidcld:
-  end_session_enabled: true               # ログアウト/エンドセッション機能を有効化
-  end_session_endpoint_visible: true      # ディスカバリでend_session_endpointを表示（オプション）
-```
-
-**設定オプション:**
-- `end_session_enabled`: ログアウト機能が利用可能かどうかを制御
-- `end_session_endpoint_visible`: `end_session_endpoint`が`.well-known/openid-configuration`ディスカバリドキュメントに表示されるかどうかを制御
-
-**注意:** `end_session_endpoint_visible`が`false`に設定されていても、ログアウト機能は利用可能です。これにより、ディスカバリドキュメントで宣伝されないプライベートログアウトエンドポイントが可能になります。
-
-#### ディスカバリエンドポイント
-
-`end_session_endpoint_visible`が`true`の場合、ディスカバリエンドポイントには以下が含まれます：
-
-```json
-{
-  "end_session_endpoint": "http://localhost:18888/end_session",
-  ...
-}
-```
-
-#### ログアウトエンドポイントの使用
-
-**GETリクエスト:**
+使い方:
 ```bash
-curl "http://localhost:18888/end_session?id_token_hint=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...&post_logout_redirect_uri=https://example.com/logout&state=xyz123"
+./oidcld init                # oidcld.yaml を生成
+docker compose up -d         # スタック起動
+curl http://localhost:18888/health
 ```
 
-**POSTリクエスト:**
+### 3. EntraID 互換モード (MSAL / Azure スタイルのクレーム)
+
+MSAL 連携向けに Azure AD (EntraID) の振る舞いを模倣します。HTTPS とフラグメントレスポンスが必要です。
+
+```mermaid
+flowchart TB
+  MSALApp[MSAL-enabled App\nHTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra[oidcld (entraid-v2 template)\nhttps://localhost:18888]
+  OIDCLDEntra --> Claims[Azure-like Claims\n(oid, tid, preferred_username, upn)]
+  OIDCLDEntra --> ConfigEntra[(entraid-v2 template yaml)]
+```
+
+ポイント:
+- `./oidcld init --template entraid-v2` でスキャフォールド
+- `nonce_required` と適切な issuer 形式を強制
+- Azure 風のクレーム (例: `oid`, `tid`, `preferred_username`)
+- MSAL ライブラリは HTTPS が必須
+
+クイックスタート:
 ```bash
-curl -X POST http://localhost:18888/end_session \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "id_token_hint=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...&post_logout_redirect_uri=https://example.com/logout&state=xyz123"
+./oidcld init --template entraid-v2
+./oidcld --cert-file localhost.pem --key-file localhost-key.pem
+curl -k https://localhost:18888/.well-known/openid-configuration
 ```
 
-#### パラメータ
+トラブルシューティング:
+- 不正なオリジンの MSAL エラー → HTTPS と信頼済み証明書 (mkcert インストール) を確認
+- リフレッシュトークンが無い → `offline_access` スコープを追加し、設定でリフレッシュを有効化
 
-- `id_token_hint`（オプション）: 終了するユーザーセッションを識別するIDトークン
-- `post_logout_redirect_uri`（オプション）: ログアウト後にリダイレクトするURI
-- `state`（オプション）: ログアウトリクエストとコールバック間で状態を維持する不透明な値
+## CLI サマリー
 
-#### ログアウト動作
+ローカル開発/テスト向けのコマンドです。MCP は現時点では除外しています。
 
-1. **トークン無効化**: ユーザーのすべてのアクセストークン、リフレッシュトークン、認可コードが無効化されます
-2. **セッション終了**: ユーザーセッションデータがクリアされます
-3. **リダイレクト処理**: 
-   - `post_logout_redirect_uri`が提供された場合、ユーザーはそこにリダイレクトされます
-   - リダイレクトURIが提供されない場合、ログアウト成功ページが表示されます
-4. **状態保持**: `state`パラメータはリダイレクトで返されます
+- `oidcld init`: テンプレートから設定を初期化
+  - フラグ: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
 
-#### セキュリティ機能
+- `oidcld serve`: OIDC サーバーを起動
+  - フラグ: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
+  - 備考: TLS 証明書や autocert が設定されている場合は HTTPS で起動し、issuer も適切に調整されます。
 
-- **URI検証**: ポストログアウトリダイレクトURIはセキュリティのために検証されます
-- **トークン検証**: IDトークンヒントは検証されますが、無効なトークンはログアウトを妨げません
-- **エラー処理**: 無効なリクエストに対する適切なエラーレスポンス
-- **HTTPSサポート**: HTTPとHTTPSの両方のリダイレクトURIをサポート
+- `oidcld health`: サーバーヘルスをチェック
+  - フラグ: `--url`, `--port`, `--config`, `--timeout`
+  - 備考: `--url` を省略すると設定から自動検出。コンテナ環境で `OIDCLD_CONFIG` がある場合は localhost に接続し、自己署名証明書向けに TLS 検証をスキップします。
 
-#### ログアウト成功ページの例
+## セキュリティ上の制約
 
-`post_logout_redirect_uri`が提供されない場合、ユーザーはログアウト操作を確認するスタイル付き成功ページを見ます。
-### シングルページアプリケーション用のCORSサポート
+このプロジェクトは開発/テスト専用です。本番環境では使用しないでください。
 
-OpenID Connectテストアイデンティティプロバイダーは、React、Vue.js、Angularアプリケーションなどのブラウザベースのシングルページアプリケーション（SPA）用の包括的なCross-Origin Resource Sharing（CORS）サポートを含んでいます。
+- 任意の `client_id` を受け付けます: クライアント登録や許可リストはありません。
+- `redirect_uri` のホワイトリストはありません: リクエストの `redirect_uri` を動的に許可します。
+- クライアントシークレットは不要/未検証: ローカルテスト専用の挙動です。
+- 署名鍵はエフェメラル: 起動時に RSA 鍵を生成し永続化しません。再起動後は過去のトークンは検証できません。
+- デフォルトは寛容: SPA 開発を容易にするため CORS やディスカバリを緩めに設定。必要に応じて設定で絞り込んでください。
 
-#### CORSが必要な理由
+これらはローカル開発の利便性を最大化するための意図的な設計です。
 
-異なるポートやドメインで実行されているブラウザベースのアプリケーション（例：React開発サーバー用の`http://localhost:3000`）は、OIDCサーバー（例：`http://localhost:18888`）にリクエストを送信するためにCORSヘッダーが必要です。CORSがないと、ブラウザはセキュリティ上の理由でこれらのリクエストをブロックします。
+#### HTTPS 設定
 
-#### CORS設定
+MSAL ライブラリはセキュリティ上、HTTPS が必須です。OIDCLD を HTTPS で動かすには次の 2 つの方法があります。
 
-CORSは新しい設定で**デフォルトで有効**になっており、一般的な開発サーバーポートが含まれています：
+**Option 1: 証明書ファイルを使用**
 
-```yaml
-# SPA開発用のCORS（Cross-Origin Resource Sharing）設定
-cors:
-  enabled: true                           # CORSサポートを有効化
-  allowed_origins:                        # 許可されたオリジンのリスト
-    - "http://localhost:3000"             # Reactデフォルト開発サーバーポート
-    - "http://localhost:5173"             # Viteデフォルト開発サーバーポート
-    - "http://localhost:4173"             # Viteプレビューサーバーポート
-    - "http://localhost:8080"             # 代替開発サーバーポート
-    - "https://localhost:3000"            # HTTPS開発サーバー
-    - "https://localhost:5173"            # HTTPS Vite開発サーバー
-  allowed_methods:                        # 許可されたHTTPメソッド
-    - "GET"
-    - "POST"
-    - "PUT"
-    - "DELETE"
-    - "OPTIONS"
-    - "HEAD"
-  allowed_headers:                        # 許可されたリクエストヘッダー
-    - "Content-Type"
-    - "Authorization"
-    - "Accept"
-    - "Origin"
-    - "X-Requested-With"
-```
-
-#### CORS設定オプション
-
-- **`enabled`**: CORSサポートを有効または無効にする（デフォルト: `true`）
-- **`allowed_origins`**: リクエストを許可されたオリジンのリスト
-  - セキュリティのために特定のURLを使用: `"http://localhost:3000"`
-  - ワイルドカードには`"*"`を使用（テスト環境では推奨されません）
-- **`allowed_methods`**: CORSリクエストで許可されたHTTPメソッド
-- **`allowed_headers`**: CORSリクエストで許可されたリクエストヘッダー
-
-#### 一般的な開発サーバーポート
-
-デフォルト設定には一般的な開発サーバーポートが含まれています：
-
-| フレームワーク/ツール | デフォルトポート | HTTPSポート |
-|----------------|--------------|------------|
-| **React** (Create React App) | `3000` | `3000` |
-| **Vite** (Vue, React, etc.) | `5173` | `5173` |
-| **Vite Preview** | `4173` | `4173` |
-| **Webpack Dev Server** | `8080` | `8080` |
-| **Angular CLI** | `4200` | `4200` |
-
-#### カスタムオリジンの追加
-
-独自のアプリケーションオリジンを追加するには：
-
-```yaml
-cors:
-  enabled: true
-  allowed_origins:
-    - "http://localhost:3000"             # 既存を保持
-    - "https://myapp-staging.example.com" # ステージング環境ドメインを追加
-    - "http://localhost:4200"             # Angular開発サーバーを追加
-    - "http://192.168.1.100:3000"         # ネットワークアクセスを追加
-```
-
-#### CORSセキュリティ機能
-
-- **オリジン検証**: 明示的に許可されたオリジンのみがCORSヘッダーを受信
-- **プリフライトサポート**: OPTIONSプリフライトリクエストを自動的に処理
-- **認証情報サポート**: `Access-Control-Allow-Credentials: true`を含む
-- **ヘッダー検証**: 指定されたヘッダーのみがリクエストで許可される
-
-#### CORSのテスト
-
-curlを使用してCORS機能をテストできます：
+mkcert を使って証明書を作成できます:
 
 ```bash
-# プリフライトリクエストをテスト
-curl -H "Origin: http://localhost:3000" \
-     -H "Access-Control-Request-Method: GET" \
-     -X OPTIONS \
-     http://localhost:18888/.well-known/openid-configuration
+# mkcert で証明書を作成
+brew install mkcert  # macOS
+mkcert -install
+mkcert localhost 127.0.0.1 ::1
 
-# Originヘッダーを使用した実際のリクエストをテスト
-curl -H "Origin: http://localhost:3000" \
-     http://localhost:18888/.well-known/openid-configuration
+# HTTPS で起動
+./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
-#### CORSトラブルシューティング
+**Option 2: ACME プロトコルサーバーを使用**
 
-**一般的な問題:**
+ACME プロトコルにより証明書を自動取得できます。以下はローカル ACME サーバーの例です。
 
-1. **ブラウザコンソールでのCORSエラー**
-   ```
-   Access to fetch at 'http://localhost:18888/...' from origin 'http://localhost:3000' 
-   has been blocked by CORS policy
-   ```
-   **解決策**: 設定の`allowed_origins`にオリジンを追加
+```yaml:compose.yaml
+services:
+  # myencrypt - Local ACME server for development
+  myencrypt.localhost:
+    image: ghcr.io/shibukawa/myencrypt:latest
+    ports:
+      - "14000:80"  # ACME server port
+    environment:
+      - MYENCRYPT_EXPOSE_PORT=14000  # Required: Host-accessible port
+      - MYENCRYPT_PROJECT_NAME=oidcld  # Required: Project name for Docker mode
+      - MYENCRYPT_HOSTNAME=myencrypt.localhost  # Required: Hostname for ACME directory URLs
+      - MYENCRYPT_INDIVIDUAL_CERT_TTL=168h  # 7 days (7 * 24h)
+      - MYENCRYPT_CA_CERT_TTL=19200h
+      - MYENCRYPT_ALLOWED_DOMAINS=localhost,*.localhost
+      - MYENCRYPT_CERT_STORE_PATH=/data
+      - MYENCRYPT_DATABASE_PATH=/data/myencrypt.db
+      - MYENCRYPT_LOG_LEVEL=info  # Enable debug logging
+    volumes:
+      - myencrypt-data:/data
+    restart: unless-stopped
+  # OIDCLD with myencrypt autocert (TLS-ALPN challenge)
+  oidc.localhost:
+    # image: oidcld:local
+    build: .
+    # image: ghcr.io/shibukawa/oidcld:latest
+    ports:
+      - "8443:443"     # HTTPS OIDC server port (mapped to non-privileged port)
+    volumes:
+      - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
+    environment:
+      - OIDCLD_CONFIG=/app/config.yaml
+      # Minimal autocert environment variables (TLS-ALPN challenge)
+      - OIDCLD_ACME_DOMAIN=oidc.localhost
+      - OIDCLD_ACME_DIRECTORY_URL=http://myencrypt.localhost/acme/directory
+      - OIDCLD_ACME_CACHE_DIR=/tmp/autocert-cache  # Temporary cache directory (no persistence)
+      - OIDCLD_ACME_EMAIL=dev@localhost
+      - OIDCLD_ACME_AGREE_TOS=true
+      - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
+      - OIDCLD_ACME_RENEWAL_THRESHOLD=1
+    command: ["serve", "--config", "/app/config.yaml", "--port", "443"]
+    depends_on:
+      myencrypt.localhost:
+        condition: service_healthy
+    restart: unless-stopped
+```
 
-2. **CORSヘッダーの欠如**
-   - 設定で`cors.enabled: true`であることを確認
-   - オリジンが`allowed_origins`リストにあることを確認
-   - 設定変更後にサーバーを再起動
+#### OIDCLD 向けの MSAL 設定例
 
-3. **プリフライトリクエストの失敗**
-   - `allowed_methods`に`OPTIONS`があることを確認
-   - 必要なヘッダーが`allowed_headers`にあることを確認
-
-#### フレームワーク固有の例
-
-**oidc-client-tsを使用したReact:**
 ```typescript
-// Reactで追加のCORS設定は不要
-// oidcld.yamlに開発サーバーポートがあることを確認するだけ
-const oidcConfig = {
-  authority: 'http://localhost:18888',
-  client_id: 'your-client-id',
-  redirect_uri: 'http://localhost:3000/callback'
+import { PublicClientApplication } from '@azure/msal-browser';
+
+const msalConfig = {
+  auth: {
+    clientId: 'your-azure-app-id',
+    authority: 'https://localhost:18888',  // HTTPS が必要
+    redirectUri: 'https://localhost:3000/callback',
+    postLogoutRedirectUri: 'https://localhost:3000/'
+  },
+  cache: {
+    cacheLocation: 'localStorage',
+    storeAuthStateInCookie: false,
+  }
 };
-```
 
-**oidc-client-tsを使用したVue.js:**
-```typescript
-// Vite開発サーバー（ポート5173）はデフォルトで含まれています
-const userManager = new UserManager({
-  authority: 'http://localhost:18888',
-  client_id: 'your-client-id',
-  redirect_uri: 'http://localhost:5173/callback'
-});
-```
+const msalInstance = new PublicClientApplication(msalConfig);
 
-**Angular:**
-```yaml
-# oidcld.yamlにAngularのデフォルトポートを追加
-cors:
-  allowed_origins:
-    - "http://localhost:4200"  # Angular CLIデフォルト
-```
-
-#### テスト/ステージング環境用のCORS設定
-
-テスト/ステージング環境でのデプロイメントでは、許可されたオリジンを具体的に指定してください：
-
-```yaml
-cors:
-  enabled: true
-  allowed_origins:
-    - "https://myapp-staging.example.com"
-    - "https://test.mydomain.com"
-  # ステージング/テスト環境ではlocalhostエントリを削除
-```
-
-**テスト用のセキュリティベストプラクティス:**
-- `"*"`ワイルドカードの代わりに特定のオリジンを使用
-- 可能な場合はHTTPSオリジンを使用
-- 許可されたオリジンを定期的に確認・更新
-- ステージング/テスト設定から開発オリジンを削除
-
-## MCPサーバー統合
-
-### MCPサーバーのインストール
-
-OpenID Connectテストアイデンティティプロバイダーは、AIアシスタントや開発ツールに設定管理機能を提供するMCP（Model Context Protocol）サーバーとして実行できます。
-
-#### Amazon Q Developer
-MCP設定に追加：
-```json
-{
-  "mcpServers": {
-    "oidcld": {
-      "command": "/path/to/oidcld",
-      "args": ["mcp"],
-      "env": {}
-    }
-  }
-}
-```
-
-#### Claude Desktop
-`~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）または同等のファイルに追加：
-```json
-{
-  "mcpServers": {
-    "oidcld": {
-      "command": "/path/to/oidcld",
-      "args": ["mcp"],
-      "env": {}
-    }
-  }
-}
-```
-
-#### VS Code with MCP Extension
-VS Code MCP設定に追加：
-```json
-{
-  "mcp.servers": [
-    {
-      "name": "oidcld",
-      "command": "/path/to/oidcld",
-      "args": ["mcp"],
-      "cwd": "/path/to/your/project"
-    }
-  ]
-}
-```
-
-#### HTTPモード（Webベースツール用）
-```bash
-./oidcld mcp --port 3001
-```
-その後、MCPクライアントを`http://localhost:3001`に接続するよう設定
-
-### 利用可能なMCPツール
-
-MCPサーバーとして実行する場合、以下のツールが利用可能です：
-
-- **`oidcld_init`** - OpenID Connect設定を初期化
-- **`oidcld_query_config`** - 現在の設定を照会
-- **`oidcld_add_user`** - 新しいテストユーザーを追加
-- **`oidcld_query_users`** - 設定されたすべてのユーザーをリスト
-- **`oidcld_modify_config`** - 設定を更新
-- **`oidcld_generate_compose`** - Docker Compose設定を生成
-
-### 利用可能なMCPリソース
-
-- **`config://current`** - 現在のOpenID Connect設定
-- **`users://list`** - 設定されたすべてのユーザーのリスト
-- **`compose://template`** - Docker Composeテンプレート
-
-### ヘルスチェック
-- **エンドポイント**: `GET /health`
-- **期待されるレスポンス**: サービスステータス確認
-
-## CI/CDと開発
-
-### GitHub Actionsワークフロー
-
-このプロジェクトには包括的なCI/CDパイプラインが含まれています：
-
-#### **継続的インテグレーション（`ci.yml`）**
-- **トリガー**: プルリクエストとmain/developブランチへのプッシュ
-- **ジョブ**:
-  - **Test**: レース検出とカバレッジレポートを使用したすべてのユニットテストを実行
-  - **Lint**: golangci-lintを使用したコード品質チェック
-  - **Security**: Gosecを使用したセキュリティスキャン
-- **機能**:
-  - より高速なビルドのためのGoモジュールキャッシュ
-  - Codecovへのカバレッジレポート
-  - 静的解析とセキュリティスキャン
-  - セキュリティ発見のためのSARIFアップロード
-
-#### **リリースパイプライン（`release.yml`）**
-- **トリガー**: Gitタグ（v*）
-- **マルチプラットフォームバイナリビルド**:
-  - Windows AMD64（.exe）
-  - macOS ARM64（Apple Silicon）
-  - Linux AMD64
-  - Linux ARM64
-- **Dockerマルチアーキテクチャイメージ**:
-  - `linux/amd64`と`linux/arm64`
-  - GitHub Container Registryに公開
-  - 自動タグ付け（latest、semver）
-- **GitHubリリース**:
-  - 自動リリース作成
-  - バイナリ添付（zip/tar.gz）
-  - 生成されたリリースノート
-
-#### **依存関係管理**
-- **Dependabot**: 自動依存関係更新
-- **自動マージ**: パッチ/マイナー更新の安全な自動マージ
-- **週次スケジュール**: 依存関係を最新に保つ
-
-### 開発ワークフロー
-
-1. **プルリクエスト**: PRを作成 → CIがテストとチェックを実行
-2. **コードレビュー**: 手動レビュー + 自動チェック
-3. **マージ**: mainへのマージが追加検証をトリガー
-4. **リリース**: タグを作成 → 自動ビルドとリリース
-
-### Docker使用法
-
-```bash
-# 最新イメージをプル
-docker pull ghcr.io/shibukawa/oidcld:latest
-
-# デフォルト設定で実行
-docker run -p 18888:18888 ghcr.io/shibukawa/oidcld:latest
-
-# カスタム設定で実行
-docker run -p 18888:18888 -v $(pwd)/config.yaml:/app/config.yaml \
-  ghcr.io/shibukawa/oidcld:latest serve --config /app/config.yaml
-
-# ヘルスチェック
-docker run --rm ghcr.io/shibukawa/oidcld:latest health --url http://host.docker.internal:18888
-```
-
-### 高度なDockerビルド
-
-プロジェクトにはBuildX機能を使用した最適化されたDockerfileが含まれています：
-
-```bash
-# ローカル開発用ビルド（単一プラットフォーム）
-./scripts/build-docker.sh --load
-
-# キャッシュを使用したマルチプラットフォームビルド
-./scripts/build-docker.sh --platforms linux/amd64,linux/arm64 \
-  --cache-from type=gha --cache-to type=gha,mode=max
-
-# レジストリにビルドしてプッシュ
-./scripts/build-docker.sh --name ghcr.io/shibukawa/oidcld \
-  --tag v1.0.0 --push
-```
-
-**BuildX機能:**
-- **キャッシュマウント**: 効率的なGoモジュールとビルドキャッシュ
-- **バインドマウント**: コピーなしでマウントされたソースコード
-- **マルチプラットフォーム**: ネイティブARM64とAMD64サポート
-- **Distrolessベース**: 最大セキュリティを持つ安全な最小ランタイム環境
-- **レイヤー最適化**: 最大セキュリティを持つ最小イメージサイズ
-
-### ソースからビルド
-
-```bash
-# リポジトリをクローン
-git clone https://github.com/shibukawa/oidcld.git
-cd oidcld
-
-# バイナリをビルド
-go build -o oidcld .
-
-# テストを実行
-go test ./...
-
-# Dockerイメージをビルド
-docker build -t oidcld .
-# またはビルドスクリプトを使用
-./scripts/build-docker.sh --load
-```
-
-### 開発ツール
-
-**Dockerビルドスクリプト:**
-```bash
-./scripts/build-docker.sh --help    # 使用法を表示
-./scripts/build-docker.sh --load    # ローカル使用用にビルド
-./scripts/build-docker.sh --push    # マルチプラットフォームをビルドしてプッシュ
+// Login リクエスト
+const loginRequest = {
+  scopes: ['openid', 'profile', 'email'],
+  extraScopesToConsent: ['offline_access']  // リフレッシュトークン用
+};
 ```
 
 ## ライセンス
 
-このプロジェクトはGNU Affero General Public License v3.0（AGPL-3.0）の下でライセンスされています。
+このプロジェクトは GNU Affero General Public License v3.0 (AGPL-3.0) の下でライセンスされています。
