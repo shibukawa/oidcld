@@ -80,6 +80,38 @@ go get -tool github.com/shibukawa/oidcld@latest
 docker pull ghcr.io/shibukawa/oidcld
 ```
 
+### ローカルシンプル利用フロー (ダウンロード → init → 起動)
+最短で動かしたい場合の標準的な 3 ステップです。
+
+```bash
+# 1. バイナリをダウンロード（あるいは go get / docker pull）
+# ここでは GitHub Release から取得済みと仮定
+chmod +x ./oidcld
+
+# 2. 初期化: 設定ファイルと鍵ペアを生成
+./oidcld init
+
+# 3. 起動 (HTTP: http://localhost:18888)
+./oidcld
+
+# 動作確認
+curl http://localhost:18888/health
+open http://localhost:18888/.well-known/openid-configuration
+```
+
+オプション: HTTPS をすぐに使いたい場合は `--mkcert` を付けて再初期化、あるいは手動で `mkcert` 生成した証明書を `--cert-file/--key-file` 指定してください。
+
+```bash
+./oidcld init --mkcert
+./oidcld --cert-file localhost.pem --key-file localhost-key.pem
+```
+
+ポイント:
+- `oidcld.yaml` をそのまま編集してユーザー/スコープを追加
+- 再起動なしで反映したい設定は `--watch` オプションを利用
+- EntraID 互換挙動を試す場合は `--template entraid-v2` を初期化時に選択
+
+
 #### 設定と起動
 1. キーを使用して初期設定を生成: `./oidcld init`
    - 標準OpenID、EntraID v1、またはEntraID v2のオプションを持つインタラクティブセットアップ
@@ -88,7 +120,7 @@ docker pull ghcr.io/shibukawa/oidcld
    - YAML設定ファイル（`oidcld.yaml`）を作成
 2. 生成されたYAML設定ファイルでユーザーを設定
 3. サービスを開始: `./oidcld` または `./oidcld --config your-config.yaml`
-4. HTTPS用: `./oidcld --https`（デフォルトでlocalhost.pem/localhost-key.pemを使用）
+4. HTTPS用: 証明書ファイル（`--cert-file` / `--key-file`）を指定するか、autocert を設定
 
 ### 設定
 - **ポート**: 18888（デフォルト）
@@ -176,8 +208,8 @@ users:
 ./oidcld --config config.yaml     # カスタム設定ファイルで開始
 ./oidcld --watch                   # ファイル変更時の自動設定リロードで開始
 ./oidcld -w --config config.yaml  # カスタム設定とウォッチモードで開始
-./oidcld --https                   # HTTPSで開始（localhost.pem/localhost-key.pemを使用）
-./oidcld --https --cert-file cert.pem --key-file key.pem  # カスタム証明書で開始
+./oidcld --cert-file localhost.pem --key-file localhost-key.pem  # HTTPSで開始
+./oidcld --cert-file cert.pem --key-file key.pem  # カスタム証明書で開始
 ./oidcld mcp                       # MCPサーバーとして開始（stdin/stdoutモード）
 ./oidcld mcp --port 3001          # MCP HTTPサーバーとして開始
 ```
@@ -194,7 +226,7 @@ brew install mkcert
 # 参照: https://github.com/FiloSottile/mkcert#installation
 
 # HTTPSとmkcertで初期化
-./oidcld init --https --mkcert
+./oidcld init --mkcert
 
 # mkcertを使用したEntraIDテンプレート（HTTPSは自動）
 ./oidcld init --template entraid-v2 --mkcert
@@ -207,7 +239,7 @@ brew install mkcert
 # mkcert証明書を生成: y
 
 # HTTPSサーバーを開始
-./oidcld --https
+./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
 #### ウォッチモード
