@@ -34,18 +34,17 @@ brew install mkcert
 # Install mkcert (Linux/Windows)
 # See: https://github.com/FiloSottile/mkcert#installation
 
-# Initialize oidcld with HTTPS and mkcert
-./oidcld init --mkcert
+# Initialize oidcld (interactive)
+./oidcld init
 
-# Or use EntraID template (HTTPS automatic, mkcert optional)
-./oidcld init --template entraid-v2 --mkcert
+# Or use EntraID template (HTTPS automatic)
+./oidcld init --template entraid-v2
 
 # Or use the interactive wizard
 ./oidcld init
 # Select: Standard OpenID Connect or EntraID/AzureAD v2.0
 # For Standard: Enable HTTPS: y
 # For EntraID: HTTPS is automatically enabled
-# Generate mkcert certificates: y
 ```
 
 ## Quick Start

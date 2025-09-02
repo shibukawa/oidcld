@@ -152,14 +152,14 @@ flowchart TB
 ```
 
 ポイント:
-- `./oidcld init --template entraid-v2 --mkcert` でスキャフォールド
+- `./oidcld init --template entraid-v2` でスキャフォールド
 - `nonce_required` と適切な issuer 形式を強制
 - Azure 風のクレーム (例: `oid`, `tid`, `preferred_username`)
 - MSAL ライブラリは HTTPS が必須
 
 クイックスタート:
 ```bash
-./oidcld init --template entraid-v2 --mkcert
+./oidcld init --template entraid-v2
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 curl -k https://localhost:18888/.well-known/openid-configuration
 ```
@@ -173,8 +173,7 @@ curl -k https://localhost:18888/.well-known/openid-configuration
 ローカル開発/テスト向けのコマンドです。MCP は現時点では除外しています。
 
 - `oidcld init`: テンプレートから設定を初期化
-  - フラグ: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--mkcert`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
-  - 注意: `--mkcert` はローカル証明書の作り方を案内するもので、自動生成はしません。
+  - フラグ: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
 
 - `oidcld serve`: OIDC サーバーを起動
   - フラグ: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`

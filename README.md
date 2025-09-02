@@ -154,14 +154,14 @@ flowchart TB
 ```
 
 Key points:
-- Use `./oidcld init --template entraid-v2 --mkcert` to scaffold
+- Use `./oidcld init --template entraid-v2` to scaffold
 - Forces `nonce_required` and appropriate issuer format
 - Provides Azure-style claim set (e.g. `oid`, `tid`, `preferred_username`)
 - HTTPS mandatory for MSAL libraries
 
 Quick start:
 ```bash
-./oidcld init --template entraid-v2 --mkcert
+./oidcld init --template entraid-v2
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 curl -k https://localhost:18888/.well-known/openid-configuration
 ```
@@ -175,8 +175,7 @@ Troubleshooting:
 Commands for local development and testing. MCP is intentionally omitted here.
 
 - `oidcld init`: Initialize configuration from a template
-  - Flags: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--mkcert`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
-  - Notes: `--mkcert` guides mkcert-based local cert usage; it does not auto-generate certs.
+  - Flags: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
 
 - `oidcld serve`: Start the OpenID Connect server
   - Flags: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`

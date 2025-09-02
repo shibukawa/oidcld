@@ -81,7 +81,6 @@ type InitCmd struct {
 	Port     string `short:"p" help:"Port number for issuer URL"`
 	Issuer   string `help:"Custom issuer URL"`
 	HTTPS    bool   `help:"Enable HTTPS mode (default for EntraID templates)"`
-	Mkcert   bool   `help:"Generate mkcert certificates for HTTPS"`
 	// ACME/Autocert settings
 	Autocert   bool   `help:"Enable autocert for automatic HTTPS certificates"`
 	ACMEServer string `help:"ACME server URL for autocert" env:"OIDCLD_ACME_DIRECTORY_URL"`
@@ -137,7 +136,6 @@ func (cmd *InitCmd) Run() error {
 		Port:       cmd.Port,
 		Issuer:     cmd.Issuer,
 		HTTPS:      cmd.HTTPS,
-		Mkcert:     cmd.Mkcert,
 		Autocert:   cmd.Autocert,
 		ACMEServer: cmd.ACMEServer,
 		Domains:    domains,

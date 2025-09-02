@@ -425,7 +425,6 @@ type InitServerOptions struct {
 	Port             string
 	Issuer           string
 	HTTPS            bool
-	Mkcert           bool
 	Autocert         bool
 	ACMEServer       string
 	Domains          []string
