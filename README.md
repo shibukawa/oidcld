@@ -2,6 +2,25 @@
 
 A fake OpenID Connect Identity Provider (IdP) designed for testing and development purposes.
 
+[![CI](https://github.com/shibukawa/oidcld/actions/workflows/ci.yml/badge.svg)](https://github.com/shibukawa/oidcld/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/shibukawa/oidcld)](https://github.com/shibukawa/oidcld/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/shibukawa/oidcld)](go.mod)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE.md)
+[![Container](https://img.shields.io/badge/GHCR-oidcld-0f5fff?logo=docker)](https://github.com/shibukawa/oidcld/pkgs/container/oidcld)
+
+Japanese: see [README.ja.md](README.ja.md)
+
+## Table of Contents
+- [Terminology](#terminology)
+- [Primary Function](#primary-function)
+- [Use Cases](#use-cases)
+- [3. EntraID Compatible Mode (MSAL / Azure-style claims)](#3-entraid-compatible-mode-msal--azure-style-claims)
+- [HTTPS Configuration](#https-configuration)
+- [MSAL Configuration for OIDCLD](#msal-configuration-for-oidcld)
+- [CLI Summary](#cli-summary)
+- [Security Limitations](#security-limitations)
+- [License](#license)
+
 ![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
 
 ## Terminology
@@ -25,7 +44,7 @@ The term "fake" accurately describes this tool's role in testing scenarios - it'
 
 ![screenshot](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/login-screen.png)
 
-**Login Screen:** No password, just click to login. It helps you to test. No special no-login-local-dev-only-logic anymore.
+**Login Screen:** No password—just click to log in. Helps testing. No more dev-only login bypasses.
 
 ----
 
@@ -37,15 +56,15 @@ The term "fake" accurately describes this tool's role in testing scenarios - it'
   - **End Session Support**: OpenID Connect RP-Initiated Logout with configurable discovery visibility
   - **OpenID Discovery**: Standards-compliant `/.well-known/openid-configuration` endpoint
 - **Best for Local Testing**
-  - **Working Well with Docker**: No storage like database required. Just work with single config file.
-  - **Fast Login**: Just click user name. No password.
+  - **Works well with Docker**: No database required; single config file.
+  - **Fast login**: Just click a user name; no password.
   - **Custom JWT Claims**: YAML configuration supports additional information in JWT tokens
 - **EntraID/AzureAD Compatibility**:
   - **Test with MSAL.js**
 
 ## Use Cases
 
-There are two launch style (single binary, container) and two API modes (OpenID Connect, EntraID compatible).
+There are two launch styles (single binary, container) and two API modes (OpenID Connect, EntraID compatible).
 
 ### 1. Simple Local Server and Standard OpenID Connect
 
@@ -73,10 +92,11 @@ open http://localhost:18888/.well-known/openid-configuration
 
 Add HTTPS later by generating certs (mkcert) and starting with `--cert-file/--key-file`.
 
-**Option 1: Go Get Tool (Go 1.25+)**
+**Option 1: Go install (Go 1.24+)**
 ```bash
-go get -tool github.com/shibukawa/oidcld@latest
+go install github.com/shibukawa/oidcld@latest
 ```
+Make sure `$GOBIN` is on your `PATH`.
 
 **Option 2: Download from GitHub Releases**
 1. Visit the [GitHub releases page](https://github.com/shibukawa/oidcld/releases)
@@ -150,14 +170,42 @@ Troubleshooting:
 - MSAL error about insecure origins → ensure HTTPS + trusted cert (mkcert install)
 - Missing refresh token → include `offline_access` scope & enable refresh in config
 
+## CLI Summary
+
+Commands for local development and testing. MCP is intentionally omitted here.
+
+- `oidcld init`: Initialize configuration from a template
+  - Flags: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--mkcert`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
+  - Notes: `--mkcert` guides mkcert-based local cert usage; it does not auto-generate certs.
+
+- `oidcld serve`: Start the OpenID Connect server
+  - Flags: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
+  - Notes: If TLS certs or autocert are configured, HTTPS is used and the issuer is adjusted accordingly.
+
+- `oidcld health`: Probe server health
+  - Flags: `--url`, `--port`, `--config`, `--timeout`
+  - Notes: If `--url` is omitted, it auto-detects from config. In container setups with `OIDCLD_CONFIG`, it dials localhost and skips TLS verification for self-signed certs.
+
+## Security Limitations
+
+This project is for development/testing only. Do not use in production.
+
+- Accepts any `client_id`: There is no client registration or allowlist.
+- Redirect URIs are not whitelisted: The requested `redirect_uri` is permitted dynamically for development convenience.
+- Client secrets are not required/enforced: Suitable only for local testing.
+- Ephemeral signing keys: RSA keys are generated on startup and not persisted; tokens from previous runs will not validate after restart.
+- Permissive defaults: CORS and discovery are configured to ease local SPA development; narrow them in config if needed.
+
+These trade-offs are deliberate to maximize developer ergonomics in local environments.
+
 #### HTTPS Configuration
 
 MSAL libraries require HTTPS for security. There are two options to configure OIDCLD with HTTPS support:
 
 
-**Option 1: Use certification files**
+**Option 1: Use certificate files**
 
-You can use mkcert to create certification:
+You can use mkcert to create certificates:
 
 ```bash
 # Generate certificates with mkcert
@@ -169,9 +217,9 @@ mkcert localhost 127.0.0.1 ::1
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
-**Option 2: Use ACME Protocol server**
+**Option 2: Use ACME protocol server**
 
-OIDCLD also supports ACME protocol to obtain certification file automatically. The following sample is using local ACME server. 
+OIDCLD also supports the ACME protocol to obtain certificates automatically. The following sample uses a local ACME server.
 
 ```yaml:compose.yaml
 services:
