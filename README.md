@@ -19,6 +19,7 @@ Japanese: see [README.ja.md](README.ja.md)
 - [MSAL Configuration for OIDCLD](#msal-configuration-for-oidcld)
 - [CLI Summary](#cli-summary)
 - [Security Limitations](#security-limitations)
+- [Documentation](#documentation)
 - [License](#license)
 
 ![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
@@ -72,7 +73,7 @@ Use the compiled `oidcld` binary directly on your workstation. Fastest iteration
 
 ```mermaid
 flowchart TB
-  DevApp[Local App (React/Vite, Go, Node, etc)] -->|Auth Code / Device / Client Credentials| OIDCLD[oidcld Binary\nhttp://localhost:18888]
+  DevApp["Local App (React/Vite, Go, Node, etc)"] -->|Auth Code / Device / Client Credentials| OIDCLD[oidcld Binary<br/>http://localhost:18888]
   OIDCLD --> Config[(oidcld.yaml)]
   OIDCLD --> Users[In-Memory Users]
 ```
@@ -113,7 +114,7 @@ docker pull ghcr.io/shibukawa/oidcld
 
 ```mermaid
 flowchart TB
-  Browser[Browser SPA Container\n:5173 or :80] -->|OIDC Flows| OIDCLDContainer[oidcld Container\n:18888]
+  Browser[Browser SPA Container<br/>:5173 or :80] -->|OIDC Flows| OIDCLDContainer[oidcld Container<br/>:18888]
   OIDCLDContainer --> Volume[(Mounted oidcld.yaml)]
 ```
 
@@ -148,8 +149,8 @@ Emulates Azure AD (EntraID) shape for local MSAL integration. Requires HTTPS + f
 
 ```mermaid
 flowchart TB
-  MSALApp[MSAL-enabled App\nHTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra[oidcld (entraid-v2 template)\nhttps://localhost:18888]
-  OIDCLDEntra --> Claims[Azure-like Claims\n(oid, tid, preferred_username, upn)]
+  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18888"]
+  OIDCLDEntra --> Claims["Azure-like Claims<br/>(oid, tid, preferred_username, upn)"]
   OIDCLDEntra --> ConfigEntra[(entraid-v2 template yaml)]
 ```
 
@@ -196,6 +197,15 @@ This project is for development/testing only. Do not use in production.
 - Permissive defaults: CORS and discovery are configured to ease local SPA development; narrow them in config if needed.
 
 These trade-offs are deliberate to maximize developer ergonomics in local environments.
+
+## Documentation
+
+Extended docs (kept out of this top-level README for brevity):
+
+- Configuration Guide: [docs/config.md](docs/config.md)
+- Other OAuth/OIDC Flows: [docs/otherflows.md](docs/otherflows.md)
+
+See examples under `examples/` for concrete integration setups (React/MSAL, Vue, device/client credentials, autocert, etc.).
 
 #### HTTPS Configuration
 
