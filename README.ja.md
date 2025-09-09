@@ -19,6 +19,7 @@ English: see [README.md](README.md)
 - [OIDCLD 向けの MSAL 設定例](#oidcld-向けの-msal-設定例)
 - [CLI サマリー](#cli-サマリー)
 - [セキュリティ上の制約](#セキュリティ上の制約)
+- [追加ドキュメント](#追加ドキュメント)
 - [ライセンス](#ライセンス)
 
 ![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
@@ -70,7 +71,7 @@ English: see [README.md](README.md)
 
 ```mermaid
 flowchart TB
-  DevApp[Local App (React/Vite, Go, Node, etc)] -->|Auth Code / Device / Client Credentials| OIDCLD[oidcld Binary\nhttp://localhost:18888]
+  DevApp["Local App (React/Vite, Go, Node, etc)"] -->|Auth Code / Device / Client Credentials| OIDCLD[oidcld Binary<br/>http://localhost:18888]
   OIDCLD --> Config[(oidcld.yaml)]
   OIDCLD --> Users[In-Memory Users]
 ```
@@ -111,7 +112,7 @@ docker pull ghcr.io/shibukawa/oidcld
 
 ```mermaid
 flowchart TB
-  Browser[Browser SPA Container\n:5173 or :80] -->|OIDC Flows| OIDCLDContainer[oidcld Container\n:18888]
+  Browser[Browser SPA Container<br/>:5173 or :80] -->|OIDC Flows| OIDCLDContainer[oidcld Container<br/>:18888]
   OIDCLDContainer --> Volume[(Mounted oidcld.yaml)]
 ```
 
@@ -146,8 +147,8 @@ MSAL 連携向けに Azure AD (EntraID) の振る舞いを模倣します。HTTP
 
 ```mermaid
 flowchart TB
-  MSALApp[MSAL-enabled App\nHTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra[oidcld (entraid-v2 template)\nhttps://localhost:18888]
-  OIDCLDEntra --> Claims[Azure-like Claims\n(oid, tid, preferred_username, upn)]
+  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18888"]
+  OIDCLDEntra --> Claims["Azure-like Claims<br/>(oid, tid, preferred_username, upn)"]
   OIDCLDEntra --> ConfigEntra[(entraid-v2 template yaml)]
 ```
 
@@ -194,6 +195,15 @@ curl -k https://localhost:18888/.well-known/openid-configuration
 - デフォルトは寛容: SPA 開発を容易にするため CORS やディスカバリを緩めに設定。必要に応じて設定で絞り込んでください。
 
 これらはローカル開発の利便性を最大化するための意図的な設計です。
+
+## 追加ドキュメント
+
+詳細ドキュメント (この README から分離):
+
+- 設定ガイド: [docs/config.ja.md](docs/config.ja.md)
+- 他の OAuth/OIDC フロー: [docs/otherflows.ja.md](docs/otherflows.ja.md)
+
+具体的な統合例は `examples/` (React/MSAL, Vue, Device Flow, Client Credentials, autocert など) を参照してください。
 
 #### HTTPS 設定
 
