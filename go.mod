@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/alecthomas/assert/v2 v2.11.0
-	github.com/alecthomas/kong v1.12.1
+	github.com/alecthomas/kong v1.13.0
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-jose/go-jose/v4 v4.1.3
@@ -17,7 +17,7 @@ require (
 )
 
 require (
-	github.com/alecthomas/repr v0.4.0 // indirect
+	github.com/alecthomas/repr v0.5.2 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.9.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-chi/chi/v5 v5.2.3 // indirect
