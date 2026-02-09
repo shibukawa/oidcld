@@ -50,6 +50,9 @@ jobs:
           - goos: windows
             goarch: amd64
             ext: .exe
+          - goos: windows
+            goarch: arm64
+            ext: .exe
           - goos: darwin
             goarch: arm64
             ext: ""
@@ -198,6 +201,7 @@ jobs:
         
         #### Binaries
         - **Windows (AMD64)**: `oidcld-windows-amd64.zip`
+        - **Windows (ARM64)**: `oidcld-windows-arm64.zip`
         - **macOS (ARM64)**: `oidcld-darwin-arm64.tar.gz`
         - **Linux (AMD64)**: `oidcld-linux-amd64.tar.gz`
         - **Linux (ARM64)**: `oidcld-linux-arm64.tar.gz`

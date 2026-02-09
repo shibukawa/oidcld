@@ -101,8 +101,50 @@ Make sure `$GOBIN` is on your `PATH`.
 
 **Option 2: Download from GitHub Releases**
 1. Visit the [GitHub releases page](https://github.com/shibukawa/oidcld/releases)
-2. Download the appropriate binary for your operating system
+2. Download the appropriate binary archive for your operating system/architecture
 3. Make the binary executable (on Unix-like systems): `chmod +x oidcld`
+
+Current release binary targets:
+- `oidcld-linux-amd64.tar.gz`
+- `oidcld-linux-arm64.tar.gz`
+- `oidcld-darwin-arm64.tar.gz`
+- `oidcld-windows-amd64.zip`
+- `oidcld-windows-arm64.zip`
+
+Use from GitHub Actions (latest release):
+
+```yaml
+- name: Download oidcld (Linux/macOS)
+  if: runner.os != 'Windows'
+  shell: bash
+  run: |
+    set -euo pipefail
+    case "${RUNNER_OS}-${RUNNER_ARCH}" in
+      Linux-X64)   archive="oidcld-linux-amd64.tar.gz" ;;
+      Linux-ARM64) archive="oidcld-linux-arm64.tar.gz" ;;
+      macOS-ARM64) archive="oidcld-darwin-arm64.tar.gz" ;;
+      *) echo "unsupported runner: ${RUNNER_OS}-${RUNNER_ARCH}"; exit 1 ;;
+    esac
+    curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
+    tar -xzf "${archive}"
+    chmod +x oidcld
+    echo "${PWD}" >> "${GITHUB_PATH}"
+
+- name: Download oidcld (Windows)
+  if: runner.os == 'Windows'
+  shell: pwsh
+  run: |
+    switch ("$env:RUNNER_ARCH") {
+      "X64" { $archive = "oidcld-windows-amd64.zip" }
+      "ARM64" { $archive = "oidcld-windows-arm64.zip" }
+      default { throw "unsupported runner architecture: $env:RUNNER_ARCH" }
+    }
+    Invoke-WebRequest -Uri "https://github.com/shibukawa/oidcld/releases/latest/download/$archive" -OutFile $archive
+    Expand-Archive -Path $archive -DestinationPath . -Force
+    Add-Content -Path $env:GITHUB_PATH -Value $PWD
+```
+
+After these steps, run `oidcld --help` (Unix) or `./oidcld.exe --help` (Windows).
 
 ### 2. Docker Mode and Standard OpenID Connect
 
