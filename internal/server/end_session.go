@@ -19,7 +19,7 @@ var (
 	ErrRedirectURIMustUseHTTPS   = errors.New("redirect URI must use http or https scheme")
 )
 
-// Implement SessionEnder interface for the OIDC server
+// Decoder implements SessionEnder for the OIDC server.
 func (s *Server) Decoder() zhttp.Decoder {
 	// Return a simple decoder - we can implement this interface ourselves
 	return &SimpleDecoder{}

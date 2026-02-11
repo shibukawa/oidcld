@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -308,9 +309,7 @@ func createDefaultConfig(mode Mode) *Config {
 			}
 
 			// Copy base claims
-			for k, v := range user.ExtraClaims {
-				newUser.ExtraClaims[k] = v
-			}
+			maps.Copy(newUser.ExtraClaims, user.ExtraClaims)
 
 			// Add EntraID-specific claims
 			switch userID {

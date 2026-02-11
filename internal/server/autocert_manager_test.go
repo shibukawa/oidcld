@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -154,14 +155,7 @@ func TestAutocertManager_GetTLSConfig(t *testing.T) {
 	}
 
 	// Verify NextProtos includes h2 for HTTP/2 support
-	found := false
-	for _, proto := range tlsConfig.NextProtos {
-		if proto == "h2" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(tlsConfig.NextProtos, "h2") {
 		t.Error("TLS config should include h2 in NextProtos for HTTP/2 support")
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"maps"
 
 	// ...existing code...
 	"net/http"
@@ -724,7 +725,7 @@ func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	issuer := s.provider.IssuerFromRequest(r)
 
 	// Create the discovery document
-	discovery := map[string]interface{}{
+	discovery := map[string]any{
 		"issuer":                                                   issuer,
 		"authorization_endpoint":                                   issuer + "/authorize",
 		"token_endpoint":                                           issuer + "/token",
@@ -970,9 +971,7 @@ func (s *Server) generateDeviceFlowTokens(clientID, userID string, user config.U
 	}
 
 	// Add custom claims from user config
-	for key, value := range user.ExtraClaims {
-		accessTokenClaims[key] = value
-	}
+	maps.Copy(accessTokenClaims, user.ExtraClaims)
 
 	accessToken, err = s.signJWT(accessTokenClaims)
 	if err != nil {
@@ -1115,7 +1114,7 @@ func (s *Server) handleDeviceFlowTokenRequest(w http.ResponseWriter, r *http.Req
 	}
 
 	// Build token response
-	tokenResponse := map[string]interface{}{
+	tokenResponse := map[string]any{
 		"access_token": accessToken,
 		"token_type":   "Bearer",
 		"expires_in":   s.config.OIDCLD.ExpiredIn,
@@ -1168,7 +1167,7 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 	scopesStr := r.FormValue("scope")
 	var scopesList []string
 	if scopesStr != "" {
-		for _, s := range strings.Split(scopesStr, " ") {
+		for s := range strings.SplitSeq(scopesStr, " ") {
 			s = strings.TrimSpace(s)
 			if s != "" {
 				scopesList = append(scopesList, s)
@@ -1218,7 +1217,8 @@ type UserSelectionConfig struct {
 
 // renderSharedUserSelectionPage renders a shared user selection page for both auth code flow and device flow
 func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config UserSelectionConfig) {
-	html := fmt.Sprintf(`
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf(`
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1256,7 +1256,7 @@ func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config Use
         <h1>%s</h1>
         %s
         
-        <ul class="user-list">`, config.Title, config.Title, config.Description)
+        <ul class="user-list">`, config.Title, config.Title, config.Description))
 
 	// Add user selection buttons with aria-labels for E2E testing
 	for userID, user := range s.config.Users {
@@ -1264,23 +1264,23 @@ func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config Use
 
 		if config.ButtonAction == "submit" {
 			// For auth code flow - form submission
-			html += fmt.Sprintf(`
+			builder.WriteString(fmt.Sprintf(`
             <li>
-                <form method="POST" action="%s" style="display: inline-block; width: 100%%;">`, config.FormAction)
+                <form method="POST" action="%s" style="display: inline-block; width: 100%%;">`, config.FormAction))
 
 			// Add hidden fields
 			for name, value := range config.HiddenFields {
-				html += fmt.Sprintf(`
-                    <input type="hidden" name="%s" value="%s">`, name, value)
+				builder.WriteString(fmt.Sprintf(`
+                    <input type="hidden" name="%s" value="%s">`, name, value))
 			}
 
-			html += fmt.Sprintf(`
+			builder.WriteString(fmt.Sprintf(`
                     <button type="submit" name="userID" value="%s" class="user-button" aria-label="%s">
                         <span class="user-name">%s</span>
                         <span class="user-email">%s</span>
                     </button>
                 </form>
-            </li>`, userID, userID, user.DisplayName, email)
+            </li>`, userID, userID, user.DisplayName, email))
 		} else {
 			// For device flow - JavaScript action
 			actionParams := ""
@@ -1291,24 +1291,24 @@ func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config Use
 				}
 			}
 
-			html += fmt.Sprintf(`
+			builder.WriteString(fmt.Sprintf(`
             <li>
                 <button type="button" onclick="%s(%s)" class="user-button" aria-label="%s">
                     <span class="user-name">%s</span>
                     <span class="user-email">%s</span>
                 </button>
-            </li>`, config.ButtonAction, actionParams, userID, user.DisplayName, email)
+            </li>`, config.ButtonAction, actionParams, userID, user.DisplayName, email))
 		}
 	}
 
-	html += fmt.Sprintf(`
+	builder.WriteString(fmt.Sprintf(`
         </ul>
         %s
     </div>
     %s
 </body>
-</html>`, config.ExtraHTML, config.ExtraScript)
+</html>`, config.ExtraHTML, config.ExtraScript))
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(html))
+	w.Write([]byte(builder.String()))
 }
