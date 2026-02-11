@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -497,9 +498,7 @@ func (s *StorageAdapter) GetPrivateClaimsFromScopes(ctx context.Context, userID 
 		if slices.Contains(user.ExtraValidScopes, scope) {
 			// Add all extra claims for this user
 			// In a real implementation, you might want to filter claims by scope
-			for key, value := range user.ExtraClaims {
-				claims[key] = value
-			}
+			maps.Copy(claims, user.ExtraClaims)
 		}
 	}
 

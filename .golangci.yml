@@ -35,6 +35,7 @@ linters:
     - gocritic
     - wsl_v5
     - noinlineerr
+    - prealloc
   settings:
     tagliatelle:
       case:

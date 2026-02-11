@@ -123,8 +123,7 @@ func (cmd *InitCmd) Run() error {
 	// Apply init options (port / issuer / tenant / autocert)
 	var domains []string
 	if strings.TrimSpace(cmd.Domains) != "" {
-		parts := strings.Split(cmd.Domains, ",")
-		for _, p := range parts {
+		for p := range strings.SplitSeq(cmd.Domains, ",") {
 			d := strings.TrimSpace(p)
 			if d != "" {
 				domains = append(domains, d)

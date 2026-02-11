@@ -99,8 +99,66 @@ go install github.com/shibukawa/oidcld@latest
 
 インストール (Option 2: GitHub Releases からダウンロード)
 1. [GitHub Releases](https://github.com/shibukawa/oidcld/releases) へアクセス
-2. ご利用の OS 向けバイナリをダウンロード
+2. ご利用の OS/アーキテクチャ向けアーカイブをダウンロード
 3. (Unix 系) 実行権限付与: `chmod +x oidcld`
+
+現在のリリースバイナリ配布ターゲット:
+- `oidcld-linux-amd64.tar.gz`
+- `oidcld-linux-arm64.tar.gz`
+- `oidcld-darwin-arm64.tar.gz`
+- `oidcld-windows-amd64.zip`
+- `oidcld-windows-arm64.zip`
+
+チェックサム検証:
+```bash
+# Linux AMD64 アーカイブの例
+archive="oidcld-linux-amd64.tar.gz"
+curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
+curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/SHA256SUMS.txt" -o SHA256SUMS.txt
+grep " ${archive}$" SHA256SUMS.txt | sha256sum -c -
+```
+
+macOS Gatekeeper 対応 (ダウンロードしたバイナリ向け):
+```bash
+chmod +x oidcld
+xattr -l ./oidcld
+xattr -d com.apple.quarantine ./oidcld
+```
+
+他リポジトリの GitHub Actions から利用する例 (latest release):
+
+```yaml
+- name: oidcld を取得 (Linux/macOS)
+  if: runner.os != 'Windows'
+  shell: bash
+  run: |
+    set -euo pipefail
+    case "${RUNNER_OS}-${RUNNER_ARCH}" in
+      Linux-X64)   archive="oidcld-linux-amd64.tar.gz" ;;
+      Linux-ARM64) archive="oidcld-linux-arm64.tar.gz" ;;
+      macOS-ARM64) archive="oidcld-darwin-arm64.tar.gz" ;;
+      *) echo "unsupported runner: ${RUNNER_OS}-${RUNNER_ARCH}"; exit 1 ;;
+    esac
+    curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
+    tar -xzf "${archive}"
+    chmod +x oidcld
+    echo "${PWD}" >> "${GITHUB_PATH}"
+
+- name: oidcld を取得 (Windows)
+  if: runner.os == 'Windows'
+  shell: pwsh
+  run: |
+    switch ("$env:RUNNER_ARCH") {
+      "X64" { $archive = "oidcld-windows-amd64.zip" }
+      "ARM64" { $archive = "oidcld-windows-arm64.zip" }
+      default { throw "unsupported runner architecture: $env:RUNNER_ARCH" }
+    }
+    Invoke-WebRequest -Uri "https://github.com/shibukawa/oidcld/releases/latest/download/$archive" -OutFile $archive
+    Expand-Archive -Path $archive -DestinationPath . -Force
+    Add-Content -Path $env:GITHUB_PATH -Value $PWD
+```
+
+上記の後続 step で、Unix 系は `oidcld --help`、Windows は `./oidcld.exe --help` を実行できます。
 
 ### 2. Docker モード (標準 OIDC)
 
@@ -166,6 +224,7 @@ curl -k https://localhost:18888/.well-known/openid-configuration
 ```
 
 トラブルシューティング:
+- `oidcld init` が完了しても `oidcld.yaml` が生成されない (`v0.1.2` のみ) → 新しいリリースへ更新してください。暫定回避策: `oidcld init oidcld.yaml --template standard`
 - 不正なオリジンの MSAL エラー → HTTPS と信頼済み証明書 (mkcert インストール) を確認
 - リフレッシュトークンが無い → `offline_access` スコープを追加し、設定でリフレッシュを有効化
 
