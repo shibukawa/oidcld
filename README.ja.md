@@ -109,6 +109,22 @@ go install github.com/shibukawa/oidcld@latest
 - `oidcld-windows-amd64.zip`
 - `oidcld-windows-arm64.zip`
 
+チェックサム検証:
+```bash
+# Linux AMD64 アーカイブの例
+archive="oidcld-linux-amd64.tar.gz"
+curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
+curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/SHA256SUMS.txt" -o SHA256SUMS.txt
+grep " ${archive}$" SHA256SUMS.txt | sha256sum -c -
+```
+
+macOS Gatekeeper 対応 (ダウンロードしたバイナリ向け):
+```bash
+chmod +x oidcld
+xattr -l ./oidcld
+xattr -d com.apple.quarantine ./oidcld
+```
+
 他リポジトリの GitHub Actions から利用する例 (latest release):
 
 ```yaml
@@ -208,6 +224,7 @@ curl -k https://localhost:18888/.well-known/openid-configuration
 ```
 
 トラブルシューティング:
+- `oidcld init` が完了しても `oidcld.yaml` が生成されない (`v0.1.2` のみ) → 新しいリリースへ更新してください。暫定回避策: `oidcld init oidcld.yaml --template standard`
 - 不正なオリジンの MSAL エラー → HTTPS と信頼済み証明書 (mkcert インストール) を確認
 - リフレッシュトークンが無い → `offline_access` スコープを追加し、設定でリフレッシュを有効化
 

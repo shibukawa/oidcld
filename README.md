@@ -111,6 +111,22 @@ Current release binary targets:
 - `oidcld-windows-amd64.zip`
 - `oidcld-windows-arm64.zip`
 
+Checksum verification:
+```bash
+# Example for Linux AMD64 archive
+archive="oidcld-linux-amd64.tar.gz"
+curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
+curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/SHA256SUMS.txt" -o SHA256SUMS.txt
+grep " ${archive}$" SHA256SUMS.txt | sha256sum -c -
+```
+
+macOS Gatekeeper note (for downloaded binaries):
+```bash
+chmod +x oidcld
+xattr -l ./oidcld
+xattr -d com.apple.quarantine ./oidcld
+```
+
 Use from GitHub Actions (latest release):
 
 ```yaml
@@ -210,6 +226,7 @@ curl -k https://localhost:18888/.well-known/openid-configuration
 ```
 
 Troubleshooting:
+- `oidcld init` finishes but no `oidcld.yaml` is created (v0.1.2 only) → upgrade to a newer release; as a workaround run non-interactive mode: `oidcld init oidcld.yaml --template standard`
 - MSAL error about insecure origins → ensure HTTPS + trusted cert (mkcert install)
 - Missing refresh token → include `offline_access` scope & enable refresh in config
 

@@ -190,6 +190,15 @@ jobs:
       run: |
         echo "Downloaded artifacts:"
         find artifacts -type f -name "*.zip" -o -name "*.tar.gz" | sort
+
+    - name: Generate SHA256 checksums
+      run: |
+        cd artifacts
+        find . -maxdepth 1 -type f \( -name "*.zip" -o -name "*.tar.gz" \) -print0 \
+          | sort -z \
+          | xargs -0 sha256sum > SHA256SUMS.txt
+        echo "Generated SHA256SUMS.txt:"
+        cat SHA256SUMS.txt
         
     - name: Generate release notes
       id: release_notes
@@ -231,6 +240,12 @@ jobs:
         See the commit history for detailed changes in this release.
         
         ### 🔍 Verification
+
+        Verify downloaded binary archives with checksums:
+        ```bash
+        curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/SHA256SUMS.txt" -o SHA256SUMS.txt
+        sha256sum -c SHA256SUMS.txt
+        ```
         
         All binaries and Docker images have been built and tested with:
         - ✅ Unit tests passed
