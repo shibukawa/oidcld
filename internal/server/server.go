@@ -1218,7 +1218,7 @@ type UserSelectionConfig struct {
 // renderSharedUserSelectionPage renders a shared user selection page for both auth code flow and device flow
 func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config UserSelectionConfig) {
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&builder, `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1256,7 +1256,7 @@ func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config Use
         <h1>%s</h1>
         %s
         
-        <ul class="user-list">`, config.Title, config.Title, config.Description))
+        <ul class="user-list">`, config.Title, config.Title, config.Description)
 
 	// Add user selection buttons with aria-labels for E2E testing
 	for userID, user := range s.config.Users {
@@ -1264,23 +1264,23 @@ func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config Use
 
 		if config.ButtonAction == "submit" {
 			// For auth code flow - form submission
-			builder.WriteString(fmt.Sprintf(`
+			fmt.Fprintf(&builder, `
             <li>
-                <form method="POST" action="%s" style="display: inline-block; width: 100%%;">`, config.FormAction))
+                <form method="POST" action="%s" style="display: inline-block; width: 100%%;">`, config.FormAction)
 
 			// Add hidden fields
 			for name, value := range config.HiddenFields {
-				builder.WriteString(fmt.Sprintf(`
-                    <input type="hidden" name="%s" value="%s">`, name, value))
+				fmt.Fprintf(&builder, `
+                    <input type="hidden" name="%s" value="%s">`, name, value)
 			}
 
-			builder.WriteString(fmt.Sprintf(`
+			fmt.Fprintf(&builder, `
                     <button type="submit" name="userID" value="%s" class="user-button" aria-label="%s">
                         <span class="user-name">%s</span>
                         <span class="user-email">%s</span>
                     </button>
                 </form>
-            </li>`, userID, userID, user.DisplayName, email))
+            </li>`, userID, userID, user.DisplayName, email)
 		} else {
 			// For device flow - JavaScript action
 			actionParams := ""
@@ -1291,23 +1291,23 @@ func (s *Server) renderSharedUserSelectionPage(w http.ResponseWriter, config Use
 				}
 			}
 
-			builder.WriteString(fmt.Sprintf(`
+			fmt.Fprintf(&builder, `
             <li>
                 <button type="button" onclick="%s(%s)" class="user-button" aria-label="%s">
                     <span class="user-name">%s</span>
                     <span class="user-email">%s</span>
                 </button>
-            </li>`, config.ButtonAction, actionParams, userID, user.DisplayName, email))
+            </li>`, config.ButtonAction, actionParams, userID, user.DisplayName, email)
 		}
 	}
 
-	builder.WriteString(fmt.Sprintf(`
+	fmt.Fprintf(&builder, `
         </ul>
         %s
     </div>
     %s
 </body>
-</html>`, config.ExtraHTML, config.ExtraScript))
+</html>`, config.ExtraHTML, config.ExtraScript)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(builder.String()))
