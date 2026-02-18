@@ -239,7 +239,7 @@ Commands for local development and testing. MCP is intentionally omitted here.
 
 - `oidcld serve`: Start the OpenID Connect server
   - Flags: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - Notes: If TLS certs or autocert are configured, HTTPS is used and the issuer is adjusted accordingly.
+  - Notes: If TLS certs or autocert are configured, HTTPS is used and the issuer is adjusted accordingly. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
 
 - `oidcld health`: Probe server health
   - Flags: `--url`, `--port`, `--config`, `--timeout`

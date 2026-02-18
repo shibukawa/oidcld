@@ -237,7 +237,7 @@ curl -k https://localhost:18888/.well-known/openid-configuration
 
 - `oidcld serve`: OIDC サーバーを起動
   - フラグ: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - 備考: TLS 証明書や autocert が設定されている場合は HTTPS で起動し、issuer も適切に調整されます。
+  - 備考: TLS 証明書や autocert が設定されている場合は HTTPS で起動し、issuer も適切に調整されます。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
 
 - `oidcld health`: サーバーヘルスをチェック
   - フラグ: `--url`, `--port`, `--config`, `--timeout`

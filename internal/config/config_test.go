@@ -239,3 +239,52 @@ func TestConfigModes(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepareForServeSyncsLocalhostIssuerPort(t *testing.T) {
+	cfg := createDefaultConfig(ModeStandard)
+
+	useHTTPS, msg := cfg.PrepareForServe(&ServeOptions{
+		Port: "19000",
+	})
+
+	assert.False(t, useHTTPS)
+	assert.Equal(t, "", msg)
+	assert.Equal(t, "http://localhost:19000", cfg.OIDCLD.Issuer)
+}
+
+func TestPrepareForServeKeepsNonLocalhostIssuer(t *testing.T) {
+	cfg := createDefaultConfig(ModeEntraIDv2)
+	originalIssuer := cfg.OIDCLD.Issuer
+
+	useHTTPS, _ := cfg.PrepareForServe(&ServeOptions{
+		Port: "19000",
+	})
+
+	assert.True(t, useHTTPS)
+	assert.Equal(t, originalIssuer, cfg.OIDCLD.Issuer)
+}
+
+func TestPrepareForServeSyncsLocalhostHTTPSIssuerPort(t *testing.T) {
+	cfg := createDefaultConfig(ModeStandard)
+	cfg.OIDCLD.Issuer = "https://localhost:8443"
+
+	useHTTPS, msg := cfg.PrepareForServe(&ServeOptions{
+		Port: "19000",
+	})
+
+	assert.True(t, useHTTPS)
+	assert.Equal(t, "", msg)
+	assert.Equal(t, "https://localhost:19000", cfg.OIDCLD.Issuer)
+}
+
+func TestPrepareForServeSyncsLoopbackIPv4IssuerPort(t *testing.T) {
+	cfg := createDefaultConfig(ModeStandard)
+	cfg.OIDCLD.Issuer = "http://127.0.0.1:18888"
+
+	useHTTPS, _ := cfg.PrepareForServe(&ServeOptions{
+		Port: "19000",
+	})
+
+	assert.False(t, useHTTPS)
+	assert.Equal(t, "http://127.0.0.1:19000", cfg.OIDCLD.Issuer)
+}
