@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -544,8 +546,34 @@ func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message str
 			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
 		}
 	}
+	c.OIDCLD.Issuer = synchronizeLocalIssuerPort(c.OIDCLD.Issuer, opts.Port)
 
 	return useHTTPS, message
+}
+
+func synchronizeLocalIssuerPort(issuer, port string) string {
+	if issuer == "" || port == "" {
+		return issuer
+	}
+	parsed, err := neturl.Parse(issuer)
+	if err != nil || parsed.Host == "" {
+		return issuer
+	}
+	host := parsed.Hostname()
+	if !isLocalLoopbackHost(host) {
+		return issuer
+	}
+	parsed.Host = net.JoinHostPort(host, port)
+	return parsed.String()
+}
+
+func isLocalLoopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	default:
+		return false
+	}
 }
 
 // generateConfigYAML generates YAML configuration using text template
