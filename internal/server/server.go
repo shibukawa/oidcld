@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"errors"
 
 	// "log" was removed (diagnostic logs cleaned up)
 
@@ -30,10 +31,13 @@ import (
 )
 
 var (
-	ErrConfigurationCannotBeNil    = fmt.Errorf("configuration cannot be nil")
-	ErrIssuerURLCannotBeChanged    = fmt.Errorf("issuer URL cannot be changed at runtime")
-	ErrAutocertConflictTLSProvided = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
-	ErrTLSMissingWithoutAutocert   = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+	ErrConfigurationCannotBeNil           = fmt.Errorf("configuration cannot be nil")
+	ErrIssuerURLCannotBeChanged           = fmt.Errorf("issuer URL cannot be changed at runtime")
+	ErrAutocertConflictTLSProvided        = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
+	ErrTLSMissingWithoutAutocert          = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+	ErrEntraIDTenantRequiresConfiguration = errors.New("tenant is not allowed without EntraID configuration")
+	ErrEntraIDTenantIDMismatch            = errors.New("tenant does not match configured tenant_id")
+	ErrEntraIDTenantNotAllowed            = errors.New("tenant is not allowed")
 )
 
 // Server represents the new zitadel/oidc-based server implementation
@@ -346,10 +350,6 @@ type entraIDRouteMatch struct {
 	RequestInfo   entraIDRequestInfo
 }
 
-func matchEntraIDV2Route(path string, entraid *config.EntraIDConfig) (entraIDRouteMatch, bool, error) {
-	return matchEntraIDRoute(path, entraid)
-}
-
 func matchEntraIDRoute(path string, entraid *config.EntraIDConfig) (entraIDRouteMatch, bool, error) {
 	if entraid == nil {
 		return entraIDRouteMatch{}, false, nil
@@ -441,25 +441,6 @@ func canonicalEntraRootPath(segments []string) (string, bool) {
 		return "", false
 	}
 	return canonicalEntraCorePath(segments[0])
-}
-
-func canonicalSharedEntraEndpointPath(segments []string) (string, bool) {
-	if len(segments) == 1 {
-		switch segments[0] {
-		case "userinfo":
-			return "/userinfo", true
-		case "revoke":
-			return "/revoke", true
-		case "health":
-			return "/health", true
-		}
-	}
-
-	if len(segments) == 2 && segments[0] == "oauth" && segments[1] == "introspect" {
-		return "/oauth/introspect", true
-	}
-
-	return "", false
 }
 
 func canonicalV2SharedEndpointPath(segments []string, tenantScoped bool) (string, bool) {
@@ -560,7 +541,7 @@ func validateEntraIDRequestTenant(requestedTenant string, entraid *config.EntraI
 		return nil
 	}
 	if entraid == nil {
-		return fmt.Errorf("tenant %q is not allowed without EntraID configuration", requestedTenant)
+		return fmt.Errorf("tenant %q: %w", requestedTenant, ErrEntraIDTenantRequiresConfiguration)
 	}
 
 	configuredTenant := strings.Trim(entraid.TenantID, "/")
@@ -571,9 +552,9 @@ func validateEntraIDRequestTenant(requestedTenant string, entraid *config.EntraI
 		return nil
 	}
 	if isGUIDTenant(requestedTenant) {
-		return fmt.Errorf("tenant %q does not match configured tenant_id", requestedTenant)
+		return fmt.Errorf("tenant %q: %w", requestedTenant, ErrEntraIDTenantIDMismatch)
 	}
-	return fmt.Errorf("tenant %q is not allowed", requestedTenant)
+	return fmt.Errorf("tenant %q: %w", requestedTenant, ErrEntraIDTenantNotAllowed)
 }
 
 func allowedEntraIDTenantValues(entraid *config.EntraIDConfig) []string {

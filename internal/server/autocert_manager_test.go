@@ -147,6 +147,7 @@ func TestAutocertManager_GetTLSConfig(t *testing.T) {
 	tlsConfig := manager.GetTLSConfig()
 	if tlsConfig == nil {
 		t.Fatal("TLS config is nil")
+		return
 	}
 
 	// Verify TLS config has GetCertificate function
