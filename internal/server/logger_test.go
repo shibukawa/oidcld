@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/alecthomas/assert/v2"
+	"github.com/fatih/color"
 	"github.com/shibukawa/oidcld/internal/config"
 )
 
@@ -16,12 +17,15 @@ func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 
 	originalStdout := os.Stdout
+	originalColorOutput := color.Output
 	reader, writer, err := os.Pipe()
 	assert.NoError(t, err)
 	os.Stdout = writer
+	color.Output = writer
 
 	defer func() {
 		os.Stdout = originalStdout
+		color.Output = originalColorOutput
 	}()
 
 	fn()
