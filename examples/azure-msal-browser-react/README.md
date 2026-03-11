@@ -4,11 +4,12 @@ A comprehensive React TypeScript example demonstrating OpenID Connect authentica
 
 ## Features
 
-- **React 18** with TypeScript and Vite
+- **React 19** with TypeScript and Vite
 - **Azure MSAL Browser** (@azure/msal-browser) for OpenID Connect authentication
 - **MSAL React** (@azure/msal-react) for React-specific hooks and components
 - **Tailwind CSS** for modern, utility-first styling
 - **Redirect-based authentication** flows (popup mode removed for simplicity)
+- **MSAL Browser v5 redirect bridge** for COOP-compatible redirect handling
 - **Silent token acquisition** with fallback to interactive redirect
 - **UserInfo endpoint** integration
 - **Logout functionality** with redirect
@@ -74,6 +75,10 @@ brew install mkcert
 4. **Open your browser:**
    Navigate to `http://localhost:5173`
 
+5. **Register the redirect URI used by MSAL v5:**
+    Add `http://localhost:5173/redirect.html` to your client application's allowed redirect URIs.
+    If you override the redirect URI with `VITE_OIDC_REDIRECT_URI`, register that exact value instead.
+
 ## Configuration
 
 The application is configured in `src/authConfig.ts`:
@@ -82,9 +87,9 @@ The application is configured in `src/authConfig.ts`:
 export const msalConfig: Configuration = {
     auth: {
         clientId: "my-client-app",
-        authority: "https://localhost:18888",
-        redirectUri: "http://localhost:5173",
-        postLogoutRedirectUri: "http://localhost:5173"
+    authority: "https://localhost:18888/12345678-1234-1234-1234-123456789abc",
+        redirectUri: "http://localhost:5173/redirect.html",
+        postLogoutRedirectUri: "http://localhost:5173/"
     },
     // ... additional configuration
 };
@@ -93,9 +98,18 @@ export const msalConfig: Configuration = {
 ### Key Configuration Options
 
 - **clientId**: Must match a user in oidcld.yaml configuration
-- **authority**: OIDC server URL (oidcld server)
+- **authority**: EntraID-compatible tenant authority URL. The example normalizes this to `/{tenant}` for MSAL configuration, while the explicit discovery fetch appends `/v2.0/.well-known/openid-configuration` when resolving the v2 discovery document.
 - **redirectUri**: Where to redirect after authentication
+- **redirectUri**: Should point to the dedicated MSAL redirect bridge page
 - **scopes**: Requested permissions (openid, profile, email, read, write)
+
+### MSAL Browser v5 redirect bridge
+
+MSAL Browser v5 requires a dedicated redirect bridge page for COOP-compatible redirect handling. This example uses [redirect.html](redirect.html) and configures Vite to emit it as a separate HTML entry.
+
+- Default redirect URI: `http://localhost:5173/redirect.html`
+- Default post logout redirect URI: `http://localhost:5173/`
+- If you change `VITE_OIDC_REDIRECT_URI`, update the client registration to match exactly
 
 ## Usage
 
@@ -151,15 +165,7 @@ await instance.acquireTokenRedirect({
 
 ### UserInfo Endpoint
 
-The example demonstrates calling the oidcld UserInfo endpoint:
-
-```typescript
-const userInfoResponse = await fetch("https://localhost:18888/userinfo", {
-    headers: {
-        Authorization: `Bearer ${accessToken}`
-    }
-});
-```
+The example resolves `userinfo_endpoint` from the discovery document exposed by the configured authority, then calls that advertised endpoint with the acquired access token.
 
 ### Token Management
 
@@ -167,6 +173,7 @@ const userInfoResponse = await fetch("https://localhost:18888/userinfo", {
 - **Interactive Fallback**: Uses redirect when silent acquisition fails
 - **Error Handling**: Proper error handling for authentication failures
 - **OIDC Protocol**: Configured for OIDC mode to work with HTTP authorities
+- **Redirect Bridge**: `redirect.html` forwards the auth response back to the main app via `broadcastResponseToMainFrame()`
 
 ## Default oidcld Configuration
 

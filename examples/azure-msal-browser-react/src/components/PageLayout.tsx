@@ -10,7 +10,6 @@ import { msalConfig, loginRequest, parsedScopes } from "../authConfig";
  */
 export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
     const { accounts } = useMsal();
-    console.log(Date.now(), accounts);
 
     return (
         <div className="min-h-screen bg-gray-50">

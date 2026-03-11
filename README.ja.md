@@ -214,6 +214,10 @@ flowchart TB
 - `./oidcld init --template entraid-v2` でスキャフォールド
 - `nonce_required` と適切な issuer 形式を強制
 - Azure 風のクレーム (例: `oid`, `tid`, `preferred_username`)
+- `/{tenant}/v2.0/.well-known/openid-configuration` や `/{tenant}/oauth2/v2.0/authorize` など Microsoft 風の v2 endpoint alias を提供
+- `common`, `organizations`, `customers`, `contoso.onmicrosoft.com` の tenant alias を許可し、`/v2.0/.well-known/openid-configuration` のような tenant なし v2 path も受け付ける
+- EntraID v1 モードでも、`v2.0` セグメントがない同等の alias tenant / tenantless path を受け付ける
+- 起動ログの EntraID endpoint 表示は `{tenant}` プレースホルダーで短くまとめ、tenant なし request は warning を出し、`/health` request は access log に出さない
 - MSAL ライブラリは HTTPS が必須
 
 クイックスタート:

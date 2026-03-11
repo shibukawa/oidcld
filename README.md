@@ -216,6 +216,10 @@ Key points:
 - Use `./oidcld init --template entraid-v2` to scaffold
 - Forces `nonce_required` and appropriate issuer format
 - Provides Azure-style claim set (e.g. `oid`, `tid`, `preferred_username`)
+- Serves Microsoft-style v2 discovery and endpoint aliases such as `/{tenant}/v2.0/.well-known/openid-configuration` and `/{tenant}/oauth2/v2.0/authorize`
+- Accepts EntraID v2 tenant aliases `common`, `organizations`, `customers`, and `contoso.onmicrosoft.com`, and also accepts tenantless v2 paths such as `/v2.0/.well-known/openid-configuration`
+- The same alias-tenant and tenantless behavior is also available in EntraID v1 mode, using the v1 path shape without the `v2.0` segment
+- Startup logs compact EntraID endpoint output with `{tenant}` placeholders, tenantless requests emit warnings, and `/health` requests stay out of access logs
 - HTTPS mandatory for MSAL libraries
 
 Quick start:

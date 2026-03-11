@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
-import { loginRequest, graphConfig } from "../authConfig";
+import { getV2DiscoveryDocument, loginRequest } from "../authConfig";
 
 interface UserInfo {
     sub?: string;
@@ -20,7 +20,7 @@ interface UserInfo {
     job_title?: string;
     department?: string;
     company_name?: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 /**
@@ -34,8 +34,8 @@ export const ProfileData = () => {
 
     const account = accounts[0];
 
-    const getUserInfo = async () => {
-        if (!account) {
+    const getUserInfo = useCallback(async (targetAccount = account) => {
+        if (!targetAccount) {
             setError("No account found");
             return;
         }
@@ -45,17 +45,19 @@ export const ProfileData = () => {
 
         try {
             // First, try to get a token silently
-            console.log("🐎")
-            console.log(loginRequest)
-            console.log(account)
             const response = await instance.acquireTokenSilent({
                 ...loginRequest,
-                account: account
+                account: targetAccount
             });
-            console.log("🐍")
+
+            const discoveryDocument = await getV2DiscoveryDocument();
+            const userInfoEndpoint = discoveryDocument.userinfo_endpoint;
+            if (!userInfoEndpoint) {
+                throw new Error("userinfo_endpoint was not present in the v2 discovery document");
+            }
 
             // Call the userinfo endpoint
-            const userInfoResponse = await fetch(graphConfig.graphMeEndpoint, {
+            const userInfoResponse = await fetch(userInfoEndpoint, {
                 headers: {
                     Authorization: `Bearer ${response.accessToken}`
                 }
@@ -73,7 +75,7 @@ export const ProfileData = () => {
                 try {
                     await instance.acquireTokenRedirect({
                         ...loginRequest,
-                        account: account
+                        account: targetAccount
                     });
                 } catch (redirectError) {
                     console.error("Token acquisition failed:", redirectError);
@@ -86,13 +88,15 @@ export const ProfileData = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }, [account, instance]);
 
     useEffect(() => {
-        if (account) {
-            getUserInfo();
+        if (!account) {
+            return;
         }
-    }, [account]);
+
+        void getUserInfo(account);
+    }, [account, getUserInfo]);
 
     if (!account) {
         return (
@@ -288,7 +292,9 @@ export const ProfileData = () => {
                     {!loading && !error && !userInfo && (
                         <button 
                             className="bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-2 px-4 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2"
-                            onClick={getUserInfo}
+                            onClick={() => {
+                                void getUserInfo(account);
+                            }}
                         >
                             Refresh User Info
                         </button>

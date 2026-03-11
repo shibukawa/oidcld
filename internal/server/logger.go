@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/shibukawa/oidcld/internal/config"
 )
 
 // Logger provides colorful, pretty logging for the OIDC server
@@ -40,7 +41,7 @@ func NewLogger() *Logger {
 }
 
 // ServerStarting logs server startup with beautiful formatting
-func (l *Logger) ServerStarting(addr, issuer string, https bool) {
+func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config.EntraIDConfig) {
 	fmt.Println()
 	l.printBanner()
 	fmt.Println()
@@ -56,18 +57,51 @@ func (l *Logger) ServerStarting(addr, issuer string, https bool) {
 	l.printKeyValue("🌐 Issuer", issuer)
 	l.printKeyValue("⏰ Started", time.Now().Format("2006-01-02 15:04:05"))
 
+	discoveryEndpoint := issuer + "/.well-known/openid-configuration"
+	authorizationEndpoint := issuer + "/authorize"
+	tokenEndpoint := issuer + "/token"
+	userInfoEndpoint := issuer + "/userinfo"
+	jwksEndpoint := issuer + "/keys"
+	deviceFlowEndpoint := issuer + "/device_authorization"
+	introspectionEndpoint := issuer + "/oauth/introspect"
+	revocationEndpoint := issuer + "/revoke"
+	endSessionEndpoint := issuer + "/end_session"
+	healthCheckEndpoint := issuer + "/health"
+	startupDisplay, hasStartupDisplay := entraIDStartupDisplayForIssuer(issuer, entraid)
+	if hasStartupDisplay {
+		discoveryEndpoint = startupDisplay.Discovery
+		authorizationEndpoint = startupDisplay.Authorize
+		tokenEndpoint = startupDisplay.Token
+		userInfoEndpoint = startupDisplay.UserInfo
+		jwksEndpoint = startupDisplay.JWKS
+		deviceFlowEndpoint = startupDisplay.DeviceAuthorization
+		introspectionEndpoint = startupDisplay.Introspection
+		revocationEndpoint = startupDisplay.Revocation
+		endSessionEndpoint = startupDisplay.Logout
+		healthCheckEndpoint = startupDisplay.HealthCheck
+	} else if routes, ok := entraIDRoutesForIssuer(issuer, entraid); ok {
+		authorizationEndpoint = routes.Authorize
+		tokenEndpoint = routes.Token
+		jwksEndpoint = routes.JWKS
+		deviceFlowEndpoint = routes.DeviceAuthorization
+		endSessionEndpoint = routes.Logout
+	}
+
 	fmt.Println()
 	l.info.Println("📋 Available Endpoints:")
-	l.printEndpoint("Discovery", issuer+"/.well-known/openid-configuration")
-	l.printEndpoint("Authorization", issuer+"/authorize")
-	l.printEndpoint("Token", issuer+"/token")
-	l.printEndpoint("UserInfo", issuer+"/userinfo")
-	l.printEndpoint("JWKS", issuer+"/keys")
-	l.printEndpoint("Device Flow", issuer+"/device_authorization")
-	l.printEndpoint("Introspection", issuer+"/oauth/introspect")
-	l.printEndpoint("Revocation", issuer+"/revoke")
-	l.printEndpoint("End Session", issuer+"/end_session")
-	l.printEndpoint("Health Check", issuer+"/health")
+	l.printEndpoint("Discovery", discoveryEndpoint)
+	l.printEndpoint("Authorization", authorizationEndpoint)
+	l.printEndpoint("Token", tokenEndpoint)
+	l.printEndpoint("UserInfo", userInfoEndpoint)
+	l.printEndpoint("JWKS", jwksEndpoint)
+	l.printEndpoint("Device Flow", deviceFlowEndpoint)
+	l.printEndpoint("Introspection", introspectionEndpoint)
+	l.printEndpoint("Revocation", revocationEndpoint)
+	l.printEndpoint("End Session", endSessionEndpoint)
+	l.printEndpoint("Health Check", healthCheckEndpoint)
+	if hasStartupDisplay {
+		l.printKeyValue("Tenant", strings.Join(startupDisplay.Tenants, ", ")+" (or omitted)")
+	}
 
 	fmt.Println()
 	l.success.Println("✅ Server ready to accept connections!")
