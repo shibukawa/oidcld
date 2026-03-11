@@ -13,5 +13,13 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.VITE_OIDC_AUTHORITY': JSON.stringify(VITE_OIDC_AUTHORITY),
     },
+    build: {
+      rollupOptions: {
+        input: {
+          main: 'index.html',
+          redirect: 'redirect.html',
+        },
+      },
+    },
   }
 })

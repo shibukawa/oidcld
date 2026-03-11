@@ -288,3 +288,16 @@ func TestPrepareForServeSyncsLoopbackIPv4IssuerPort(t *testing.T) {
 	assert.False(t, useHTTPS)
 	assert.Equal(t, "http://127.0.0.1:19000", cfg.OIDCLD.Issuer)
 }
+
+func TestPrepareForServeNormalizesEntraIDv2IssuerPath(t *testing.T) {
+	cfg := createDefaultConfig(ModeEntraIDv2)
+	cfg.OIDCLD.Issuer = "https://oidc.localhost:8443"
+
+	useHTTPS, msg := cfg.PrepareForServe(&ServeOptions{
+		Port: "8443",
+	})
+
+	assert.True(t, useHTTPS)
+	assert.Equal(t, "", msg)
+	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/v2.0", cfg.OIDCLD.Issuer)
+}
