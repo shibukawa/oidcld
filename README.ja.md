@@ -205,7 +205,7 @@ MSAL 連携向けに Azure AD (EntraID) の振る舞いを模倣します。HTTP
 
 ```mermaid
 flowchart TB
-  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18888"]
+  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18443"]
   OIDCLDEntra --> Claims["Azure-like Claims<br/>(oid, tid, preferred_username, upn)"]
   OIDCLDEntra --> ConfigEntra[(entraid-v2 template yaml)]
 ```
@@ -214,6 +214,7 @@ flowchart TB
 - `./oidcld init --template entraid-v2` でスキャフォールド
 - `nonce_required` と適切な issuer 形式を強制
 - Azure 風のクレーム (例: `oid`, `tid`, `preferred_username`)
+- 単一 audience の `aud` クレームは EntraID 互換性を優先して既定で文字列出力。配列で出したい場合は `oidcld.aud_claim_format: array` を指定
 - `/{tenant}/v2.0/.well-known/openid-configuration` や `/{tenant}/oauth2/v2.0/authorize` など Microsoft 風の v2 endpoint alias を提供
 - `common`, `organizations`, `customers`, `contoso.onmicrosoft.com` の tenant alias を許可し、`/v2.0/.well-known/openid-configuration` のような tenant なし v2 path も受け付ける
 - EntraID v1 モードでも、`v2.0` セグメントがない同等の alias tenant / tenantless path を受け付ける
@@ -224,13 +225,14 @@ flowchart TB
 ```bash
 ./oidcld init --template entraid-v2
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
-curl -k https://localhost:18888/.well-known/openid-configuration
+curl -k https://localhost:18443/.well-known/openid-configuration
 ```
 
 トラブルシューティング:
 - `oidcld init` が完了しても `oidcld.yaml` が生成されない (`v0.1.2` のみ) → 新しいリリースへ更新してください。暫定回避策: `oidcld init oidcld.yaml --template standard`
 - 不正なオリジンの MSAL エラー → HTTPS と信頼済み証明書 (mkcert インストール) を確認
 - リフレッシュトークンが無い → `offline_access` スコープを追加し、設定でリフレッシュを有効化
+- EntraID 風に単一 audience の `aud` を常に文字列にしたい → 既定の `oidcld.aud_claim_format: string` を利用し、配列が必要なクライアントだけ `array` へ変更
 
 ## CLI サマリー
 
@@ -240,8 +242,8 @@ curl -k https://localhost:18888/.well-known/openid-configuration
   - フラグ: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
 
 - `oidcld serve`: OIDC サーバーを起動
-  - フラグ: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - 備考: TLS 証明書や autocert が設定されている場合は HTTPS で起動し、issuer も適切に調整されます。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
+  - フラグ: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
+  - 備考: HTTP は既定で `18888`、HTTPS は既定で `18443` を使います。HTTPS 時の `--http-readonly-port` は既定で `18888` になり、discovery/JWKS/health だけを公開します。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
 
 - `oidcld health`: サーバーヘルスをチェック
   - フラグ: `--url`, `--port`, `--config`, `--timeout`
@@ -286,6 +288,8 @@ mkcert localhost 127.0.0.1 ::1
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
+HTTPS が有効な場合でも、oidcld は discovery、JWKS、health だけを公開する制限付き HTTP companion listener を併設します。既定の HTTPS port は `18443`、companion HTTP port は `18888` です。無効化したい場合は `--http-readonly-port off` を指定してください。
+
 **Option 2: ACME プロトコルサーバーを使用**
 
 ACME プロトコルにより証明書を自動取得できます。以下はローカル ACME サーバーの例です。
@@ -316,7 +320,8 @@ services:
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "8443:443"     # HTTPS OIDC server port (mapped to non-privileged port)
+      - "18888:18888"  # HTTP metadata companion listener (discovery/JWKS/health)
+      - "8443:443"     # HTTPS OIDC server port
     volumes:
       - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
     environment:
@@ -329,7 +334,13 @@ services:
       - OIDCLD_ACME_AGREE_TOS=true
       - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
       - OIDCLD_ACME_RENEWAL_THRESHOLD=1
-    command: ["serve", "--config", "/app/config.yaml", "--port", "443"]
+    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--http-readonly-port", "18888"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
     depends_on:
       myencrypt.localhost:
         condition: service_healthy
@@ -344,7 +355,7 @@ import { PublicClientApplication } from '@azure/msal-browser';
 const msalConfig = {
   auth: {
     clientId: 'your-azure-app-id',
-    authority: 'https://localhost:18888',  // HTTPS が必要
+    authority: 'https://localhost:18443',  // HTTPS が必要
     redirectUri: 'https://localhost:3000/callback',
     postLogoutRedirectUri: 'https://localhost:3000/'
   },

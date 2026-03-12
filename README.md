@@ -207,7 +207,7 @@ Emulates Azure AD (EntraID) shape for local MSAL integration. Requires HTTPS + f
 
 ```mermaid
 flowchart TB
-  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18888"]
+  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18443"]
   OIDCLDEntra --> Claims["Azure-like Claims<br/>(oid, tid, preferred_username, upn)"]
   OIDCLDEntra --> ConfigEntra[(entraid-v2 template yaml)]
 ```
@@ -216,6 +216,7 @@ Key points:
 - Use `./oidcld init --template entraid-v2` to scaffold
 - Forces `nonce_required` and appropriate issuer format
 - Provides Azure-style claim set (e.g. `oid`, `tid`, `preferred_username`)
+- Defaults single-audience `aud` claims to a string for closer EntraID compatibility; set `oidcld.aud_claim_format: array` if you need array output
 - Serves Microsoft-style v2 discovery and endpoint aliases such as `/{tenant}/v2.0/.well-known/openid-configuration` and `/{tenant}/oauth2/v2.0/authorize`
 - Accepts EntraID v2 tenant aliases `common`, `organizations`, `customers`, and `contoso.onmicrosoft.com`, and also accepts tenantless v2 paths such as `/v2.0/.well-known/openid-configuration`
 - The same alias-tenant and tenantless behavior is also available in EntraID v1 mode, using the v1 path shape without the `v2.0` segment
@@ -226,13 +227,14 @@ Quick start:
 ```bash
 ./oidcld init --template entraid-v2
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
-curl -k https://localhost:18888/.well-known/openid-configuration
+curl -k https://localhost:18443/.well-known/openid-configuration
 ```
 
 Troubleshooting:
 - `oidcld init` finishes but no `oidcld.yaml` is created (v0.1.2 only) → upgrade to a newer release; as a workaround run non-interactive mode: `oidcld init oidcld.yaml --template standard`
 - MSAL error about insecure origins → ensure HTTPS + trusted cert (mkcert install)
 - Missing refresh token → include `offline_access` scope & enable refresh in config
+- Need Azure-style single-string `aud` output across all flows → keep the default `oidcld.aud_claim_format: string`; switch to `array` only when a client explicitly expects JSON array output
 
 ## CLI Summary
 
@@ -242,8 +244,8 @@ Commands for local development and testing. MCP is intentionally omitted here.
   - Flags: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
 
 - `oidcld serve`: Start the OpenID Connect server
-  - Flags: `--config oidcld.yaml`, `--port 18888`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - Notes: If TLS certs or autocert are configured, HTTPS is used and the issuer is adjusted accordingly. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
+  - Flags: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
+  - Notes: HTTP defaults to port `18888`. HTTPS defaults to port `18443`. In HTTPS mode, `--http-readonly-port` defaults to `18888` for discovery/JWKS/health only. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
 
 - `oidcld health`: Probe server health
   - Flags: `--url`, `--port`, `--config`, `--timeout`
@@ -289,6 +291,8 @@ mkcert localhost 127.0.0.1 ::1
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
+When HTTPS is active, oidcld also keeps discovery, JWKS, and health reachable on a restricted HTTP companion listener. The default HTTPS port is `18443`, and the companion HTTP port defaults to `18888`. Set `--http-readonly-port off` to disable it.
+
 **Option 2: Use ACME protocol server**
 
 OIDCLD also supports the ACME protocol to obtain certificates automatically. The following sample uses a local ACME server.
@@ -319,7 +323,8 @@ services:
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "8443:443"     # HTTPS OIDC server port (mapped to non-privileged port)
+      - "18888:18888"  # HTTP metadata companion listener (discovery/JWKS/health)
+      - "8443:443"     # HTTPS OIDC server port
     volumes:
       - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
     environment:
@@ -332,7 +337,13 @@ services:
       - OIDCLD_ACME_AGREE_TOS=true
       - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
       - OIDCLD_ACME_RENEWAL_THRESHOLD=1
-    command: ["serve", "--config", "/app/config.yaml", "--port", "443"]
+    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--http-readonly-port", "18888"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
     depends_on:
       myencrypt.localhost:
         condition: service_healthy
@@ -348,7 +359,7 @@ import { PublicClientApplication } from '@azure/msal-browser';
 const msalConfig = {
   auth: {
     clientId: 'your-azure-app-id',
-    authority: 'https://localhost:18888',  // HTTPS required
+    authority: 'https://localhost:18443',  // HTTPS required
     redirectUri: 'https://localhost:3000/callback',
     postLogoutRedirectUri: 'https://localhost:3000/'
   },

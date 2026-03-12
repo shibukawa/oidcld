@@ -24,7 +24,8 @@ services:
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "8443:443"     # HTTPS OIDC server port (mapped to non-privileged port)
+      - "18888:18888"  # HTTP metadata companion listener (discovery/JWKS/health)
+      - "8443:443"     # HTTPS OIDC server port
     volumes:
       - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
     environment:
@@ -37,7 +38,13 @@ services:
       - OIDCLD_ACME_AGREE_TOS=true
       - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
       - OIDCLD_ACME_RENEWAL_THRESHOLD=1
-    command: ["serve", "--config", "/app/config.yaml", "--port", "443"]
+    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--http-readonly-port", "18888"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
     depends_on:
       myencrypt.localhost:
         condition: service_healthy

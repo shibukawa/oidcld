@@ -13,14 +13,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"log/slog"
 	"maps"
 
 	// ...existing code...
 	"net/http"
+	"net/http/httptest"
 	neturl "net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -35,10 +38,16 @@ var (
 	ErrIssuerURLCannotBeChanged           = fmt.Errorf("issuer URL cannot be changed at runtime")
 	ErrAutocertConflictTLSProvided        = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
 	ErrTLSMissingWithoutAutocert          = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+	ErrHTTPReadOnlyPortConflict           = fmt.Errorf("HTTP read-only port must be different from the HTTPS port")
 	ErrEntraIDTenantRequiresConfiguration = errors.New("tenant is not allowed without EntraID configuration")
 	ErrEntraIDTenantIDMismatch            = errors.New("tenant does not match configured tenant_id")
 	ErrEntraIDTenantNotAllowed            = errors.New("tenant is not allowed")
+	jwtAudienceClaimFormatMu              sync.Mutex
 )
+
+func configureJWTAudienceClaimFormat(format string) {
+	jwt.MarshalSingleStringAsArray = format == config.AudienceClaimFormatArray
+}
 
 // Server represents the new zitadel/oidc-based server implementation
 type Server struct {
@@ -80,6 +89,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 // NewServer creates a new server using zitadel/oidc/v3
 func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logger) (*Server, error) {
+	jwtAudienceClaimFormatMu.Lock()
+	configureJWTAudienceClaimFormat(cfg.OIDCLD.NormalizedAudienceClaimFormat())
+	jwtAudienceClaimFormatMu.Unlock()
+
 	// Create storage adapter
 	storage := NewStorageAdapter(cfg, privateKey)
 
@@ -288,6 +301,66 @@ func (s *Server) Handler() http.Handler {
 	rootMux.Handle(prefix+"/", http.StripPrefix(prefix, handler))
 	rootMux.Handle("/", handler)
 	return rootMux
+}
+
+func (s *Server) ReadOnlyHTTPHandler() http.Handler {
+	base := s.Handler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isAllowedReadOnlyHTTPMethod(r.Method) {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.isAllowedReadOnlyHTTPPath(r.URL.Path) {
+			http.NotFound(w, r)
+			return
+		}
+		base.ServeHTTP(w, r)
+	})
+}
+
+func isAllowedReadOnlyHTTPMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) isAllowedReadOnlyHTTPPath(path string) bool {
+	canonicalPath, ok := s.readOnlyHTTPCanonicalPath(path)
+	if !ok {
+		return false
+	}
+	switch canonicalPath {
+	case "/.well-known/openid-configuration", "/keys", "/health":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) readOnlyHTTPCanonicalPath(path string) (string, bool) {
+	prefix := issuerPathPrefix(s.config.OIDCLD.Issuer)
+	if prefix != "" {
+		switch {
+		case path == prefix:
+			path = "/"
+		case strings.HasPrefix(path, prefix+"/"):
+			path = strings.TrimPrefix(path, prefix)
+		}
+	}
+
+	switch path {
+	case "/.well-known/openid-configuration", "/keys", "/health":
+		return path, true
+	}
+
+	route, matched, err := matchEntraIDRoute(path, s.config.EntraID)
+	if err != nil || !matched {
+		return "", false
+	}
+	return route.CanonicalPath, true
 }
 
 type entraIDRoutes struct {
@@ -1039,12 +1112,31 @@ func (s *Server) Start(port string) error {
 	}
 
 	// Use colorful logging for server startup
-	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, false, s.config.EntraID)
+	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, false, s.config.EntraID, "")
+	return server.ListenAndServe()
+}
+
+func (s *Server) StartHTTPReadOnly(port string) error {
+	addr := fmt.Sprintf(":%s", port)
+	handler := s.ReadOnlyHTTPHandler()
+	if s.autocertManager != nil {
+		handler = s.autocertManager.HTTPHandler(handler)
+	}
+
+	server := &http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+
 	return server.ListenAndServe()
 }
 
 // StartTLS starts the OIDC server with TLS
 func (s *Server) StartTLS(port, certFile, keyFile string) error {
+	return s.startTLS(port, "", certFile, keyFile, true)
+}
+
+func (s *Server) startTLS(port, httpReadOnlyPort, certFile, keyFile string, logStartup bool) error {
 	addr := fmt.Sprintf(":%s", port)
 
 	server := &http.Server{
@@ -1052,8 +1144,9 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 		Handler: s.Handler(),
 	}
 
-	// Use colorful logging for server startup
-	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true, s.config.EntraID)
+	if logStartup {
+		s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true, s.config.EntraID, httpReadOnlyPort)
+	}
 
 	// If autocert manager is configured, prefer it when no cert/key provided.
 	if s.autocertManager != nil {
@@ -1080,6 +1173,26 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 	}
 
 	return server.ListenAndServeTLS(certFile, keyFile)
+}
+
+func (s *Server) StartTLSWithHTTPReadOnly(tlsPort, httpReadOnlyPort, certFile, keyFile string) error {
+	if strings.TrimSpace(httpReadOnlyPort) == "" {
+		return s.StartTLS(tlsPort, certFile, keyFile)
+	}
+	if tlsPort == httpReadOnlyPort {
+		return ErrHTTPReadOnlyPortConflict
+	}
+	s.prettyLog.ServerStarting(fmt.Sprintf(":%s", tlsPort), s.config.OIDCLD.Issuer, true, s.config.EntraID, fmt.Sprintf(":%s", httpReadOnlyPort))
+
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- s.StartHTTPReadOnly(httpReadOnlyPort)
+	}()
+	go func() {
+		errCh <- s.startTLS(tlsPort, httpReadOnlyPort, certFile, keyFile, false)
+	}()
+
+	return <-errCh
 }
 
 // UpdateConfig updates the server configuration at runtime
@@ -1420,12 +1533,159 @@ func (s *Server) processDeviceVerification(w http.ResponseWriter, r *http.Reques
 
 // signJWT signs a JWT token with the server's private key
 func (s *Server) signJWT(claims jwt.MapClaims) (string, error) {
+	jwtAudienceClaimFormatMu.Lock()
+	configureJWTAudienceClaimFormat(s.config.OIDCLD.NormalizedAudienceClaimFormat())
+	defer jwtAudienceClaimFormatMu.Unlock()
+
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
 	// Set key ID header
 	token.Header["kid"] = "oidcld-key"
 
 	return token.SignedString(s.privateKey)
+}
+
+func normalizeAudienceClaimValue(value any, format string) (any, bool) {
+	switch aud := value.(type) {
+	case string:
+		if format == config.AudienceClaimFormatArray {
+			return []string{aud}, true
+		}
+	case []string:
+		if len(aud) == 1 && format == config.AudienceClaimFormatString {
+			return aud[0], true
+		}
+	case jwt.ClaimStrings:
+		if len(aud) == 1 && format == config.AudienceClaimFormatString {
+			return aud[0], true
+		}
+	case []any:
+		if len(aud) == 1 {
+			singleAudience, ok := aud[0].(string)
+			if !ok {
+				return value, false
+			}
+			if format == config.AudienceClaimFormatString {
+				return singleAudience, true
+			}
+		}
+	}
+
+	return value, false
+}
+
+func (s *Server) rewriteJWTTokenAudience(token string) (string, error) {
+	if token == "" || strings.Count(token, ".") != 2 {
+		return token, nil
+	}
+
+	claims := jwt.MapClaims{}
+	parsedToken, _, err := jwt.NewParser().ParseUnverified(token, claims)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse JWT: %w", err)
+	}
+
+	normalizedAudience, changed := normalizeAudienceClaimValue(claims["aud"], s.config.OIDCLD.NormalizedAudienceClaimFormat())
+	if !changed {
+		return token, nil
+	}
+
+	claims["aud"] = normalizedAudience
+
+	rewrittenToken := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	for key, value := range parsedToken.Header {
+		if key == "alg" {
+			continue
+		}
+		rewrittenToken.Header[key] = value
+	}
+	if _, ok := rewrittenToken.Header["kid"]; !ok {
+		rewrittenToken.Header["kid"] = "oidcld-key"
+	}
+
+	return rewrittenToken.SignedString(s.privateKey)
+}
+
+func (s *Server) normalizeTokenResponsePayload(payload map[string]any) error {
+	for _, field := range []string{"access_token", "id_token", "refresh_token"} {
+		tokenValue, ok := payload[field].(string)
+		if !ok || tokenValue == "" {
+			continue
+		}
+
+		rewrittenToken, err := s.rewriteJWTTokenAudience(tokenValue)
+		if err != nil {
+			return fmt.Errorf("failed to rewrite %s: %w", field, err)
+		}
+		payload[field] = rewrittenToken
+	}
+
+	return nil
+}
+
+func copyResponseHeaders(dst, src http.Header) {
+	for key := range dst {
+		dst.Del(key)
+	}
+	for key, values := range src {
+		if strings.EqualFold(key, "Content-Length") {
+			continue
+		}
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+func (s *Server) writeTokenJSONResponse(w http.ResponseWriter, statusCode int, headers http.Header, payload map[string]any) error {
+	if err := s.normalizeTokenResponsePayload(payload); err != nil {
+		return err
+	}
+
+	if headers != nil {
+		copyResponseHeaders(w.Header(), headers)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	w.WriteHeader(statusCode)
+
+	return json.NewEncoder(w).Encode(payload)
+}
+
+func (s *Server) serveProviderTokenResponse(w http.ResponseWriter, r *http.Request) {
+	recorder := httptest.NewRecorder()
+	s.provider.ServeHTTP(recorder, r)
+
+	result := recorder.Result()
+	defer result.Body.Close()
+
+	body, err := io.ReadAll(result.Body)
+	if err != nil {
+		s.logger.Error("Failed to read provider token response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if result.StatusCode < http.StatusOK || result.StatusCode >= http.StatusMultipleChoices {
+		copyResponseHeaders(w.Header(), result.Header)
+		w.WriteHeader(result.StatusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		copyResponseHeaders(w.Header(), result.Header)
+		w.WriteHeader(result.StatusCode)
+		_, _ = w.Write(body)
+		return
+	}
+
+	if err := s.writeTokenJSONResponse(w, result.StatusCode, result.Header, payload); err != nil {
+		s.logger.Error("Failed to normalize provider token response", "error", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
 
 // writeTokenError writes an OAuth 2.0 token error response
@@ -1450,7 +1710,7 @@ func (s *Server) generateDeviceFlowTokens(clientID, userID string, user config.U
 	accessTokenClaims := jwt.MapClaims{
 		"iss":       s.config.OIDCLD.Issuer,
 		"sub":       userID,
-		"aud":       clientID,
+		"aud":       jwt.ClaimStrings{clientID},
 		"exp":       expiry.Unix(),
 		"iat":       now.Unix(),
 		"nbf":       now.Unix(),
@@ -1471,7 +1731,7 @@ func (s *Server) generateDeviceFlowTokens(clientID, userID string, user config.U
 		idTokenClaims := jwt.MapClaims{
 			"iss": s.config.OIDCLD.Issuer,
 			"sub": userID,
-			"aud": clientID,
+			"aud": jwt.ClaimStrings{clientID},
 			"exp": expiry.Unix(),
 			"iat": now.Unix(),
 			"nbf": now.Unix(),
@@ -1514,7 +1774,7 @@ func (s *Server) generateDeviceFlowTokens(clientID, userID string, user config.U
 		refreshTokenClaims := jwt.MapClaims{
 			"iss":       s.config.OIDCLD.Issuer,
 			"sub":       userID,
-			"aud":       clientID,
+			"aud":       jwt.ClaimStrings{clientID},
 			"exp":       now.Add(time.Duration(s.config.OIDCLD.RefreshTokenExpiry) * time.Second).Unix(),
 			"iat":       now.Unix(),
 			"nbf":       now.Unix(),
@@ -1615,12 +1875,7 @@ func (s *Server) handleDeviceFlowTokenRequest(w http.ResponseWriter, r *http.Req
 		tokenResponse["refresh_token"] = refreshToken
 	}
 
-	// Write JSON response
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
-
-	if err := json.NewEncoder(w).Encode(tokenResponse); err != nil {
+	if err := s.writeTokenJSONResponse(w, http.StatusOK, nil, tokenResponse); err != nil {
 		s.logger.Error("Failed to encode token response", "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
@@ -1639,6 +1894,10 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
+
+	jwtAudienceClaimFormatMu.Lock()
+	configureJWTAudienceClaimFormat(s.config.OIDCLD.NormalizedAudienceClaimFormat())
+	jwtAudienceClaimFormatMu.Unlock()
 	// If the token request includes a redirect_uri (authorization_code flow),
 	// inject it into the request context so storage.GetClientByClientID can
 	// return a client that permits that exact redirect URI for validation.
@@ -1690,7 +1949,7 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// For all other grant types, use zitadel/oidc default logic
-	s.provider.ServeHTTP(w, r)
+	s.serveProviderTokenResponse(w, r)
 }
 
 type UserSelectionConfig struct {

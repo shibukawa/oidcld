@@ -67,6 +67,7 @@ func TestGenerateConfigYAML(t *testing.T) {
 	// Verify structure and comments
 	assert.True(t, strings.Contains(yamlContent, "# OpenID Connect IdP settings"), "Should contain main comment")
 	assert.True(t, strings.Contains(yamlContent, "# Standard scopes (openid, profile, email) are always included"), "Should contain scope comment")
+	assert.True(t, strings.Contains(yamlContent, "aud_claim_format: string"), "Should contain default audience claim format")
 
 	// Verify empty line between sections
 	assert.True(t, strings.Contains(yamlContent, "# User definitions\nusers:"), "Should have proper section separation")
@@ -78,6 +79,11 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "developer:"), "Should contain developer")
 	assert.True(t, strings.Contains(yamlContent, "analyst:"), "Should contain analyst")
 	assert.True(t, strings.Contains(yamlContent, "guest:"), "Should contain guest")
+}
+
+func TestCreateDefaultConfig_DefaultAudienceClaimFormat(t *testing.T) {
+	config := createDefaultConfig(ModeStandard)
+	assert.Equal(t, AudienceClaimFormatString, config.OIDCLD.NormalizedAudienceClaimFormat())
 }
 
 func TestGenerateConfigYAMLWithEntraID(t *testing.T) {
@@ -176,6 +182,7 @@ func TestModifyConfig(t *testing.T) {
 		"pkce_required":         false,
 		"nonce_required":        true,
 		"expired_in":            7200,
+		"aud_claim_format":      "array",
 		"refresh_token_enabled": false,
 	}
 
@@ -188,7 +195,13 @@ func TestModifyConfig(t *testing.T) {
 	assert.False(t, config.OIDCLD.PKCERequired)
 	assert.True(t, config.OIDCLD.NonceRequired)
 	assert.Equal(t, 7200, config.OIDCLD.ExpiredIn)
+	assert.Equal(t, AudienceClaimFormatArray, config.OIDCLD.NormalizedAudienceClaimFormat())
 	assert.False(t, config.OIDCLD.RefreshTokenEnabled)
+}
+
+func TestDefaultServePort(t *testing.T) {
+	assert.Equal(t, DefaultHTTPPort, DefaultServePort(false))
+	assert.Equal(t, DefaultHTTPSPort, DefaultServePort(true))
 }
 
 func TestConfigYAMLFormatting(t *testing.T) {

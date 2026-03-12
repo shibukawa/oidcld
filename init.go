@@ -241,7 +241,8 @@ func (cmd *InitCmd) runWizard() error {
 
 	// Port configuration
 	if cmd.Template == "standard" {
-		fmt.Print("Enter port number (default: 18888): ")
+		defaultPort := cfgpkg.DefaultServePort(cmd.HTTPS)
+		fmt.Printf("Enter port number (default: %s): ", defaultPort)
 		port, err := reader.ReadString('\n')
 		if err != nil {
 			return fmt.Errorf("failed to read port: %w", err)
@@ -252,6 +253,8 @@ func (cmd *InitCmd) runWizard() error {
 				return fmt.Errorf("%w: %s", ErrInvalidPortNumber, port)
 			}
 			cmd.Port = port
+		} else {
+			cmd.Port = defaultPort
 		}
 	}
 

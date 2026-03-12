@@ -8,7 +8,7 @@ Authoritative reference for all runtime and initialization settings. The root RE
 ./oidcld init                        # Interactive wizard
 ./oidcld init --template entraid-v2  # Non-interactive with template
 ./oidcld --watch                     # Live reload mode
-./oidcld                             # Start server (default: HTTP on port 18888)
+./oidcld                             # Start server (default: HTTP on port 18888, HTTPS on 18443)
 ```
 
 ## Configuration File Structure
@@ -29,6 +29,7 @@ oidcld:
   pkce_required: false                        # Require PKCE (default: false)
   nonce_required: false                       # Require nonce (default: false)
   expired_in: 3600                           # Token expiration in seconds (default: 3600)
+  aud_claim_format: "string"                # Single-audience aud: string or array (default: string)
   valid_scopes:                              # Custom scopes (default: [admin, read, write])
     - "admin"
     - "read" 
@@ -46,6 +47,7 @@ oidcld:
 - Standard OIDC scopes (`openid`, `profile`, `email`, `offline_access`, `address`, `phone`) are automatically included
 - For EntraID modes, `address` and `phone` scopes are excluded
 - RSA-2048 signing keys are generated in memory at startup
+- `aud_claim_format` controls how a single audience is serialized in JWTs. `string` matches common EntraID output, while `array` forces `aud` to stay a JSON array. Multiple audiences always remain arrays.
 
 #### 2. EntraID/AzureAD Compatibility (`entraid`)
 
@@ -149,7 +151,8 @@ When using EntraID templates, users automatically include:
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--config` | Configuration file path | oidcld.yaml |
-| `--port` | Server listen port | 18888 |
+| `--port` | Server listen port | 18888 for HTTP, 18443 for HTTPS |
+| `--http-readonly-port` | Restricted HTTP metadata listener in HTTPS mode | 18888 |
 | `--watch` | Enable live reload | false |
 | `--cert-file` | TLS certificate file | - |
 | `--key-file` | TLS key file | - |
@@ -189,6 +192,7 @@ Reloads apply immediately (no restart):
 - Users (add/remove/claims)
 - `valid_scopes` (merged with standard scopes on reload)
 - `expired_in`
+- `aud_claim_format` for newly issued tokens
 - `pkce_required`, `nonce_required`
 - Refresh token toggles (`refresh_token_enabled`, `refresh_token_expiry`)
 - CORS section
@@ -282,7 +286,7 @@ flowchart TD
    - Email for ACME registration [admin@localhost]
 
 6. **Server Configuration** (Standard template only)
-   - Port number [18888]
+  - Port number [18888 for HTTP / 18443 for HTTPS]
 
 7. **Advanced Options**
    - Custom issuer URL (optional)
@@ -307,7 +311,7 @@ flowchart TD
 ./oidcld init
 # Select: 1 (Standard)
 # HTTPS: N
-# Port: (default 18888)
+# Port: (default 18888 for HTTP, 18443 for HTTPS)
 ./oidcld
 ```
 

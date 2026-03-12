@@ -7,6 +7,7 @@ oidcld:
   pkce_required: true
   nonce_required: true
   expired_in: 3600
+  aud_claim_format: string  # Keep single-audience aud aligned with EntraID-style output
   refresh_token_enabled: true
   refresh_token_expiry: 86400
   end_session_enabled: true

@@ -41,11 +41,12 @@ type Config struct {
 
 // OIDCLDConfig represents the core OpenID Connect configuration.
 type OIDCLDConfig struct {
-	Issuer        string   `yaml:"iss,omitempty"`
-	PKCERequired  bool     `yaml:"pkce_required,omitempty"`
-	NonceRequired bool     `yaml:"nonce_required,omitempty"`
-	ExpiredIn     int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
-	ValidScopes   []string `yaml:"valid_scopes,omitempty"`
+	Issuer              string   `yaml:"iss,omitempty"`
+	PKCERequired        bool     `yaml:"pkce_required,omitempty"`
+	NonceRequired       bool     `yaml:"nonce_required,omitempty"`
+	ExpiredIn           int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
+	AudienceClaimFormat string   `yaml:"aud_claim_format,omitempty"`
+	ValidScopes         []string `yaml:"valid_scopes,omitempty"`
 	// TLS certificate file paths for serving HTTPS when not using autocert.
 	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
 	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
@@ -54,6 +55,33 @@ type OIDCLDConfig struct {
 	EndSessionEnabled         bool   `yaml:"end_session_enabled,omitempty"`
 	EndSessionEndpointVisible bool   `yaml:"end_session_endpoint_visible,omitempty"`
 	VerboseLogging            bool   `yaml:"verbose_logging,omitempty"`
+}
+
+const (
+	AudienceClaimFormatString = "string"
+	AudienceClaimFormatArray  = "array"
+	DefaultHTTPPort           = "18888"
+	DefaultHTTPSPort          = "18443"
+)
+
+func normalizeAudienceClaimFormat(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case AudienceClaimFormatArray:
+		return AudienceClaimFormatArray
+	default:
+		return AudienceClaimFormatString
+	}
+}
+
+func (c OIDCLDConfig) NormalizedAudienceClaimFormat() string {
+	return normalizeAudienceClaimFormat(c.AudienceClaimFormat)
+}
+
+func DefaultServePort(useHTTPS bool) string {
+	if useHTTPS {
+		return DefaultHTTPSPort
+	}
+	return DefaultHTTPPort
 }
 
 // ensureDefaultScopes ensures that standard OIDC scopes are present in the provided config.
@@ -170,6 +198,7 @@ func loadConfig(configPath string) (*Config, error) {
 	// do not add address/phone by passing isEntra=true.
 	isEntra := config.EntraID != nil
 	ensureDefaultScopes(&config.OIDCLD, isEntra)
+	config.OIDCLD.AudienceClaimFormat = normalizeAudienceClaimFormat(config.OIDCLD.AudienceClaimFormat)
 
 	return &config, nil
 }
@@ -376,6 +405,7 @@ func createDefaultConfig(mode Mode) *Config {
 			PKCERequired:              false,
 			NonceRequired:             false,
 			ExpiredIn:                 3600,
+			AudienceClaimFormat:       AudienceClaimFormatString,
 			ValidScopes:               []string{"admin", "read", "write"},
 			RefreshTokenEnabled:       true,
 			RefreshTokenExpiry:        86400,
@@ -470,7 +500,7 @@ func (c *Config) ApplyInitServerOptions(mode Mode, opts *InitServerOptions) {
 	case opts.Issuer != "":
 		c.OIDCLD.Issuer = opts.Issuer
 	case mode == ModeStandard:
-		defaultPort := "18888"
+		defaultPort := DefaultServePort(opts.HTTPS)
 		if opts.HTTPS {
 			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", defaultPort)
 		} else {
@@ -629,6 +659,7 @@ oidcld:{{if .OIDCLD.Issuer}}
   pkce_required: {{.OIDCLD.PKCERequired}}
   nonce_required: {{.OIDCLD.NonceRequired}}
   expired_in: {{.OIDCLD.ExpiredIn}}  # Token expiration in seconds
+  aud_claim_format: {{.OIDCLD.NormalizedAudienceClaimFormat}}  # string or array for single-audience aud claim serialization
   # Standard scopes (openid, profile, email) are always included
   valid_scopes:  # Optional custom scopes{{range .OIDCLD.ValidScopes}}
     - "{{.}}"{{end}}
@@ -766,6 +797,10 @@ func applyConfigUpdate(config *Config, key string, value any) error {
 	case "expired_in":
 		if v, ok := value.(int); ok {
 			config.OIDCLD.ExpiredIn = v
+		}
+	case "aud_claim_format":
+		if v, ok := value.(string); ok {
+			config.OIDCLD.AudienceClaimFormat = normalizeAudienceClaimFormat(v)
 		}
 	case "issuer", "iss":
 		if v, ok := value.(string); ok {

@@ -4,6 +4,7 @@ oidcld:
   pkce_required: false
   nonce_required: false
   expired_in: 3600  # Token expiration in seconds
+  aud_claim_format: string  # Serialize single-audience aud as a string by default
   # Standard scopes (openid, profile, email) are always included
   valid_scopes:  # Optional custom scopes
     - "admin"
