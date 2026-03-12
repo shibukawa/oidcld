@@ -401,11 +401,22 @@ func (s *MCPServer) loadConfig() (*config.Config, error) {
 	if s.configPath == "" {
 		return nil, ErrConfigPathNotSet
 	}
+	return s.loadConfigAtPath(s.configPath)
+}
 
-	absPath, err := filepath.Abs(s.configPath)
+func (s *MCPServer) loadConfigAtPath(configPath string) (*config.Config, error) {
+	absPath, err := s.setConfigPath(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve config path: %w", err)
+		return nil, err
 	}
-
 	return config.LoadConfig(absPath, false)
+}
+
+func (s *MCPServer) setConfigPath(configPath string) (string, error) {
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve config path: %w", err)
+	}
+	s.configPath = absPath
+	return absPath, nil
 }

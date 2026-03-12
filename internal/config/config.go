@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net"
-	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -576,78 +574,9 @@ func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message str
 			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
 		}
 	}
-	c.OIDCLD.Issuer = synchronizeLocalIssuerPort(c.OIDCLD.Issuer, opts.Port)
-	c.OIDCLD.Issuer = normalizeEntraIssuerPath(c.OIDCLD.Issuer, c.EntraID)
+	c.OIDCLD.Issuer = NormalizeIssuerForServe(c.OIDCLD.Issuer, opts.Port, c.EntraID)
 
 	return useHTTPS, message
-}
-
-func normalizeEntraIssuerPath(issuer string, entraid *EntraIDConfig) string {
-	expectedPath := expectedEntraIssuerPath(entraid)
-	if issuer == "" || expectedPath == "" {
-		return issuer
-	}
-
-	parsed, err := neturl.Parse(issuer)
-	if err != nil || parsed.Host == "" {
-		return issuer
-	}
-
-	currentPath := strings.TrimSuffix(parsed.Path, "/")
-	if currentPath == expectedPath {
-		return parsed.String()
-	}
-	if currentPath != "" && currentPath != "/" {
-		return issuer
-	}
-
-	parsed.Path = expectedPath
-	return parsed.String()
-}
-
-func expectedEntraIssuerPath(entraid *EntraIDConfig) string {
-	if entraid == nil || entraid.TenantID == "" {
-		return ""
-	}
-
-	tenantID := strings.Trim(entraid.TenantID, "/")
-	if tenantID == "" {
-		return ""
-	}
-
-	switch strings.ToLower(entraid.Version) {
-	case "v1":
-		return "/" + tenantID
-	case "v2":
-		return "/" + tenantID + "/v2.0"
-	default:
-		return ""
-	}
-}
-
-func synchronizeLocalIssuerPort(issuer, port string) string {
-	if issuer == "" || port == "" {
-		return issuer
-	}
-	parsed, err := neturl.Parse(issuer)
-	if err != nil || parsed.Host == "" {
-		return issuer
-	}
-	host := parsed.Hostname()
-	if !isLocalLoopbackHost(host) {
-		return issuer
-	}
-	parsed.Host = net.JoinHostPort(host, port)
-	return parsed.String()
-}
-
-func isLocalLoopbackHost(host string) bool {
-	switch strings.ToLower(host) {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	default:
-		return false
-	}
 }
 
 // generateConfigYAML generates YAML configuration using text template

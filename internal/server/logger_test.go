@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/assert/v2"
 	"github.com/fatih/color"
@@ -167,4 +168,16 @@ func TestLoggingMiddlewareSkipsHealthRequests(t *testing.T) {
 		assert.Equal(t, http.StatusOK, response.Code)
 	})
 	assert.True(t, strings.Contains(regularOutput, "/userinfo"))
+}
+
+func TestRequestLogWithCORSShowsOriginDetails(t *testing.T) {
+	logger := NewLogger()
+	output := captureStdout(t, func() {
+		logger.RequestLogWithCORS(http.MethodGet, "/userinfo", http.StatusOK, 25*time.Millisecond, "https://app.localhost:3000", "https://app.localhost:3000")
+	})
+
+	assert.True(t, strings.Contains(output, "/userinfo"))
+	assert.True(t, strings.Contains(output, "Origin:"))
+	assert.True(t, strings.Contains(output, "https://app.localhost:3000"))
+	assert.True(t, strings.Contains(output, "CORS:"))
 }

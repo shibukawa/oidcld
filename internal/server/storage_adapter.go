@@ -17,16 +17,6 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
-// context key used to pass incoming redirect_uri from HTTP handler into storage
-type ctxKeyRedirectURI struct{}
-
-var redirectURIContextKey = &ctxKeyRedirectURI{}
-
-// context key used to pass incoming post_logout_redirect_uri from HTTP handler into storage
-type ctxKeyPostLogoutRedirectURI struct{}
-
-var postLogoutRedirectURIContextKey = &ctxKeyPostLogoutRedirectURI{}
-
 // Static errors for OIDC storage adapter
 var (
 	ErrAuthRequestNotFound  = errors.New("auth request not found")

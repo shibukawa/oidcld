@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 
@@ -19,6 +20,39 @@ func (s *MCPServer) registerTools() {
 	s.tools["oidcld_generate_compose"] = &GenerateComposeTool{server: s}
 }
 
+func configPathPropertySchema() map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": "Path to configuration file",
+	}
+}
+
+func objectSchema(properties map[string]any, required ...string) map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": properties,
+		"required":   required,
+	}
+}
+
+func configPathObjectSchema(properties map[string]any, required ...string) map[string]any {
+	mergedProperties := map[string]any{
+		"config_path": configPathPropertySchema(),
+	}
+	maps.Copy(mergedProperties, properties)
+
+	mergedRequired := append([]string{"config_path"}, required...)
+	return objectSchema(mergedProperties, mergedRequired...)
+}
+
+func requiredStringArg(args map[string]any, key string, missingErr error) (string, error) {
+	value, ok := args[key].(string)
+	if !ok {
+		return "", missingErr
+	}
+	return value, nil
+}
+
 // InitTool implements the oidcld_init tool
 type InitTool struct {
 	server *MCPServer
@@ -33,37 +67,29 @@ func (t *InitTool) Description() string {
 }
 
 func (t *InitTool) InputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"config_path": map[string]any{
-				"type":        "string",
-				"description": "Path to configuration file",
-			},
-			"mode": map[string]any{
-				"type":        "string",
-				"description": "Configuration mode",
-				"enum":        []string{"standard", "entraid-v1", "entraid-v2"},
-				"default":     "standard",
-			},
-			"tenant_id": map[string]any{
-				"type":        "string",
-				"description": "Tenant ID for EntraID templates",
-			},
-			"port": map[string]any{
-				"type":        "string",
-				"description": "Port number for issuer URL",
-				"default":     "18888",
-			},
+	return configPathObjectSchema(map[string]any{
+		"mode": map[string]any{
+			"type":        "string",
+			"description": "Configuration mode",
+			"enum":        []string{"standard", "entraid-v1", "entraid-v2"},
+			"default":     "standard",
 		},
-		"required": []string{"config_path"},
-	}
+		"tenant_id": map[string]any{
+			"type":        "string",
+			"description": "Tenant ID for EntraID templates",
+		},
+		"port": map[string]any{
+			"type":        "string",
+			"description": "Port number for issuer URL",
+			"default":     "18888",
+		},
+	})
 }
 
 func (t *InitTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	configPath, ok := args["config_path"].(string)
-	if !ok {
-		return nil, ErrConfigPathRequired
+	configPath, err := requiredStringArg(args, "config_path", ErrConfigPathRequired)
+	if err != nil {
+		return nil, err
 	}
 
 	mode, _ := args["mode"].(string)
@@ -108,8 +134,7 @@ func (t *InitTool) Execute(ctx context.Context, args map[string]any) (any, error
 	cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", port)
 
 	// Save configuration
-	// Resolve the absolute path
-	absPath, err := filepath.Abs(configPath)
+	absPath, err := t.server.setConfigPath(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid config path: %w", err)
 	}
@@ -117,9 +142,6 @@ func (t *InitTool) Execute(ctx context.Context, args map[string]any) (any, error
 	if err := config.SaveConfig(absPath, cfg); err != nil {
 		return nil, fmt.Errorf("failed to save config: %w", err)
 	}
-
-	// Update server config path
-	t.server.configPath = absPath
 
 	return map[string]any{
 		"status":      "success",
@@ -143,28 +165,16 @@ func (t *QueryConfigTool) Description() string {
 }
 
 func (t *QueryConfigTool) InputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"config_path": map[string]any{
-				"type":        "string",
-				"description": "Path to configuration file",
-			},
-		},
-		"required": []string{"config_path"},
-	}
+	return configPathObjectSchema(map[string]any{})
 }
 
 func (t *QueryConfigTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	configPath, ok := args["config_path"].(string)
-	if !ok {
-		return nil, ErrConfigPathRequired
+	configPath, err := requiredStringArg(args, "config_path", ErrConfigPathRequired)
+	if err != nil {
+		return nil, err
 	}
 
-	// Update server config path
-	t.server.configPath = configPath
-
-	cfg, err := t.server.loadConfig()
+	cfg, err := t.server.loadConfigAtPath(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -209,57 +219,46 @@ func (t *AddUserTool) Description() string {
 }
 
 func (t *AddUserTool) InputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"config_path": map[string]any{
-				"type":        "string",
-				"description": "Path to configuration file",
-			},
-			"user_id": map[string]any{
-				"type":        "string",
-				"description": "User ID",
-			},
-			"display_name": map[string]any{
-				"type":        "string",
-				"description": "Display name",
-			},
-			"extra_valid_scopes": map[string]any{
-				"type": "array",
-				"items": map[string]any{
-					"type": "string",
-				},
-				"description": "Additional valid scopes for the user",
-			},
-			"extra_claims": map[string]any{
-				"type":        "object",
-				"description": "Additional claims for the user",
-			},
+	return configPathObjectSchema(map[string]any{
+		"user_id": map[string]any{
+			"type":        "string",
+			"description": "User ID",
 		},
-		"required": []string{"config_path", "user_id", "display_name"},
-	}
+		"display_name": map[string]any{
+			"type":        "string",
+			"description": "Display name",
+		},
+		"extra_valid_scopes": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "string",
+			},
+			"description": "Additional valid scopes for the user",
+		},
+		"extra_claims": map[string]any{
+			"type":        "object",
+			"description": "Additional claims for the user",
+		},
+	}, "user_id", "display_name")
 }
 
 func (t *AddUserTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	configPath, ok := args["config_path"].(string)
-	if !ok {
-		return nil, ErrConfigPathRequired
+	configPath, err := requiredStringArg(args, "config_path", ErrConfigPathRequired)
+	if err != nil {
+		return nil, err
 	}
 
-	userID, ok := args["user_id"].(string)
-	if !ok {
-		return nil, ErrUserIDRequired
+	userID, err := requiredStringArg(args, "user_id", ErrUserIDRequired)
+	if err != nil {
+		return nil, err
 	}
 
-	displayName, ok := args["display_name"].(string)
-	if !ok {
-		return nil, ErrDisplayNameRequired
+	displayName, err := requiredStringArg(args, "display_name", ErrDisplayNameRequired)
+	if err != nil {
+		return nil, err
 	}
 
-	// Update server config path
-	t.server.configPath = configPath
-
-	cfg, err := t.server.loadConfig()
+	cfg, err := t.server.loadConfigAtPath(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -321,28 +320,16 @@ func (t *QueryUsersTool) Description() string {
 }
 
 func (t *QueryUsersTool) InputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"config_path": map[string]any{
-				"type":        "string",
-				"description": "Path to configuration file",
-			},
-		},
-		"required": []string{"config_path"},
-	}
+	return configPathObjectSchema(map[string]any{})
 }
 
 func (t *QueryUsersTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	configPath, ok := args["config_path"].(string)
-	if !ok {
-		return nil, ErrConfigPathRequired
+	configPath, err := requiredStringArg(args, "config_path", ErrConfigPathRequired)
+	if err != nil {
+		return nil, err
 	}
 
-	// Update server config path
-	t.server.configPath = configPath
-
-	cfg, err := t.server.loadConfig()
+	cfg, err := t.server.loadConfigAtPath(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -377,26 +364,18 @@ func (t *ModifyConfigTool) Description() string {
 }
 
 func (t *ModifyConfigTool) InputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"config_path": map[string]any{
-				"type":        "string",
-				"description": "Path to configuration file",
-			},
-			"updates": map[string]any{
-				"type":        "object",
-				"description": "Configuration updates to apply",
-			},
+	return configPathObjectSchema(map[string]any{
+		"updates": map[string]any{
+			"type":        "object",
+			"description": "Configuration updates to apply",
 		},
-		"required": []string{"config_path", "updates"},
-	}
+	}, "updates")
 }
 
 func (t *ModifyConfigTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	configPath, ok := args["config_path"].(string)
-	if !ok {
-		return nil, ErrConfigPathRequired
+	configPath, err := requiredStringArg(args, "config_path", ErrConfigPathRequired)
+	if err != nil {
+		return nil, err
 	}
 
 	updates, ok := args["updates"].(map[string]any)
@@ -404,10 +383,7 @@ func (t *ModifyConfigTool) Execute(ctx context.Context, args map[string]any) (an
 		return nil, ErrUpdatesRequired
 	}
 
-	// Update server config path
-	t.server.configPath = configPath
-
-	cfg, err := t.server.loadConfig()
+	cfg, err := t.server.loadConfigAtPath(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -452,27 +428,19 @@ func (t *GenerateComposeTool) Description() string {
 }
 
 func (t *GenerateComposeTool) InputSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"config_path": map[string]any{
-				"type":        "string",
-				"description": "Path to configuration file",
-			},
-			"compose_path": map[string]any{
-				"type":        "string",
-				"description": "Path to output Docker Compose file",
-				"default":     "compose.yaml",
-			},
+	return configPathObjectSchema(map[string]any{
+		"compose_path": map[string]any{
+			"type":        "string",
+			"description": "Path to output Docker Compose file",
+			"default":     "compose.yaml",
 		},
-		"required": []string{"config_path"},
-	}
+	})
 }
 
 func (t *GenerateComposeTool) Execute(ctx context.Context, args map[string]any) (any, error) {
-	configPath, ok := args["config_path"].(string)
-	if !ok {
-		return nil, ErrConfigPathRequired
+	configPath, err := requiredStringArg(args, "config_path", ErrConfigPathRequired)
+	if err != nil {
+		return nil, err
 	}
 
 	composePath, _ := args["compose_path"].(string)
@@ -480,8 +448,9 @@ func (t *GenerateComposeTool) Execute(ctx context.Context, args map[string]any) 
 		composePath = "compose.yaml"
 	}
 
-	// Update server config path
-	t.server.configPath = configPath
+	if _, err := t.server.setConfigPath(configPath); err != nil {
+		return nil, fmt.Errorf("invalid config path: %w", err)
+	}
 
 	// Generate Docker Compose template
 	composeTemplate := `services:
