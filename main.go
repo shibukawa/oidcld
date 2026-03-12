@@ -263,30 +263,10 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 	// Use loaded config. Prefer explicit issuer if set.
 	if cfg != nil {
 		if cfg.OIDCLD.Issuer != "" {
-			// Parse issuer URL to extract scheme, host and port
-			parsed, err := neturl.Parse(cfg.OIDCLD.Issuer)
-			if err == nil {
-				if parsed.Scheme != "" {
-					protocol = parsed.Scheme
-				}
-				// Extract host and optional port
-				host := parsed.Host
-				if host != "" {
-					h, p, err := net.SplitHostPort(host)
-					if err == nil {
-						hostname = h
-						port = p
-					} else {
-						// No explicit port
-						hostname = host
-						switch protocol {
-						case "https":
-							port = config.DefaultServePort(true)
-						case "http":
-							port = config.DefaultServePort(false)
-						}
-					}
-				}
+			if scheme, issuerHost, issuerPort, ok := config.IssuerURLParts(cfg.OIDCLD.Issuer); ok {
+				protocol = scheme
+				hostname = issuerHost
+				port = issuerPort
 			}
 		} else if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			protocol = "https"
