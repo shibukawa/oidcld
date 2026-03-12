@@ -2,8 +2,6 @@ package server
 
 import (
 	"fmt"
-	"net"
-	neturl "net/url"
 	"strings"
 	"time"
 
@@ -77,7 +75,7 @@ func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config
 	}
 
 	if httpMetadataAddr != "" {
-		if metadataIssuer := httpMetadataIssuer(issuer, httpMetadataAddr); metadataIssuer != "" {
+		if metadataIssuer := config.HTTPMetadataIssuer(issuer, httpMetadataAddr); metadataIssuer != "" {
 			httpEndpoints, metadataTenants := startupEndpointsForIssuer(metadataIssuer, entraid)
 
 			fmt.Println()
@@ -100,59 +98,20 @@ func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config
 }
 
 func startupEndpointsForIssuer(issuer string, entraid *config.EntraIDConfig) (entraIDStartupDisplay, []string) {
-	endpoints := entraIDStartupDisplay{
-		Discovery:           issuer + "/.well-known/openid-configuration",
-		Authorize:           issuer + "/authorize",
-		Token:               issuer + "/token",
-		UserInfo:            issuer + "/userinfo",
-		Introspection:       issuer + "/oauth/introspect",
-		Revocation:          issuer + "/revoke",
-		Logout:              issuer + "/end_session",
-		DeviceAuthorization: issuer + "/device_authorization",
-		JWKS:                issuer + "/keys",
-		HealthCheck:         issuer + "/health",
-	}
-
 	startupDisplay, hasStartupDisplay := entraIDStartupDisplayForIssuer(issuer, entraid)
 	if hasStartupDisplay {
 		return startupDisplay, startupDisplay.Tenants
 	}
-	if routes, ok := entraIDRoutesForIssuer(issuer, entraid); ok {
-		endpoints.Authorize = routes.Authorize
-		endpoints.Token = routes.Token
-		endpoints.JWKS = routes.JWKS
-		endpoints.DeviceAuthorization = routes.DeviceAuthorization
-		endpoints.Logout = routes.Logout
-	}
-	return endpoints, nil
-}
-
-func httpMetadataIssuer(issuer, httpMetadataAddr string) string {
-	parsed, err := neturl.Parse(issuer)
-	if err != nil || parsed.Host == "" {
-		return ""
-	}
-	port := strings.TrimPrefix(strings.TrimSpace(httpMetadataAddr), ":")
-	if port == "" {
-		return ""
-	}
-	hostname := parsed.Hostname()
-	if hostname == "" {
-		return ""
-	}
-	parsed.Scheme = "http"
-	parsed.Host = net.JoinHostPort(hostname, port)
-	return parsed.String()
+	endpoints := oidcEndpointsForRequest(issuer, entraid, entraIDRequestInfo{})
+	return startupDisplayFromEndpoints(endpoints, nil), nil
 }
 
 // ConfigReloaded logs successful configuration reload
 func (l *Logger) ConfigReloaded(configFile string, changes []string) {
-	fmt.Println()
-	l.info.Print("🔄 Configuration Reloaded")
-	fmt.Println()
+	l.printSectionTitle(l.info, "🔄 Configuration Reloaded")
 
 	l.printKeyValue("📄 File", configFile)
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printCurrentTime()
 
 	if len(changes) > 0 {
 		fmt.Println()
@@ -163,81 +122,30 @@ func (l *Logger) ConfigReloaded(configFile string, changes []string) {
 		}
 	}
 
-	fmt.Println()
-	l.success.Println("✅ Configuration updated successfully!")
-	l.printSeparator()
+	l.printSectionFooter(l.success, "✅ Configuration updated successfully!")
 }
 
 // ConfigReloadFailed logs configuration reload failure
 func (l *Logger) ConfigReloadFailed(configFile string, err error) {
-	fmt.Println()
-	l.error.Print("❌ Configuration Reload Failed")
-	fmt.Println()
+	l.printSectionTitle(l.error, "❌ Configuration Reload Failed")
 
 	l.printKeyValue("📄 File", configFile)
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printCurrentTime()
 	l.printKeyValue("💥 Error", err.Error())
 
-	fmt.Println()
-	l.warning.Println("⚠️  Using previous configuration")
-	l.printSeparator()
+	l.printSectionFooter(l.warning, "⚠️  Using previous configuration")
 }
 
 // RequestLog logs HTTP requests with colors
 func (l *Logger) RequestLog(method, path string, statusCode int, duration time.Duration) {
-	var statusColor *color.Color
-	var statusEmoji string
-
-	switch {
-	case statusCode >= 200 && statusCode < 300:
-		statusColor = l.success
-		statusEmoji = "✅"
-	case statusCode >= 300 && statusCode < 400:
-		statusColor = l.info
-		statusEmoji = "🔄"
-	case statusCode >= 400 && statusCode < 500:
-		statusColor = l.warning
-		statusEmoji = "⚠️"
-	default:
-		statusColor = l.error
-		statusEmoji = "❌"
-	}
-
-	timestamp := time.Now().Format("15:04:05")
-	l.debug.Printf("[%s] ", timestamp)
-	statusColor.Printf("%s %d ", statusEmoji, statusCode)
-	l.highlight.Printf("%-6s ", method)
-	l.url.Printf("%-30s ", path)
-	l.debug.Printf("(%v)", duration)
+	l.printRequestLogPrefix(method, path, statusCode, duration)
 	fmt.Println()
 }
 
 // RequestLogWithCORS logs HTTP requests with CORS debugging information
 func (l *Logger) RequestLogWithCORS(method, path string, statusCode int, duration time.Duration, origin, corsOrigin string) {
-	var statusColor *color.Color
-	var statusEmoji string
-
-	switch {
-	case statusCode >= 200 && statusCode < 300:
-		statusColor = l.success
-		statusEmoji = "✅"
-	case statusCode >= 300 && statusCode < 400:
-		statusColor = l.info
-		statusEmoji = "🔄"
-	case statusCode >= 400 && statusCode < 500:
-		statusColor = l.warning
-		statusEmoji = "⚠️"
-	default:
-		statusColor = l.error
-		statusEmoji = "❌"
-	}
-
-	timestamp := time.Now().Format("15:04:05")
-	l.debug.Printf("[%s] ", timestamp)
-	statusColor.Printf("%s %d ", statusEmoji, statusCode)
-	l.highlight.Printf("%-6s ", method)
-	l.url.Printf("%-30s ", path)
-	l.debug.Printf("(%v) ", duration)
+	l.printRequestLogPrefix(method, path, statusCode, duration)
+	l.debug.Print(" ")
 
 	// Add CORS debugging info
 	if origin != "" {
@@ -259,18 +167,14 @@ func (l *Logger) RequestLogWithCORS(method, path string, statusCode int, duratio
 
 // DeviceFlowStarted logs device flow initiation
 func (l *Logger) DeviceFlowStarted(clientID, userCode, deviceCode string) {
-	fmt.Println()
-	l.info.Print("📱 Device Flow Started")
-	fmt.Println()
+	l.printSectionTitle(l.info, "📱 Device Flow Started")
 
 	l.printKeyValue("🆔 Client", clientID)
 	l.printKeyValue("👤 User Code", userCode)
 	l.printKeyValue("📟 Device Code", deviceCode[:8]+"...")
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printCurrentTime()
 
-	fmt.Println()
-	l.success.Println("🎯 Waiting for user authorization...")
-	l.printSeparator()
+	l.printSectionFooter(l.success, "🎯 Waiting for user authorization...")
 }
 
 // DeviceFlowCompleted logs device flow completion
@@ -285,63 +189,51 @@ func (l *Logger) DeviceFlowCompleted(userCode, userID string, approved bool) {
 
 	l.printKeyValue("👤 User Code", userCode)
 	l.printKeyValue("🧑 User ID", userID)
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printCurrentTime()
 
-	fmt.Println()
 	if approved {
-		l.success.Println("🎉 Authorization successful!")
+		l.printSectionFooter(l.success, "🎉 Authorization successful!")
 	} else {
-		l.warning.Println("🚫 Authorization denied")
+		l.printSectionFooter(l.warning, "🚫 Authorization denied")
 	}
-	l.printSeparator()
 }
 
 // TokenIssued logs token issuance
 func (l *Logger) TokenIssued(clientID, userID, grantType string, scopes []string) {
-	fmt.Println()
-	l.success.Print("🎫 Token Issued")
-	fmt.Println()
+	l.printSectionTitle(l.success, "🎫 Token Issued")
 
 	l.printKeyValue("🆔 Client", clientID)
 	l.printKeyValue("🧑 User", userID)
 	l.printKeyValue("🔑 Grant Type", grantType)
 	l.printKeyValue("🎯 Scopes", strings.Join(scopes, ", "))
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printCurrentTime()
 
-	fmt.Println()
-	l.success.Println("✨ Token generated successfully!")
-	l.printSeparator()
+	l.printSectionFooter(l.success, "✨ Token generated successfully!")
 }
 
 // Error logs errors with formatting
 func (l *Logger) Error(message string, err error) {
-	fmt.Println()
-	l.error.Print("❌ Error: ")
-	l.error.Println(message)
+	l.printSectionTitleInline(l.error, "❌ Error: ", message)
 
 	if err != nil {
 		l.printKeyValue("💥 Details", err.Error())
 	}
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printCurrentTime()
 
 	l.printSeparator()
 }
 
 // Warning logs warnings with formatting
 func (l *Logger) Warning(message string) {
-	fmt.Println()
-	l.warning.Print("⚠️  Warning: ")
-	l.warning.Println(message)
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printSectionTitleInline(l.warning, "⚠️  Warning: ", message)
+	l.printCurrentTime()
 	l.printSeparator()
 }
 
 // Info logs info messages with formatting
 func (l *Logger) Info(message string) {
-	fmt.Println()
-	l.info.Print("ℹ️  Info: ")
-	l.info.Println(message)
-	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+	l.printSectionTitleInline(l.info, "ℹ️  Info: ", message)
+	l.printCurrentTime()
 	l.printSeparator()
 }
 
@@ -375,4 +267,49 @@ func (l *Logger) printEndpoint(name, url string) {
 // printSeparator prints a visual separator
 func (l *Logger) printSeparator() {
 	l.debug.Println(strings.Repeat("─", 80))
+}
+
+func (l *Logger) printSectionTitle(style *color.Color, title string) {
+	fmt.Println()
+	style.Print(title)
+	fmt.Println()
+}
+
+func (l *Logger) printSectionTitleInline(style *color.Color, prefix, message string) {
+	fmt.Println()
+	style.Print(prefix)
+	style.Println(message)
+}
+
+func (l *Logger) printCurrentTime() {
+	l.printKeyValue("⏰ Time", time.Now().Format("15:04:05"))
+}
+
+func (l *Logger) printSectionFooter(style *color.Color, message string) {
+	fmt.Println()
+	style.Println(message)
+	l.printSeparator()
+}
+
+func (l *Logger) requestStatusStyle(statusCode int) (*color.Color, string) {
+	switch {
+	case statusCode >= 200 && statusCode < 300:
+		return l.success, "✅"
+	case statusCode >= 300 && statusCode < 400:
+		return l.info, "🔄"
+	case statusCode >= 400 && statusCode < 500:
+		return l.warning, "⚠️"
+	default:
+		return l.error, "❌"
+	}
+}
+
+func (l *Logger) printRequestLogPrefix(method, path string, statusCode int, duration time.Duration) {
+	statusColor, statusEmoji := l.requestStatusStyle(statusCode)
+	timestamp := time.Now().Format("15:04:05")
+	l.debug.Printf("[%s] ", timestamp)
+	statusColor.Printf("%s %d ", statusEmoji, statusCode)
+	l.highlight.Printf("%-6s ", method)
+	l.url.Printf("%-30s ", path)
+	l.debug.Printf("(%v)", duration)
 }
