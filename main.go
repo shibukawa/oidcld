@@ -232,18 +232,24 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 
 	// Auto-detect from configuration and environment variables
 	protocol := "http"
-	port := "18888"
+	port := config.DefaultServePort(false)
 	hostname := "localhost"
 
-	// Load configuration; prefer explicit CLI flag but fall back to OIDCLD_CONFIG
-	// environment variable if present. Attempt cmd.Config first, and if that
-	// fails and the env var points to a different file, retry with it.
-	cfg, err := config.LoadConfig(cmd.Config, false)
+	// Load configuration. If OIDCLD_CONFIG is present and --config was not
+	// explicitly changed from the default, prefer the environment-provided path
+	// so container health checks target the mounted runtime config.
+	configPath := cmd.Config
+	envConfigPath := os.Getenv("OIDCLD_CONFIG")
+	if envConfigPath != "" && (configPath == "" || configPath == "oidcld.yaml") {
+		configPath = envConfigPath
+	}
+
+	cfg, err := config.LoadConfig(configPath, false)
 	if err != nil {
-		log.Printf("[health] failed to load configuration from %q: %v", cmd.Config, err)
+		log.Printf("[health] failed to load configuration from %q: %v", configPath, err)
 		cfg = nil
 		// If environment variable points to another config file, try it.
-		if envPath := os.Getenv("OIDCLD_CONFIG"); envPath != "" && envPath != cmd.Config {
+		if envPath := envConfigPath; envPath != "" && envPath != configPath {
 			log.Printf("[health] attempting to load configuration from OIDCLD_CONFIG=%s", envPath)
 			if cfg2, err2 := config.LoadConfig(envPath, false); err2 == nil {
 				cfg = cfg2
@@ -275,23 +281,23 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 						hostname = host
 						switch protocol {
 						case "https":
-							port = "443"
+							port = config.DefaultServePort(true)
 						case "http":
-							port = "80"
+							port = config.DefaultServePort(false)
 						}
 					}
 				}
 			}
 		} else if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			protocol = "https"
-			port = "443"
+			port = config.DefaultServePort(true)
 			if len(cfg.Autocert.Domains) > 0 {
 				hostname = cfg.Autocert.Domains[0]
 			}
 		} else if cfg.OIDCLD.TLSCertFile != "" && cfg.OIDCLD.TLSKeyFile != "" {
 			// TLS configured via cert files
 			protocol = "https"
-			port = "443"
+			port = config.DefaultServePort(true)
 		}
 	}
 
@@ -311,16 +317,6 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 			sniHost = hostname
 			hostname = "localhost"
 			dialLocalhost = true
-		}
-
-		// If the CLI user didn't explicitly override port, prefer the
-		// container-internal HTTPS port 443 so probes hit the service
-		// inside the container (the host may map it to 8443 externally).
-		if cmd.Port == "" && protocol == "https" {
-			if port != "443" {
-				log.Printf("[health] overriding port %q -> 443 because OIDCLD_CONFIG is set and no explicit port provided", port)
-				port = "443"
-			}
 		}
 	}
 

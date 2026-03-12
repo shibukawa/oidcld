@@ -2,6 +2,8 @@ package server
 
 import (
 	"fmt"
+	"net"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -41,7 +43,7 @@ func NewLogger() *Logger {
 }
 
 // ServerStarting logs server startup with beautiful formatting
-func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config.EntraIDConfig) {
+func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config.EntraIDConfig, httpMetadataAddr string) {
 	fmt.Println()
 	l.printBanner()
 	fmt.Println()
@@ -56,56 +58,91 @@ func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config
 	l.printKeyValue("📍 Address", addr)
 	l.printKeyValue("🌐 Issuer", issuer)
 	l.printKeyValue("⏰ Started", time.Now().Format("2006-01-02 15:04:05"))
-
-	discoveryEndpoint := issuer + "/.well-known/openid-configuration"
-	authorizationEndpoint := issuer + "/authorize"
-	tokenEndpoint := issuer + "/token"
-	userInfoEndpoint := issuer + "/userinfo"
-	jwksEndpoint := issuer + "/keys"
-	deviceFlowEndpoint := issuer + "/device_authorization"
-	introspectionEndpoint := issuer + "/oauth/introspect"
-	revocationEndpoint := issuer + "/revoke"
-	endSessionEndpoint := issuer + "/end_session"
-	healthCheckEndpoint := issuer + "/health"
-	startupDisplay, hasStartupDisplay := entraIDStartupDisplayForIssuer(issuer, entraid)
-	if hasStartupDisplay {
-		discoveryEndpoint = startupDisplay.Discovery
-		authorizationEndpoint = startupDisplay.Authorize
-		tokenEndpoint = startupDisplay.Token
-		userInfoEndpoint = startupDisplay.UserInfo
-		jwksEndpoint = startupDisplay.JWKS
-		deviceFlowEndpoint = startupDisplay.DeviceAuthorization
-		introspectionEndpoint = startupDisplay.Introspection
-		revocationEndpoint = startupDisplay.Revocation
-		endSessionEndpoint = startupDisplay.Logout
-		healthCheckEndpoint = startupDisplay.HealthCheck
-	} else if routes, ok := entraIDRoutesForIssuer(issuer, entraid); ok {
-		authorizationEndpoint = routes.Authorize
-		tokenEndpoint = routes.Token
-		jwksEndpoint = routes.JWKS
-		deviceFlowEndpoint = routes.DeviceAuthorization
-		endSessionEndpoint = routes.Logout
-	}
+	endpoints, tenants := startupEndpointsForIssuer(issuer, entraid)
 
 	fmt.Println()
 	l.info.Println("📋 Available Endpoints:")
-	l.printEndpoint("Discovery", discoveryEndpoint)
-	l.printEndpoint("Authorization", authorizationEndpoint)
-	l.printEndpoint("Token", tokenEndpoint)
-	l.printEndpoint("UserInfo", userInfoEndpoint)
-	l.printEndpoint("JWKS", jwksEndpoint)
-	l.printEndpoint("Device Flow", deviceFlowEndpoint)
-	l.printEndpoint("Introspection", introspectionEndpoint)
-	l.printEndpoint("Revocation", revocationEndpoint)
-	l.printEndpoint("End Session", endSessionEndpoint)
-	l.printEndpoint("Health Check", healthCheckEndpoint)
-	if hasStartupDisplay {
-		l.printKeyValue("Tenant", strings.Join(startupDisplay.Tenants, ", ")+" (or omitted)")
+	l.printEndpoint("Discovery", endpoints.Discovery)
+	l.printEndpoint("Authorization", endpoints.Authorize)
+	l.printEndpoint("Token", endpoints.Token)
+	l.printEndpoint("UserInfo", endpoints.UserInfo)
+	l.printEndpoint("JWKS", endpoints.JWKS)
+	l.printEndpoint("Device Flow", endpoints.DeviceAuthorization)
+	l.printEndpoint("Introspection", endpoints.Introspection)
+	l.printEndpoint("Revocation", endpoints.Revocation)
+	l.printEndpoint("End Session", endpoints.Logout)
+	l.printEndpoint("Health Check", endpoints.HealthCheck)
+	if len(tenants) > 0 {
+		l.printKeyValue("Tenant", strings.Join(tenants, ", ")+" (or omitted)")
+	}
+
+	if httpMetadataAddr != "" {
+		if metadataIssuer := httpMetadataIssuer(issuer, httpMetadataAddr); metadataIssuer != "" {
+			httpEndpoints, metadataTenants := startupEndpointsForIssuer(metadataIssuer, entraid)
+
+			fmt.Println()
+			l.info.Println("🔎 HTTP Metadata Companion:")
+			l.printKeyValue("📍 Address", httpMetadataAddr)
+			l.printKeyValue("🌐 Base URL", metadataIssuer)
+			l.printKeyValue("🔒 Scope", "Discovery, JWKS, Health Check only")
+			l.printEndpoint("Discovery", httpEndpoints.Discovery)
+			l.printEndpoint("JWKS", httpEndpoints.JWKS)
+			l.printEndpoint("Health Check", httpEndpoints.HealthCheck)
+			if len(metadataTenants) > 0 {
+				l.printKeyValue("Tenant", strings.Join(metadataTenants, ", ")+" (or omitted)")
+			}
+		}
 	}
 
 	fmt.Println()
 	l.success.Println("✅ Server ready to accept connections!")
 	l.printSeparator()
+}
+
+func startupEndpointsForIssuer(issuer string, entraid *config.EntraIDConfig) (entraIDStartupDisplay, []string) {
+	endpoints := entraIDStartupDisplay{
+		Discovery:           issuer + "/.well-known/openid-configuration",
+		Authorize:           issuer + "/authorize",
+		Token:               issuer + "/token",
+		UserInfo:            issuer + "/userinfo",
+		Introspection:       issuer + "/oauth/introspect",
+		Revocation:          issuer + "/revoke",
+		Logout:              issuer + "/end_session",
+		DeviceAuthorization: issuer + "/device_authorization",
+		JWKS:                issuer + "/keys",
+		HealthCheck:         issuer + "/health",
+	}
+
+	startupDisplay, hasStartupDisplay := entraIDStartupDisplayForIssuer(issuer, entraid)
+	if hasStartupDisplay {
+		return startupDisplay, startupDisplay.Tenants
+	}
+	if routes, ok := entraIDRoutesForIssuer(issuer, entraid); ok {
+		endpoints.Authorize = routes.Authorize
+		endpoints.Token = routes.Token
+		endpoints.JWKS = routes.JWKS
+		endpoints.DeviceAuthorization = routes.DeviceAuthorization
+		endpoints.Logout = routes.Logout
+	}
+	return endpoints, nil
+}
+
+func httpMetadataIssuer(issuer, httpMetadataAddr string) string {
+	parsed, err := neturl.Parse(issuer)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	port := strings.TrimPrefix(strings.TrimSpace(httpMetadataAddr), ":")
+	if port == "" {
+		return ""
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" {
+		return ""
+	}
+	parsed.Scheme = "http"
+	parsed.Host = net.JoinHostPort(hostname, port)
+	return parsed.String()
 }
 
 // ConfigReloaded logs successful configuration reload

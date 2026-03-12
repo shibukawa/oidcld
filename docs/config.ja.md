@@ -8,7 +8,7 @@
 ./oidcld init                        # 対話ウィザード
 ./oidcld init --template entraid-v2  # 非対話テンプレート
 ./oidcld --watch                     # 設定ファイル変更をホットリロード
-./oidcld                             # HTTP (18888) で起動
+./oidcld                             # HTTP は 18888、HTTPS は 18443 を既定として起動
 ```
 
 ## 設定ファイル構造
@@ -28,6 +28,7 @@ oidcld:
   pkce_required: false
   nonce_required: false
   expired_in: 3600                        # アクセストークン有効秒数
+  aud_claim_format: string                # 単一 audience の aud を string / array で制御 (既定: string)
   valid_scopes:                           # 追加カスタムスコープ (標準は自動付与)
     - admin
     - read
@@ -40,7 +41,7 @@ oidcld:
   tls_cert_file: ""                       # 手動証明書利用時のみ
   tls_key_file: ""
 ```
-標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。
+標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。
 
 #### 2. EntraID 互換設定 (`entraid`)
 ```yaml
@@ -105,7 +106,7 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | OIDCLD_ACME_AGREE_TOS | TOS 同意 (true) |
 
 ## ランタイム挙動 (ホットリロード)
-即時反映: users, valid_scopes, expired_in, pkce/nonce, refresh_token 設定, cors。
+即時反映: users, valid_scopes, expired_in, aud_claim_format, pkce/nonce, refresh_token 設定, cors。
 再起動必要: iss, ポート, TLS/Autocert有効化や構造, EntraID テンプレ/tenant, autocert のドメイン/サーバー/レート制御/チャレンジ/リトライ。
 
 ## HTTPS モード
