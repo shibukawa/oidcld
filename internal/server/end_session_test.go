@@ -189,7 +189,7 @@ func TestOIDCServer_ShowLogoutSuccessPage_WithPostLogoutRedirectURI(t *testing.T
 	assert.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/logout/success?post_logout_redirect_uri=http%3A%2F%2Fapp.localhost%3A3000%2F", nil)
+	req := httptest.NewRequest(http.MethodGet, "/logout/success?post_logout_redirect_uri=http%3A%2F%2Fapp.localhost%3A3000%2F", nil)
 
 	server.showLogoutSuccessPage(recorder, req)
 
@@ -215,7 +215,7 @@ func TestOIDCServer_ShowLogoutSuccessPage_WithoutPostLogoutRedirectURI(t *testin
 	assert.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/logout/success", nil)
+	req := httptest.NewRequest(http.MethodGet, "/logout/success", nil)
 
 	server.showLogoutSuccessPage(recorder, req)
 
@@ -241,7 +241,7 @@ func TestOIDCServer_ShowLogoutSuccessPage_UsesRedirectCookie(t *testing.T) {
 	assert.NoError(t, err)
 
 	recorder := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/logged-out", nil)
+	req := httptest.NewRequest(http.MethodGet, "/logged-out", nil)
 	req.AddCookie(&http.Cookie{Name: postLogoutRedirectCookieName, Value: "http%3A%2F%2Fapp.localhost%3A3000%2F"})
 
 	server.showLogoutSuccessPage(recorder, req)
