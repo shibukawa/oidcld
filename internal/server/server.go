@@ -197,27 +197,19 @@ func (s *Server) Handler() http.Handler {
 	// Add custom discovery handler for pretty-printed JSON
 	mux.HandleFunc("/.well-known/openid-configuration", s.handleDiscovery)
 
+	endSessionHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.rememberPostLogoutRedirectCookie(w, r)
+		s.provider.ServeHTTP(w, s.withRequestRedirectContext(r))
+	})
+	mux.Handle("/end_session", endSessionHandler)
+
 	// Intercept /authorize so we can log incoming client_id, redirect_uri, scope for debugging
 	// then forward the request to the provider. This avoids modifying provider internals.
 	authorizeHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Prefer query params for GET; for POST try parsing the form as well.
-		clientID := r.URL.Query().Get("client_id")
-		redirectURI := r.URL.Query().Get("redirect_uri")
-		scope := r.URL.Query().Get("scope")
-
-		if r.Method == http.MethodPost {
-			// Try parsing form but ignore errors to avoid interfering with provider handling.
-			_ = r.ParseForm()
-			if clientID == "" {
-				clientID = r.FormValue("client_id")
-			}
-			if redirectURI == "" {
-				redirectURI = r.FormValue("redirect_uri")
-			}
-			if scope == "" {
-				scope = r.FormValue("scope")
-			}
-		}
+		clientID := requestParameter(r, "client_id")
+		redirectURI := requestParameter(r, "redirect_uri")
+		scope := requestParameter(r, "scope")
 
 		s.logger.Info("Authorize request received",
 			"client_id", clientID,
@@ -226,29 +218,8 @@ func (s *Server) Handler() http.Handler {
 			"method", r.Method,
 			"remote_addr", r.RemoteAddr)
 
-		// Insert redirect parameters into the request context so storage
-		// can return a client permitting the exact redirect URIs for this
-		// request. This allows dynamic, per-request redirect handling.
-		ctx := r.Context()
-		if redirectURI != "" {
-			ctx = context.WithValue(ctx, redirectURIContextKey, redirectURI)
-		}
-		// Also capture optional post_logout_redirect_uri if present
-		postLogout := r.URL.Query().Get("post_logout_redirect_uri")
-		if r.Method == http.MethodPost {
-			// Parse form quietly if needed
-			_ = r.ParseForm()
-			if postLogout == "" {
-				postLogout = r.FormValue("post_logout_redirect_uri")
-			}
-		}
-		if postLogout != "" {
-			ctx = context.WithValue(ctx, postLogoutRedirectURIContextKey, postLogout)
-		}
-
-		// Forward to the provider with the enriched context
-		r = r.WithContext(ctx)
-		s.provider.ServeHTTP(w, r)
+		// Forward to the provider with the enriched context.
+		s.provider.ServeHTTP(w, s.withRequestRedirectContext(r))
 	})
 	mux.Handle("/authorize", authorizeHandler)
 
@@ -298,6 +269,35 @@ func (s *Server) Handler() http.Handler {
 	rootMux.Handle(prefix+"/", http.StripPrefix(prefix, handler))
 	rootMux.Handle("/", handler)
 	return rootMux
+}
+
+func requestParameter(r *http.Request, name string) string {
+	if r == nil {
+		return ""
+	}
+
+	value := r.URL.Query().Get(name)
+	if value != "" || r.Method != http.MethodPost {
+		return value
+	}
+
+	_ = r.ParseForm()
+	return r.FormValue(name)
+}
+
+func (s *Server) withRequestRedirectContext(r *http.Request) *http.Request {
+	if r == nil {
+		return nil
+	}
+
+	ctx := r.Context()
+	if redirectURI := requestParameter(r, "redirect_uri"); redirectURI != "" {
+		ctx = context.WithValue(ctx, redirectURIContextKey, redirectURI)
+	}
+	if postLogout := requestParameter(r, "post_logout_redirect_uri"); postLogout != "" {
+		ctx = context.WithValue(ctx, postLogoutRedirectURIContextKey, postLogout)
+	}
+	return r.WithContext(ctx)
 }
 
 func (s *Server) ReadOnlyHTTPHandler() http.Handler {
@@ -619,27 +619,8 @@ func (s *Server) renderDeviceForm(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleLoggedOut handles the logout success page
-func (s *Server) handleLoggedOut(w http.ResponseWriter, _ *http.Request) {
-	html := `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Logged Out - OIDC Test Identity Provider</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
-        .success { color: #28a745; }
-    </style>
-</head>
-<body>
-    <h1 class="success">✓ Successfully Logged Out</h1>
-    <p>You have been successfully logged out from the OIDC Test Identity Provider.</p>
-    <p>You can now close this window or navigate to your application.</p>
-</body>
-</html>`
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(html))
+func (s *Server) handleLoggedOut(w http.ResponseWriter, r *http.Request) {
+	s.showLogoutSuccessPage(w, r)
 }
 
 // handleHealth handles health check requests
