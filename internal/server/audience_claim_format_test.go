@@ -29,6 +29,22 @@ func decodeJWTPayload(t *testing.T, token string) map[string]any {
 	return claims
 }
 
+func decodeJWTHeader(t *testing.T, token string) map[string]any {
+	t.Helper()
+
+	parts := strings.Split(token, ".")
+	assert.Equal(t, 3, len(parts))
+
+	header, err := base64.RawURLEncoding.DecodeString(parts[0])
+	assert.NoError(t, err)
+
+	var values map[string]any
+	err = json.Unmarshal(header, &values)
+	assert.NoError(t, err)
+
+	return values
+}
+
 func newAudienceClaimTestServer(t *testing.T, cfg *config.Config) *Server {
 	t.Helper()
 
@@ -49,7 +65,7 @@ func signAudienceClaimTestJWT(t *testing.T, privateKey *rsa.PrivateKey, audience
 		"sub": "user1",
 		"aud": audience,
 	})
-	token.Header["kid"] = "oidcld-key"
+	token.Header["kid"] = deriveSigningKeyID(privateKey)
 
 	signed, err := token.SignedString(privateKey)
 	assert.NoError(t, err)
@@ -74,6 +90,10 @@ func TestSignJWT_SingleAudienceDefaultsToString(t *testing.T) {
 
 	claims := decodeJWTPayload(t, token)
 	assert.Equal(t, "test-client-id", claims["aud"])
+	header := decodeJWTHeader(t, token)
+	kid, ok := header["kid"].(string)
+	assert.True(t, ok)
+	assert.Equal(t, deriveSigningKeyID(server.privateKey), kid)
 }
 
 func TestSignJWT_SingleAudienceCanBeForcedToArray(t *testing.T) {

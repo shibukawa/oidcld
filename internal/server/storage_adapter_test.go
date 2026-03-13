@@ -369,6 +369,7 @@ func TestStorageAdapter_GetClientByID(t *testing.T) {
 func TestStorageAdapter_SigningKey_And_KeySet(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	assert.NoError(t, err)
+	expectedKeyID := deriveSigningKeyID(privateKey)
 
 	adapter := NewStorageAdapter(&config.Config{}, privateKey)
 
@@ -378,7 +379,7 @@ func TestStorageAdapter_SigningKey_And_KeySet(t *testing.T) {
 	signingKey, err := adapter.SigningKey(ctx)
 	assert.NoError(t, err)
 	assert.NotZero(t, signingKey)
-	assert.NotEqual(t, "", signingKey.ID())
+	assert.Equal(t, expectedKeyID, signingKey.ID())
 	assert.Equal(t, privateKey, signingKey.Key().(*rsa.PrivateKey))
 
 	// Test key set retrieval
