@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto"
 	"crypto/rsa"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"maps"
@@ -53,6 +55,8 @@ type StorageAdapter struct {
 
 // NewStorageAdapter creates a new storage adapter
 func NewStorageAdapter(config *config.Config, privateKey *rsa.PrivateKey) *StorageAdapter {
+	signingKeyID := deriveSigningKeyID(privateKey)
+
 	return &StorageAdapter{
 		config:               config,
 		privateKey:           privateKey,
@@ -66,11 +70,24 @@ func NewStorageAdapter(config *config.Config, privateKey *rsa.PrivateKey) *Stora
 		userCodeToDevice:     make(map[string]string),               // User code mapping
 		prettyLog:            NewLogger(),                           // Initialize colorful logger
 		signingKey: SigningKey{
-			id:        uuid.NewString(),
+			id:        signingKeyID,
 			algorithm: jose.RS256,
 			key:       privateKey,
 		},
 	}
+}
+
+func deriveSigningKeyID(privateKey *rsa.PrivateKey) string {
+	if privateKey == nil {
+		return ""
+	}
+
+	thumbprint, err := (&jose.JSONWebKey{Key: &privateKey.PublicKey}).Thumbprint(crypto.SHA256)
+	if err != nil {
+		return ""
+	}
+
+	return base64.RawURLEncoding.EncodeToString(thumbprint)
 }
 
 // ClientCredentials implements op.ClientCredentialsStorage interface

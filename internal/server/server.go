@@ -1070,7 +1070,7 @@ func (s *Server) signJWT(claims jwt.MapClaims) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 
 	// Set key ID header
-	token.Header["kid"] = "oidcld-key"
+	token.Header["kid"] = deriveSigningKeyID(s.privateKey)
 
 	return token.SignedString(s.privateKey)
 }
@@ -1130,7 +1130,7 @@ func (s *Server) rewriteJWTTokenAudience(token string) (string, error) {
 		rewrittenToken.Header[key] = value
 	}
 	if _, ok := rewrittenToken.Header["kid"]; !ok {
-		rewrittenToken.Header["kid"] = "oidcld-key"
+		rewrittenToken.Header["kid"] = deriveSigningKeyID(s.privateKey)
 	}
 
 	return rewrittenToken.SignedString(s.privateKey)
