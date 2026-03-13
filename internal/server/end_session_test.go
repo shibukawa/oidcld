@@ -4,6 +4,9 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/alecthomas/assert/v2"
@@ -170,6 +173,82 @@ func TestOIDCServer_ValidatePostLogoutRedirectURI(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOIDCServer_ShowLogoutSuccessPage_WithPostLogoutRedirectURI(t *testing.T) {
+	cfg := &config.Config{
+		OIDCLD: config.OIDCLDConfig{
+			Issuer: "http://localhost:18888",
+		},
+	}
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NoError(t, err)
+
+	server, err := NewServer(cfg, privateKey, slog.Default())
+	assert.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/logout/success?post_logout_redirect_uri=http%3A%2F%2Fapp.localhost%3A3000%2F", nil)
+
+	server.showLogoutSuccessPage(recorder, req)
+
+	body := recorder.Body.String()
+	assert.Equal(t, "text/html; charset=utf-8", recorder.Header().Get("Content-Type"))
+	assert.Contains(t, body, `<meta http-equiv="refresh" content="3;url=http://app.localhost:3000/">`)
+	assert.Contains(t, body, `href="http://app.localhost:3000/"`)
+	assert.Contains(t, body, `<h1 class="success">✓ Successfully Logged Out</h1>`)
+	assert.Contains(t, body, `You will be redirected back to your application in a few seconds.`)
+}
+
+func TestOIDCServer_ShowLogoutSuccessPage_WithoutPostLogoutRedirectURI(t *testing.T) {
+	cfg := &config.Config{
+		OIDCLD: config.OIDCLDConfig{
+			Issuer: "http://localhost:18888",
+		},
+	}
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NoError(t, err)
+
+	server, err := NewServer(cfg, privateKey, slog.Default())
+	assert.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/logout/success", nil)
+
+	server.showLogoutSuccessPage(recorder, req)
+
+	body := recorder.Body.String()
+	assert.Equal(t, "text/html; charset=utf-8", recorder.Header().Get("Content-Type"))
+	assert.False(t, strings.Contains(body, `http-equiv="refresh"`))
+	assert.False(t, strings.Contains(body, `You will be redirected back to your application in a few seconds.`))
+	assert.Contains(t, body, `<h1 class="success">✓ Successfully Logged Out</h1>`)
+	assert.Contains(t, body, `You can now close this window or navigate to your application.`)
+}
+
+func TestOIDCServer_ShowLogoutSuccessPage_UsesRedirectCookie(t *testing.T) {
+	cfg := &config.Config{
+		OIDCLD: config.OIDCLDConfig{
+			Issuer: "http://localhost:18888",
+		},
+	}
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NoError(t, err)
+
+	server, err := NewServer(cfg, privateKey, slog.Default())
+	assert.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/logged-out", nil)
+	req.AddCookie(&http.Cookie{Name: postLogoutRedirectCookieName, Value: "http%3A%2F%2Fapp.localhost%3A3000%2F"})
+
+	server.showLogoutSuccessPage(recorder, req)
+
+	body := recorder.Body.String()
+	assert.Contains(t, body, `<meta http-equiv="refresh" content="3;url=http://app.localhost:3000/">`)
+	assert.Contains(t, recorder.Header().Values("Set-Cookie")[0], postLogoutRedirectCookieName+"=")
 }
 
 func TestStorageAdapter_SessionTokenTracking(t *testing.T) {

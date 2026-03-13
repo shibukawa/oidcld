@@ -345,7 +345,26 @@ services:
       myencrypt.localhost:
         condition: service_healthy
     restart: unless-stopped
+
+  app.localhost:
+    build:
+      context: ./examples/azure-msal-browser-react
+      dockerfile: Dockerfile
+      args:
+        VITE_OIDC_AUTHORITY: "https://oidc.localhost:8443"
+        VITE_OIDC_CLIENT_ID: "test-client-id"
+        VITE_OIDC_REDIRECT_URI: "http://app.localhost:3000/redirect"
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "http://app.localhost:3000/"
+        VITE_OIDC_SCOPES: "openid,profile,email,offline_access,User.Read"
+    ports:
+      - "3000:80"
+    depends_on:
+      oidc.localhost:
+        condition: service_healthy
+    restart: unless-stopped
 ```
+
+このサンプルでは、React アプリから logout すると `http://app.localhost:3000/` へ戻る想定です。途中で provider のログアウト成功ページを経由した場合でも、oidcld が数秒だけ成功メッセージを表示したあと自動的にアプリへ戻します。
 
 #### OIDCLD 向けの MSAL 設定例
 

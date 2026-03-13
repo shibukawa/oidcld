@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+    "html"
 	"log/slog"
 	"net/http"
 	"net/url"
+    "strings"
 	"time"
 
 	zhttp "github.com/zitadel/oidc/v3/pkg/http"
@@ -17,6 +19,11 @@ import (
 var (
 	ErrRedirectURIMustBeAbsolute = errors.New("redirect URI must be absolute")
 	ErrRedirectURIMustUseHTTPS   = errors.New("redirect URI must use http or https scheme")
+)
+
+const (
+    postLogoutRedirectCookieName  = "oidcld_post_logout_redirect_uri"
+    logoutSuccessRedirectDelaySec = 3
 )
 
 // Decoder implements SessionEnder for the OIDC server.
@@ -182,7 +189,20 @@ func (s *Server) handleLogoutSuccess(w http.ResponseWriter, r *http.Request) {
 }
 
 // showLogoutSuccessPage displays an enhanced logout success page
-func (s *Server) showLogoutSuccessPage(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) showLogoutSuccessPage(w http.ResponseWriter, r *http.Request) {
+    redirectTarget := s.postLogoutRedirectURIFromRequest(r)
+    if redirectTarget != "" {
+        s.clearPostLogoutRedirectCookie(w, r)
+    }
+
+    metaRefresh := ""
+    redirectMessage := "<p>You can now close this window or navigate to your application.</p>"
+    if redirectTarget != "" {
+        escapedTarget := html.EscapeString(redirectTarget)
+        metaRefresh = fmt.Sprintf("\n    <meta http-equiv=\"refresh\" content=\"%d;url=%s\">", logoutSuccessRedirectDelaySec, escapedTarget)
+        redirectMessage = fmt.Sprintf(`<p>You will be redirected back to your application in a few seconds. If nothing happens, <a href="%s">return now</a>.</p>`, escapedTarget)
+    }
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
@@ -191,179 +211,110 @@ func (s *Server) showLogoutSuccessPage(w http.ResponseWriter, _ *http.Request) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logout Successful - OpenID Connect Test IdP</title>
+    <title>Logout Successful - OpenID Connect Test IdP</title>__META_REFRESH__
     <style>
-        :root {
-            --primary-color: #667eea;
-            --secondary-color: #764ba2;
-            --success-color: #48bb78;
-            --text-color: #333;
-            --text-muted: #666;
-            --background: #f8f9fa;
-            --card-background: #ffffff;
-            --border-radius: 12px;
-            --shadow: 0 10px 30px rgba(0,0,0,0.1);
-        }
-        
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --text-color: #ffffff;
-                --text-muted: #cccccc;
-                --background: #1a1a1a;
-                --card-background: #2d2d2d;
-            }
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
             padding: 20px;
-        }
-        
-        .container {
-            background: var(--card-background);
-            padding: 3rem 2rem;
-            border-radius: var(--border-radius);
-            box-shadow: var(--shadow);
             text-align: center;
-            max-width: 500px;
-            width: 100%;
-            animation: slideUp 0.5s ease-out;
         }
-        
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+
+        .success {
+            color: #28a745;
         }
-        
-        .success-icon {
-            font-size: 5rem;
-            color: var(--success-color);
-            margin-bottom: 1.5rem;
-            animation: checkmark 0.6s ease-in-out 0.3s both;
+
+        p {
+            line-height: 1.6;
         }
-        
-        @keyframes checkmark {
-            0% { transform: scale(0); }
-            50% { transform: scale(1.2); }
-            100% { transform: scale(1); }
-        }
-        
-        h1 {
-            color: var(--text-color);
-            margin-bottom: 1rem;
-            font-size: 2rem;
-            font-weight: 600;
-        }
-        
-        .subtitle {
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            font-size: 1.1rem;
-            line-height: 1.5;
-        }
-        
-        .info-cards {
-            display: grid;
-            gap: 1rem;
-            margin-top: 2rem;
-        }
-        
-        .info-card {
-            background: var(--background);
-            padding: 1.5rem;
-            border-radius: 8px;
-            border-left: 4px solid var(--primary-color);
-            text-align: left;
-        }
-        
-        .info-card h3 {
-            color: var(--primary-color);
-            font-size: 1rem;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-        }
-        
-        .info-card p {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            line-height: 1.4;
-            margin: 0;
-        }
-        
-        .security-notice {
-            background: #e8f5e8;
-            border-left-color: var(--success-color);
-        }
-        
-        .next-steps {
-            background: #e3f2fd;
-            border-left-color: #2196f3;
-        }
-        
-        @media (max-width: 480px) {
-            .container {
-                padding: 2rem 1.5rem;
-            }
-            
-            h1 {
-                font-size: 1.5rem;
-            }
-            
-            .success-icon {
-                font-size: 4rem;
-            }
-        }
-        
-        /* Accessibility */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
-            }
+
+        a {
+            color: #0d6efd;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="success-icon">✅</div>
-        <h1>Logout Successful</h1>
-        <p class="subtitle">You have been successfully logged out from the OpenID Connect Test Identity Provider.</p>
-        
-        <div class="info-cards">
-            <div class="info-card security-notice">
-                <h3>🔒 Security Notice</h3>
-                <p>Your session has been terminated and all associated tokens have been securely invalidated.</p>
-            </div>
-            
-            <div class="info-card next-steps">
-                <h3>📱 Next Steps</h3>
-                <p>You can safely close this window or navigate back to your application. For complete security, consider closing your browser.</p>
-            </div>
-        </div>
-    </div>
+    <h1 class="success">✓ Successfully Logged Out</h1>
+    <p>You have been successfully logged out from the OIDC Test Identity Provider.</p>
+    __REDIRECT_MESSAGE__
 </body>
 </html>`
 
+	html = strings.ReplaceAll(html, "__META_REFRESH__", metaRefresh)
+	html = strings.ReplaceAll(html, "__REDIRECT_MESSAGE__", redirectMessage)
+
 	w.Write([]byte(html))
-	s.logger.Info("Logout success page displayed")
+    if redirectTarget != "" {
+        s.logger.Info("Logout success page displayed", "post_logout_redirect_uri", redirectTarget)
+        return
+    }
+    s.logger.Info("Logout success page displayed")
+}
+
+func (s *Server) postLogoutRedirectURIFromRequest(r *http.Request) string {
+    if r == nil {
+        return ""
+    }
+
+    if redirectURI := r.URL.Query().Get("post_logout_redirect_uri"); redirectURI != "" {
+        return redirectURI
+    }
+
+    cookie, err := r.Cookie(postLogoutRedirectCookieName)
+    if err != nil || cookie.Value == "" {
+        return ""
+    }
+
+    redirectURI, err := url.QueryUnescape(cookie.Value)
+    if err != nil {
+        return ""
+    }
+    return redirectURI
+}
+
+func (s *Server) rememberPostLogoutRedirectCookie(w http.ResponseWriter, r *http.Request) {
+    if w == nil || r == nil {
+        return
+    }
+
+    redirectURI := requestParameter(r, "post_logout_redirect_uri")
+    if redirectURI == "" {
+        return
+    }
+    if err := s.validatePostLogoutRedirectURI(redirectURI); err != nil {
+        return
+    }
+
+    http.SetCookie(w, &http.Cookie{
+        Name:     postLogoutRedirectCookieName,
+        Value:    url.QueryEscape(redirectURI),
+        Path:     "/",
+        MaxAge:   300,
+        HttpOnly: true,
+        SameSite: http.SameSiteLaxMode,
+        Secure:   r.TLS != nil,
+    })
+}
+
+func (s *Server) clearPostLogoutRedirectCookie(w http.ResponseWriter, r *http.Request) {
+    if w == nil || r == nil {
+        return
+    }
+
+    if _, err := r.Cookie(postLogoutRedirectCookieName); err != nil {
+        return
+    }
+
+    http.SetCookie(w, &http.Cookie{
+        Name:     postLogoutRedirectCookieName,
+        Value:    "",
+        Path:     "/",
+        MaxAge:   -1,
+        HttpOnly: true,
+        SameSite: http.SameSiteLaxMode,
+        Secure:   r.TLS != nil,
+    })
 }
 
 // validatePostLogoutRedirectURI validates the post logout redirect URI
