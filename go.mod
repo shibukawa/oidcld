@@ -1,6 +1,6 @@
 module github.com/shibukawa/oidcld
 
-go 1.24.10
+go 1.25.0
 
 require (
 	github.com/alecthomas/assert/v2 v2.11.0
@@ -13,7 +13,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/zitadel/oidc/v3 v3.45.5
 	golang.org/x/crypto v0.48.0
-	golang.org/x/text v0.34.0
+	golang.org/x/text v0.35.0
 )
 
 require (
