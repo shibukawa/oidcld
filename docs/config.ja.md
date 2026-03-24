@@ -95,9 +95,11 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 `init`, `serve`, `health` コマンドは README を参照。
 
 ## 環境変数
-| 変数 | 説明 | 既定 |
-|------|------|------|
-| PORT | ポート上書き | 18888 |
+| 変数 | 説明 | 現在の実装状況 |
+|------|------|------------------|
+| OIDCLD_VERBOSE | `serve` の詳細ログを有効化 | `serve` コマンドの env binding で実装済み |
+| OIDCLD_CONFIG | コンテナ / health 系で使う設定ファイルパス | 実行時の慣例と health 自動判定で利用 |
+| PORT | ポート上書き | 現在の Go エントリポイントでは直接読んでいない。確実に制御したい場合は `oidcld serve --port ...` を使う |
 
 ### ACME / autocert 上書き
 設定ファイルより優先され、存在すると `enabled: true` に強制。
@@ -108,6 +110,17 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | OIDCLD_ACME_DOMAIN | カンマ区切りドメイン一覧 |
 | OIDCLD_ACME_CACHE_DIR | キャッシュディレクトリ |
 | OIDCLD_ACME_AGREE_TOS | TOS 同意 (true) |
+
+### compose 例にあるが現状は未解釈の値
+
+`compose.yaml` には次の値が書かれていますが、現行の `internal/config.LoadConfig()` は読み取りません。
+
+| 変数 | 状態 |
+|------|------|
+| OIDCLD_ACME_INSECURE_SKIP_VERIFY | compose 例のみ。現状の config loading では非有効 |
+| OIDCLD_ACME_RENEWAL_THRESHOLD | compose 例のみ。現状の config loading では非有効 |
+
+これらは実装が追加されるまでは、説明サンプル側の差分として扱ってください。
 
 ## ランタイム挙動 (ホットリロード)
 即時反映: users, valid_scopes, expired_in, aud_claim_format, oidcld.access_filter, pkce/nonce, refresh_token 設定, cors。

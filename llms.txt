@@ -1,0 +1,202 @@
+# OIDCLD
+
+Compact guidance for AI systems working with this repository.
+
+## Project
+
+- OIDCLD is a fake OpenID Connect identity provider for local development and testing.
+- It is not a production identity provider.
+- It favors local ergonomics: in-memory storage, click-to-login users, and a single YAML config.
+
+## Capabilities
+
+- Authorization Code Flow
+- Client Credentials Flow
+- Device Flow
+- Refresh token support
+- RP-initiated logout support
+- OpenID Connect discovery and JWKS endpoints
+- Optional EntraID-compatible issuer and claim shape modes
+- In-memory users with click-to-login UX instead of passwords
+
+## Commands
+
+- `oidcld init`
+  - Generates `oidcld.yaml` from `standard`, `entraid-v1`, or `entraid-v2` templates.
+
+- `oidcld serve`
+  - Default HTTP port: `18888`.
+  - Default HTTPS port: `18443`.
+  - In HTTPS mode, `--http-readonly-port` defaults to `18888` and exposes discovery, JWKS, and health only.
+
+- `oidcld health`
+  - If `--url` is omitted, it auto-detects the target from config.
+  - In container-style setups where `OIDCLD_CONFIG` is set, health checks dial `localhost` and allow self-signed/local TLS.
+
+## Runtime
+
+- Default config file name: `oidcld.yaml`.
+- `serve` enables a local access filter by default.
+- Requests without forwarded headers must come from loopback or RFC1918 ranges.
+- Requests with `Forwarded` or `X-Forwarded-For` are rejected unless `oidcld.access_filter.max_forwarded_hops` is raised.
+- Signing keys are generated in memory at startup and are not persisted.
+- Tokens from a previous run will not validate after restart.
+- This repository supports HTTP, manual HTTPS, and autocert-based HTTPS.
+
+## Config
+
+Primary file: `oidcld.yaml`
+
+Top-level sections:
+
+1. `oidcld`
+2. `entraid`
+3. `cors`
+4. `autocert`
+5. `users`
+
+```yaml
+oidcld:
+  iss: "http://localhost:18888"
+  pkce_required: false
+  nonce_required: false
+  expired_in: 3600
+  aud_claim_format: "string"
+  valid_scopes:
+    - "admin"
+    - "read"
+    - "write"
+  access_filter:
+    enabled: true
+    extra_allowed_ips: []
+    max_forwarded_hops: 0
+  refresh_token_enabled: true
+  refresh_token_expiry: 86400
+  end_session_enabled: true
+  end_session_endpoint_visible: true
+  verbose_logging: false
+  tls_cert_file: ""
+  tls_key_file: ""
+
+entraid:
+  tenant_id: "12345678-1234-1234-1234-123456789abc"
+  version: "v2"
+
+cors:
+  enabled: true
+  allowed_origins:
+    - "http://localhost:3000"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "OPTIONS"
+  allowed_headers:
+    - "Content-Type"
+    - "Authorization"
+    - "Accept"
+
+autocert:
+  enabled: false
+  domains: []
+  email: ""
+  agree_tos: false
+  cache_dir: "./autocert-cache"
+  acme_server: ""
+  staging: false
+  renewal_threshold: 1
+
+users:
+  admin:
+    display_name: "Administrator"
+    extra_valid_scopes:
+      - "admin"
+    extra_claims:
+      email: "admin@example.com"
+      role: "admin"
+```
+
+- `oidcld.iss` is the issuer URL.
+- `aud_claim_format` controls whether a single `aud` claim is emitted as a string or array.
+- `access_filter` is important in local and container setups because it limits who can reach the server.
+- `autocert.acme_server` is the YAML field name even when environment variables use the term `DIRECTORY_URL`.
+- `users` is a map keyed by username-like identifiers, with per-user claims and extra scopes.
+
+    ## Compose
+
+The repository root `compose.yaml` defines three services:
+
+- `myencrypt.localhost`
+  - Local ACME server used for development certificates.
+  - Exposes host port `14000` to container port `80`.
+  - Persists data in the `myencrypt-data` volume.
+
+- `oidc.localhost`
+  - Builds OIDCLD from the current repository.
+  - Binds `./examples/autocert/config/oidcld.yaml` to `/app/config.yaml` read-only.
+  - Exposes `18888:18888` for the HTTP metadata companion listener.
+  - Exposes `8443:443` for the HTTPS OIDC listener.
+  - Starts with:
+    - `serve --config /app/config.yaml --port 443 --http-readonly-port 18888`
+  - Health check uses:
+    - `oidcld health --url http://localhost:18888`
+
+- `app.localhost`
+  - Sample frontend container built from `examples/azure-msal-browser-react`.
+  - Exposes host port `3000`.
+  - Depends on `oidc.localhost` becoming healthy.
+
+- HTTPS traffic for the OIDC server comes in on `https://oidc.localhost:8443`.
+- HTTP on `http://localhost:18888` is a restricted metadata companion endpoint, not a full plaintext OIDC surface.
+
+## Environment
+
+Environment variables currently consumed by the implementation:
+
+- `OIDCLD_VERBOSE`
+  - Enables verbose logging for `serve`.
+
+- `OIDCLD_CONFIG`
+  - Used as a runtime convention in container examples.
+  - Important for `health` auto-detection behavior in container-style setups.
+
+- `OIDCLD_ACME_DIRECTORY_URL`
+  - Overrides `autocert.acme_server`.
+
+- `OIDCLD_ACME_EMAIL`
+  - Overrides autocert email.
+
+- `OIDCLD_ACME_DOMAIN`
+  - Comma-separated domain list for autocert.
+
+- `OIDCLD_ACME_CACHE_DIR`
+  - Overrides autocert cache directory.
+
+- `OIDCLD_ACME_AGREE_TOS`
+  - Enables Terms of Service agreement for autocert when set to `true`.
+
+Documented in repository docs but not directly read by the current Go entrypoints:
+
+- `PORT`
+  - Treat this as documentation drift; prefer explicit CLI flags such as `oidcld serve --port ...`.
+
+Present in compose examples but not parsed by the current `internal/config.LoadConfig` implementation:
+
+- `OIDCLD_ACME_INSECURE_SKIP_VERIFY`
+- `OIDCLD_ACME_RENEWAL_THRESHOLD`
+
+## Source of truth
+
+- `README.md`
+- `docs/config.md`
+- `compose.yaml`
+- `internal/config/config.go`
+- `main.go`
+- `serve.go`
+
+## Guidance constraints
+
+- Do not present OIDCLD as production-ready.
+- Do not assume persistent signing keys or client registration.
+- Do not assume every variable seen in `compose.yaml` is implemented.
+- When explaining HTTPS mode, mention the restricted HTTP companion listener.
+- When explaining access, mention the default local access filter.
