@@ -52,7 +52,7 @@ oidcld:
 - For EntraID modes, `address` and `phone` scopes are excluded
 - RSA-2048 signing keys are generated in memory at startup
 - `aud_claim_format` controls how a single audience is serialized in JWTs. `string` matches common EntraID output, while `array` forces `aud` to stay a JSON array. Multiple audiences always remain arrays.
-- `access_filter.enabled` defaults to `true` for `serve` listeners. Requests without `Forwarded`/`X-Forwarded-For` are allowed only from loopback or RFC1918 peers (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`).
+- `access_filter.enabled` defaults to `true` for `serve` listeners. Requests without `Forwarded`/`X-Forwarded-For` are allowed only from loopback or local private peers (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`).
 - `access_filter.extra_allowed_ips` accepts both single IPs and CIDRs. Single IPs are normalized internally to `/32` or `/128`.
 - `access_filter.max_forwarded_hops` defaults to `0`, so requests carrying `Forwarded` or `X-Forwarded-For` are rejected unless you explicitly raise the limit.
 

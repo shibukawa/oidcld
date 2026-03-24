@@ -247,7 +247,7 @@ Commands for local development and testing. MCP is intentionally omitted here.
 
 - `oidcld serve`: Start the OpenID Connect server
   - Flags: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - Notes: HTTP defaults to port `18888`. HTTPS defaults to port `18443`. In HTTPS mode, `--http-readonly-port` defaults to `18888` for discovery/JWKS/health only. `serve` listeners also enable the local access filter by default: requests without `Forwarded`/`X-Forwarded-For` must come from loopback or RFC1918 space, and forwarded requests are rejected unless `oidcld.access_filter.max_forwarded_hops` is raised from its default `0`. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
+  - Notes: HTTP defaults to port `18888`. HTTPS defaults to port `18443`. In HTTPS mode, `--http-readonly-port` defaults to `18888` for discovery/JWKS/health only. `serve` listeners also enable the local access filter by default: requests without `Forwarded`/`X-Forwarded-For` must come from loopback or local private space (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`), and forwarded requests are rejected unless `oidcld.access_filter.max_forwarded_hops` is raised from its default `0`. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
 
 - `oidcld health`: Probe server health
   - Flags: `--url`, `--port`, `--config`, `--timeout`
