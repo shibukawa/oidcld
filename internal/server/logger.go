@@ -41,7 +41,7 @@ func NewLogger() *Logger {
 }
 
 // ServerStarting logs server startup with beautiful formatting
-func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config.EntraIDConfig, httpMetadataAddr string) {
+func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config.EntraIDConfig, httpMetadataAddr string, accessFilter accessFilterStartupInfo) {
 	fmt.Println()
 	l.printBanner()
 	fmt.Println()
@@ -55,6 +55,11 @@ func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config
 
 	l.printKeyValue("📍 Address", addr)
 	l.printKeyValue("🌐 Issuer", issuer)
+	if accessFilter.Enabled {
+		l.printKeyValue("🛡 Access Filter", fmt.Sprintf("enabled (extra allowlist: %d, max forwarded hops: %d)", accessFilter.ExtraAllowedIPs, accessFilter.MaxForwardedHops))
+	} else {
+		l.printKeyValue("🛡 Access Filter", "disabled")
+	}
 	l.printKeyValue("⏰ Started", time.Now().Format("2006-01-02 15:04:05"))
 	endpoints, tenants := startupEndpointsForIssuer(issuer, entraid)
 

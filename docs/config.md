@@ -34,6 +34,10 @@ oidcld:
     - "admin"
     - "read" 
     - "write"
+  access_filter:
+    enabled: true                            # Restrict serve listeners to local peers by default
+    extra_allowed_ips: []                    # Extra allowed peer IPs/CIDRs
+    max_forwarded_hops: 0                    # Reject Forwarded/X-Forwarded-For by default
   refresh_token_enabled: true                # Enable refresh tokens (default: true)
   refresh_token_expiry: 86400               # Refresh token TTL in seconds (default: 86400)
   end_session_enabled: true                 # Enable logout endpoint (default: true)
@@ -48,6 +52,9 @@ oidcld:
 - For EntraID modes, `address` and `phone` scopes are excluded
 - RSA-2048 signing keys are generated in memory at startup
 - `aud_claim_format` controls how a single audience is serialized in JWTs. `string` matches common EntraID output, while `array` forces `aud` to stay a JSON array. Multiple audiences always remain arrays.
+- `access_filter.enabled` defaults to `true` for `serve` listeners. Requests without `Forwarded`/`X-Forwarded-For` are allowed only from loopback or RFC1918 peers (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`).
+- `access_filter.extra_allowed_ips` accepts both single IPs and CIDRs. Single IPs are normalized internally to `/32` or `/128`.
+- `access_filter.max_forwarded_hops` defaults to `0`, so requests carrying `Forwarded` or `X-Forwarded-For` are rejected unless you explicitly raise the limit.
 
 #### 2. EntraID/AzureAD Compatibility (`entraid`)
 
@@ -193,6 +200,7 @@ Reloads apply immediately (no restart):
 - `valid_scopes` (merged with standard scopes on reload)
 - `expired_in`
 - `aud_claim_format` for newly issued tokens
+- `oidcld.access_filter`
 - `pkce_required`, `nonce_required`
 - Refresh token toggles (`refresh_token_enabled`, `refresh_token_expiry`)
 - CORS section

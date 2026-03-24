@@ -245,7 +245,7 @@ Commands for local development and testing. MCP is intentionally omitted here.
 
 - `oidcld serve`: Start the OpenID Connect server
   - Flags: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - Notes: HTTP defaults to port `18888`. HTTPS defaults to port `18443`. In HTTPS mode, `--http-readonly-port` defaults to `18888` for discovery/JWKS/health only. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
+  - Notes: HTTP defaults to port `18888`. HTTPS defaults to port `18443`. In HTTPS mode, `--http-readonly-port` defaults to `18888` for discovery/JWKS/health only. `serve` listeners also enable the local access filter by default: requests without `Forwarded`/`X-Forwarded-For` must come from loopback or RFC1918 space, and forwarded requests are rejected unless `oidcld.access_filter.max_forwarded_hops` is raised from its default `0`. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
 
 - `oidcld health`: Probe server health
   - Flags: `--url`, `--port`, `--config`, `--timeout`
@@ -259,7 +259,8 @@ This project is for development/testing only. Do not use in production.
 - Redirect URIs are not whitelisted: The requested `redirect_uri` is permitted dynamically for development convenience.
 - Client secrets are not required/enforced: Suitable only for local testing.
 - Ephemeral signing keys: RSA keys are generated on startup and not persisted; tokens from previous runs will not validate after restart.
-- Permissive defaults: CORS and discovery are configured to ease local SPA development; narrow them in config if needed.
+- Local-only defaults: `serve` blocks non-local peers and any request carrying `Forwarded` / `X-Forwarded-For` unless you loosen `oidcld.access_filter`.
+- Permissive CORS/discovery defaults: CORS and discovery are configured to ease local SPA development; narrow them in config if needed.
 
 These trade-offs are deliberate to maximize developer ergonomics in local environments.
 
@@ -291,7 +292,7 @@ mkcert localhost 127.0.0.1 ::1
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
-When HTTPS is active, oidcld also keeps discovery, JWKS, and health reachable on a restricted HTTP companion listener. The default HTTPS port is `18443`, and the companion HTTP port defaults to `18888`. Set `--http-readonly-port off` to disable it.
+When HTTPS is active, oidcld also keeps discovery, JWKS, and health reachable on a restricted HTTP companion listener. The default HTTPS port is `18443`, and the companion HTTP port defaults to `18888`. Set `--http-readonly-port off` to disable it. The same `oidcld.access_filter` rules apply to both the HTTPS listener and the HTTP metadata companion.
 
 **Option 2: Use ACME protocol server**
 

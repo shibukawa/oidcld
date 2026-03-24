@@ -243,7 +243,7 @@ curl -k https://localhost:18443/.well-known/openid-configuration
 
 - `oidcld serve`: OIDC サーバーを起動
   - フラグ: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - 備考: HTTP は既定で `18888`、HTTPS は既定で `18443` を使います。HTTPS 時の `--http-readonly-port` は既定で `18888` になり、discovery/JWKS/health だけを公開します。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
+  - 備考: HTTP は既定で `18888`、HTTPS は既定で `18443` を使います。HTTPS 時の `--http-readonly-port` は既定で `18888` になり、discovery/JWKS/health だけを公開します。さらに `serve` listener ではローカルアクセスフィルタが既定で有効です。`Forwarded` / `X-Forwarded-For` が無い request は loopback または RFC1918 送信元のみ許可し、forward 系ヘッダー付き request は `oidcld.access_filter.max_forwarded_hops` を既定 `0` から上げない限り拒否します。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
 
 - `oidcld health`: サーバーヘルスをチェック
   - フラグ: `--url`, `--port`, `--config`, `--timeout`
@@ -257,7 +257,8 @@ curl -k https://localhost:18443/.well-known/openid-configuration
 - `redirect_uri` のホワイトリストはありません: リクエストの `redirect_uri` を動的に許可します。
 - クライアントシークレットは不要/未検証: ローカルテスト専用の挙動です。
 - 署名鍵はエフェメラル: 起動時に RSA 鍵を生成し永続化しません。再起動後は過去のトークンは検証できません。
-- デフォルトは寛容: SPA 開発を容易にするため CORS やディスカバリを緩めに設定。必要に応じて設定で絞り込んでください。
+- ローカル限定デフォルト: `serve` は非ローカル送信元と `Forwarded` / `X-Forwarded-For` 付き request を既定でブロックします。必要なら `oidcld.access_filter` を調整してください。
+- CORS / discovery は寛容: SPA 開発を容易にするため緩めに設定しています。必要に応じて設定で絞り込んでください。
 
 これらはローカル開発の利便性を最大化するための意図的な設計です。
 
@@ -288,7 +289,7 @@ mkcert localhost 127.0.0.1 ::1
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 ```
 
-HTTPS が有効な場合でも、oidcld は discovery、JWKS、health だけを公開する制限付き HTTP companion listener を併設します。既定の HTTPS port は `18443`、companion HTTP port は `18888` です。無効化したい場合は `--http-readonly-port off` を指定してください。
+HTTPS が有効な場合でも、oidcld は discovery、JWKS、health だけを公開する制限付き HTTP companion listener を併設します。既定の HTTPS port は `18443`、companion HTTP port は `18888` です。無効化したい場合は `--http-readonly-port off` を指定してください。この companion listener にも `oidcld.access_filter` がそのまま適用されます。
 
 **Option 2: ACME プロトコルサーバーを使用**
 

@@ -33,6 +33,10 @@ oidcld:
     - admin
     - read
     - write
+  access_filter:
+    enabled: true                         # serve listener を既定でローカル送信元のみに制限
+    extra_allowed_ips: []                 # 追加で許可する IP / CIDR
+    max_forwarded_hops: 0                 # Forwarded / X-Forwarded-For は既定拒否
   refresh_token_enabled: true
   refresh_token_expiry: 86400             # リフレッシュトークン TTL (秒)
   end_session_enabled: true
@@ -41,7 +45,7 @@ oidcld:
   tls_cert_file: ""                       # 手動証明書利用時のみ
   tls_key_file: ""
 ```
-標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。
+標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。`access_filter.enabled` は `serve` listener で既定 `true` です。`Forwarded` / `X-Forwarded-For` が無い場合は loopback / RFC1918 (`127.0.0.0/8`, `::1`, `10/8`, `172.16/12`, `192.168/16`) のみ許可します。`extra_allowed_ips` は単一 IP と CIDR の両方を受け付け、単一 IP は内部で `/32` または `/128` に正規化されます。`max_forwarded_hops` は既定 `0` なので、forward 系ヘッダー付きリクエストは明示設定がない限り拒否されます。
 
 #### 2. EntraID 互換設定 (`entraid`)
 ```yaml
@@ -106,7 +110,7 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | OIDCLD_ACME_AGREE_TOS | TOS 同意 (true) |
 
 ## ランタイム挙動 (ホットリロード)
-即時反映: users, valid_scopes, expired_in, aud_claim_format, pkce/nonce, refresh_token 設定, cors。
+即時反映: users, valid_scopes, expired_in, aud_claim_format, oidcld.access_filter, pkce/nonce, refresh_token 設定, cors。
 再起動必要: iss, ポート, TLS/Autocert有効化や構造, EntraID テンプレ/tenant, autocert のドメイン/サーバー/レート制御/チャレンジ/リトライ。
 
 ## HTTPS モード

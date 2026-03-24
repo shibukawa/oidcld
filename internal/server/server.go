@@ -54,6 +54,7 @@ type Server struct {
 	privateKey *rsa.PrivateKey
 	logger     *slog.Logger
 	prettyLog  *Logger // Add colorful logger
+	access     *compiledAccessFilter
 
 	// Autocert manager (optional)
 	autocertManager *AutocertManager
@@ -86,6 +87,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 // NewServer creates a new server using zitadel/oidc/v3
 func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logger) (*Server, error) {
+	if err := cfg.Normalize(); err != nil {
+		return nil, fmt.Errorf("failed to normalize configuration: %w", err)
+	}
+
 	jwtAudienceClaimFormatMu.Lock()
 	configureJWTAudienceClaimFormat(cfg.OIDCLD.NormalizedAudienceClaimFormat())
 	jwtAudienceClaimFormatMu.Unlock()
@@ -100,6 +105,12 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 		privateKey: privateKey,
 		logger:     logger,
 		prettyLog:  NewLogger(), // Initialize colorful logger
+	}
+
+	var err error
+	server.access, err = newCompiledAccessFilter(cfg.OIDCLD.AccessFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build access filter: %w", err)
 	}
 
 	// Initialize the OpenID Provider
@@ -256,8 +267,9 @@ func (s *Server) Handler() http.Handler {
 		baseHandler = s.entraIDRouteMiddleware(baseHandler)
 	}
 
-	// Apply middleware in correct order: CORS first (outermost), then logging
-	handler := s.loggingMiddleware(baseHandler)
+	// Apply middleware in correct order so denied requests are still logged and get CORS headers.
+	handler := s.accessFilterMiddleware(baseHandler)
+	handler = s.loggingMiddleware(handler)
 	handler = createCORSMiddleware(s.config.CORS)(handler)
 
 	prefix := config.IssuerPathPrefix(s.config.OIDCLD.Issuer)
@@ -648,7 +660,7 @@ func (s *Server) Start(port string) error {
 	}
 
 	// Use colorful logging for server startup
-	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, false, s.config.EntraID, "")
+	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, false, s.config.EntraID, "", s.access.startupInfo())
 	return server.ListenAndServe()
 }
 
@@ -681,7 +693,7 @@ func (s *Server) startTLS(port, httpReadOnlyPort, certFile, keyFile string, logS
 	}
 
 	if logStartup {
-		s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true, s.config.EntraID, httpReadOnlyPort)
+		s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true, s.config.EntraID, httpReadOnlyPort, s.access.startupInfo())
 	}
 
 	// If autocert manager is configured, prefer it when no cert/key provided.
@@ -718,7 +730,7 @@ func (s *Server) StartTLSWithHTTPReadOnly(tlsPort, httpReadOnlyPort, certFile, k
 	if tlsPort == httpReadOnlyPort {
 		return ErrHTTPReadOnlyPortConflict
 	}
-	s.prettyLog.ServerStarting(fmt.Sprintf(":%s", tlsPort), s.config.OIDCLD.Issuer, true, s.config.EntraID, fmt.Sprintf(":%s", httpReadOnlyPort))
+	s.prettyLog.ServerStarting(fmt.Sprintf(":%s", tlsPort), s.config.OIDCLD.Issuer, true, s.config.EntraID, fmt.Sprintf(":%s", httpReadOnlyPort), s.access.startupInfo())
 
 	errCh := make(chan error, 2)
 	go func() {
@@ -736,6 +748,9 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 	// Validate the new configuration
 	if newConfig == nil {
 		return ErrConfigurationCannotBeNil
+	}
+	if err := newConfig.Normalize(); err != nil {
+		return err
 	}
 
 	// Validate issuer hasn't changed (would require server restart)
@@ -766,9 +781,24 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 	if s.config.OIDCLD.RefreshTokenEnabled != newConfig.OIDCLD.RefreshTokenEnabled {
 		changes = append(changes, fmt.Sprintf("Refresh Tokens: %v → %v", s.config.OIDCLD.RefreshTokenEnabled, newConfig.OIDCLD.RefreshTokenEnabled))
 	}
+	if s.config.OIDCLD.AccessFilter.Enabled != newConfig.OIDCLD.AccessFilter.Enabled {
+		changes = append(changes, fmt.Sprintf("Access Filter Enabled: %v → %v", s.config.OIDCLD.AccessFilter.Enabled, newConfig.OIDCLD.AccessFilter.Enabled))
+	}
+	if s.config.OIDCLD.AccessFilter.MaxForwardedHops != newConfig.OIDCLD.AccessFilter.MaxForwardedHops {
+		changes = append(changes, fmt.Sprintf("Access Filter Max Forwarded Hops: %d → %d", s.config.OIDCLD.AccessFilter.MaxForwardedHops, newConfig.OIDCLD.AccessFilter.MaxForwardedHops))
+	}
+	if !slices.Equal(s.config.OIDCLD.AccessFilter.ExtraAllowedIPs, newConfig.OIDCLD.AccessFilter.ExtraAllowedIPs) {
+		changes = append(changes, fmt.Sprintf("Access Filter Extra Allowed IPs: %d → %d", len(s.config.OIDCLD.AccessFilter.ExtraAllowedIPs), len(newConfig.OIDCLD.AccessFilter.ExtraAllowedIPs)))
+	}
+
+	compiledAccess, err := newCompiledAccessFilter(newConfig.OIDCLD.AccessFilter)
+	if err != nil {
+		return err
+	}
 
 	// Update the configuration atomically
 	s.config = newConfig
+	s.access = compiledAccess
 
 	// Update storage adapter configuration
 	s.storage.UpdateConfig(newConfig)
