@@ -16,10 +16,13 @@ import (
 )
 
 var (
-	ErrAutocertDomainsRequired = errors.New("autocert.domains is required when autocert is enabled")
-	ErrAutocertEmailRequired   = errors.New("autocert.email is required when autocert is enabled")
-	ErrAutocertAgreeTOS        = errors.New("autocert.agree_tos must be true when autocert is enabled")
-	ErrAutocertConflict        = errors.New("autocert is enabled but TLS cert/key are also configured in oidcld config; choose one method")
+	ErrAutocertDomainsRequired              = errors.New("autocert.domains is required when autocert is enabled")
+	ErrAutocertEmailRequired                = errors.New("autocert.email is required when autocert is enabled")
+	ErrAutocertAgreeTOS                     = errors.New("autocert.agree_tos must be true when autocert is enabled")
+	ErrAutocertConflict                     = errors.New("autocert is enabled but TLS cert/key are also configured in oidcld config; choose one method")
+	ErrAccessFilterNegativeMaxForwardedHops = errors.New("oidcld.access_filter.max_forwarded_hops must be >= 0")
+	ErrAccessFilterEmptyAllowedIPEntry      = errors.New("oidcld.access_filter.extra_allowed_ips contains an empty entry")
+	ErrAccessFilterInvalidAllowedIPEntry    = errors.New("invalid oidcld.access_filter.extra_allowed_ips entry")
 )
 
 // Static errors for better error handling.
@@ -627,7 +630,7 @@ func normalizeAccessFilterConfig(cfg *AccessFilterConfig) (*AccessFilterConfig, 
 	}
 
 	if normalized.MaxForwardedHops < 0 {
-		return nil, fmt.Errorf("oidcld.access_filter.max_forwarded_hops must be >= 0")
+		return nil, ErrAccessFilterNegativeMaxForwardedHops
 	}
 
 	entries, err := normalizeAllowedIPEntries(normalized.ExtraAllowedIPs)
@@ -659,20 +662,20 @@ func normalizeAllowedIPEntries(entries []string) ([]string, error) {
 func normalizeAllowedIPEntry(entry string) (string, error) {
 	value := strings.TrimSpace(entry)
 	if value == "" {
-		return "", fmt.Errorf("oidcld.access_filter.extra_allowed_ips contains an empty entry")
+		return "", ErrAccessFilterEmptyAllowedIPEntry
 	}
 
 	if strings.Contains(value, "/") {
 		_, ipNet, err := net.ParseCIDR(value)
 		if err != nil {
-			return "", fmt.Errorf("invalid oidcld.access_filter.extra_allowed_ips entry %q: %w", entry, err)
+			return "", fmt.Errorf("%w %q: %w", ErrAccessFilterInvalidAllowedIPEntry, entry, err)
 		}
 		return ipNet.String(), nil
 	}
 
 	ip := net.ParseIP(value)
 	if ip == nil {
-		return "", fmt.Errorf("invalid oidcld.access_filter.extra_allowed_ips entry %q", entry)
+		return "", fmt.Errorf("%w %q", ErrAccessFilterInvalidAllowedIPEntry, entry)
 	}
 	if ipv4 := ip.To4(); ipv4 != nil {
 		return (&net.IPNet{IP: ipv4, Mask: net.CIDRMask(32, 32)}).String(), nil

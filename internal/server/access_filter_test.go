@@ -27,8 +27,8 @@ func newAccessFilterTestServer(t *testing.T, accessFilter *config.AccessFilterCo
 	return server
 }
 
-func newRemoteRequest(method, target, remoteAddr string) *http.Request {
-	req := httptest.NewRequest(method, target, nil)
+func newRemoteRequest(target, remoteAddr string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, target, nil)
 	req.RemoteAddr = remoteAddr
 	return req
 }
@@ -44,7 +44,7 @@ func TestAccessFilterAllowsDefaultLocalNetworks(t *testing.T) {
 		"172.16.5.6:1234",
 		"192.168.10.20:1234",
 	} {
-		req := newRemoteRequest(http.MethodGet, "/health", remoteAddr)
+		req := newRemoteRequest("/health", remoteAddr)
 		res := httptest.NewRecorder()
 		handler.ServeHTTP(res, req)
 		assert.Equal(t, http.StatusOK, res.Code, remoteAddr)
@@ -54,7 +54,7 @@ func TestAccessFilterAllowsDefaultLocalNetworks(t *testing.T) {
 func TestAccessFilterRejectsExternalPeerIP(t *testing.T) {
 	server := newAccessFilterTestServer(t, &config.AccessFilterConfig{Enabled: true})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
 
@@ -67,7 +67,7 @@ func TestAccessFilterAllowsExtraAllowedIP(t *testing.T) {
 		ExtraAllowedIPs: []string{"203.0.113.10"},
 	})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "203.0.113.10:1234")
+	req := newRemoteRequest("/health", "203.0.113.10:1234")
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
 
@@ -77,7 +77,7 @@ func TestAccessFilterAllowsExtraAllowedIP(t *testing.T) {
 func TestAccessFilterRejectsForwardedHeadersByDefault(t *testing.T) {
 	server := newAccessFilterTestServer(t, &config.AccessFilterConfig{Enabled: true})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	req.Header.Set("Forwarded", "for=203.0.113.10")
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
@@ -91,7 +91,7 @@ func TestAccessFilterAllowsForwardedHeadersWithinConfiguredHopLimit(t *testing.T
 		MaxForwardedHops: 1,
 	})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	req.Header.Set("X-Forwarded-For", "203.0.113.10")
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
@@ -105,7 +105,7 @@ func TestAccessFilterRejectsForwardedHeadersBeyondConfiguredHopLimit(t *testing.
 		MaxForwardedHops: 1,
 	})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	req.Header.Set("X-Forwarded-For", "203.0.113.10, 198.51.100.20")
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
@@ -119,7 +119,7 @@ func TestAccessFilterUsesMaxHopCountAcrossForwardHeaders(t *testing.T) {
 		MaxForwardedHops: 1,
 	})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	req.Header.Set("Forwarded", "for=203.0.113.10")
 	req.Header.Set("X-Forwarded-For", "203.0.113.10, 198.51.100.20")
 	res := httptest.NewRecorder()
@@ -134,7 +134,7 @@ func TestAccessFilterRejectsMalformedForwardedHeaders(t *testing.T) {
 		MaxForwardedHops: 1,
 	})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	req.Header.Set("Forwarded", "for=203.0.113.10,")
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
@@ -145,7 +145,7 @@ func TestAccessFilterRejectsMalformedForwardedHeaders(t *testing.T) {
 func TestAccessFilterAppliesToReadOnlyHTTPHandler(t *testing.T) {
 	server := newAccessFilterTestServer(t, &config.AccessFilterConfig{Enabled: true})
 
-	req := newRemoteRequest(http.MethodGet, "/health", "8.8.8.8:1234")
+	req := newRemoteRequest("/health", "8.8.8.8:1234")
 	res := httptest.NewRecorder()
 	server.ReadOnlyHTTPHandler().ServeHTTP(res, req)
 

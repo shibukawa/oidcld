@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,6 +17,17 @@ var defaultLocalAccessNetworks = []*net.IPNet{
 	mustParseCIDR("172.16.0.0/12"),
 	mustParseCIDR("192.168.0.0/16"),
 }
+
+var (
+	ErrAccessFilterInvalidAllowedNetwork   = errors.New("invalid access filter extra_allowed_ips entry")
+	ErrAccessFilterInvalidRemoteAddr       = errors.New("invalid remote addr")
+	ErrAccessFilterEmptyForwardedElement   = errors.New("empty Forwarded element")
+	ErrAccessFilterMissingForwardedElement = errors.New("missing Forwarded element")
+	ErrAccessFilterEmptyForwardedParameter = errors.New("empty Forwarded parameter")
+	ErrAccessFilterInvalidForwardedParam   = errors.New("invalid Forwarded parameter")
+	ErrAccessFilterEmptyXForwardedFor      = errors.New("empty X-Forwarded-For element")
+	ErrAccessFilterMissingXForwardedFor    = errors.New("missing X-Forwarded-For element")
+)
 
 type compiledAccessFilter struct {
 	enabled          bool
@@ -38,7 +50,7 @@ func newCompiledAccessFilter(cfg *config.AccessFilterConfig) (*compiledAccessFil
 	for _, entry := range cfg.ExtraAllowedIPs {
 		_, ipNet, err := net.ParseCIDR(entry)
 		if err != nil {
-			return nil, fmt.Errorf("parse access filter extra_allowed_ips entry %q: %w", entry, err)
+			return nil, fmt.Errorf("%w %q: %w", ErrAccessFilterInvalidAllowedNetwork, entry, err)
 		}
 		extraAllowedNets = append(extraAllowedNets, ipNet)
 	}
@@ -138,7 +150,7 @@ func remotePeerIP(remoteAddr string) (net.IP, error) {
 	trimmed := strings.Trim(strings.TrimSpace(remoteAddr), "[]")
 	ip := net.ParseIP(trimmed)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid remote addr %q", remoteAddr)
+		return nil, fmt.Errorf("%w %q", ErrAccessFilterInvalidRemoteAddr, remoteAddr)
 	}
 	return ip, nil
 }
@@ -151,11 +163,10 @@ func countForwardedHeaderHops(header http.Header) (int, bool, error) {
 
 	count := 0
 	for _, raw := range values {
-		parts := strings.Split(raw, ",")
-		for _, part := range parts {
+		for part := range strings.SplitSeq(raw, ",") {
 			element := strings.TrimSpace(part)
 			if element == "" {
-				return 0, true, fmt.Errorf("empty Forwarded element")
+				return 0, true, ErrAccessFilterEmptyForwardedElement
 			}
 			if err := validateForwardedElement(element); err != nil {
 				return 0, true, err
@@ -164,21 +175,20 @@ func countForwardedHeaderHops(header http.Header) (int, bool, error) {
 		}
 	}
 	if count == 0 {
-		return 0, true, fmt.Errorf("missing Forwarded element")
+		return 0, true, ErrAccessFilterMissingForwardedElement
 	}
 	return count, true, nil
 }
 
 func validateForwardedElement(element string) error {
-	parts := strings.Split(element, ";")
-	for _, part := range parts {
+	for part := range strings.SplitSeq(element, ";") {
 		token := strings.TrimSpace(part)
 		if token == "" {
-			return fmt.Errorf("empty Forwarded parameter")
+			return ErrAccessFilterEmptyForwardedParameter
 		}
 		key, value, found := strings.Cut(token, "=")
 		if !found || strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
-			return fmt.Errorf("invalid Forwarded parameter %q", token)
+			return fmt.Errorf("%w %q", ErrAccessFilterInvalidForwardedParam, token)
 		}
 	}
 	return nil
@@ -192,17 +202,16 @@ func countXForwardedForHops(header http.Header) (int, bool, error) {
 
 	count := 0
 	for _, raw := range values {
-		parts := strings.Split(raw, ",")
-		for _, part := range parts {
+		for part := range strings.SplitSeq(raw, ",") {
 			token := strings.TrimSpace(part)
 			if token == "" {
-				return 0, true, fmt.Errorf("empty X-Forwarded-For element")
+				return 0, true, ErrAccessFilterEmptyXForwardedFor
 			}
 			count++
 		}
 	}
 	if count == 0 {
-		return 0, true, fmt.Errorf("missing X-Forwarded-For element")
+		return 0, true, ErrAccessFilterMissingXForwardedFor
 	}
 	return count, true, nil
 }
