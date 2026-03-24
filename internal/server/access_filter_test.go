@@ -40,6 +40,7 @@ func TestAccessFilterAllowsDefaultLocalNetworks(t *testing.T) {
 	for _, remoteAddr := range []string{
 		"127.0.0.1:1234",
 		"[::1]:1234",
+		"[fd00::1234]:1234",
 		"10.1.2.3:1234",
 		"172.16.5.6:1234",
 		"192.168.10.20:1234",

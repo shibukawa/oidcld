@@ -13,6 +13,7 @@ import (
 var defaultLocalAccessNetworks = []*net.IPNet{
 	mustParseCIDR("127.0.0.0/8"),
 	mustParseCIDR("::1/128"),
+	mustParseCIDR("fc00::/7"),
 	mustParseCIDR("10.0.0.0/8"),
 	mustParseCIDR("172.16.0.0/12"),
 	mustParseCIDR("192.168.0.0/16"),

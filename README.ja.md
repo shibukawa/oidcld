@@ -245,7 +245,7 @@ curl -k https://localhost:18443/.well-known/openid-configuration
 
 - `oidcld serve`: OIDC サーバーを起動
   - フラグ: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - 備考: HTTP は既定で `18888`、HTTPS は既定で `18443` を使います。HTTPS 時の `--http-readonly-port` は既定で `18888` になり、discovery/JWKS/health だけを公開します。さらに `serve` listener ではローカルアクセスフィルタが既定で有効です。`Forwarded` / `X-Forwarded-For` が無い request は loopback または RFC1918 送信元のみ許可し、forward 系ヘッダー付き request は `oidcld.access_filter.max_forwarded_hops` を既定 `0` から上げない限り拒否します。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
+  - 備考: HTTP は既定で `18888`、HTTPS は既定で `18443` を使います。HTTPS 時の `--http-readonly-port` は既定で `18888` になり、discovery/JWKS/health だけを公開します。さらに `serve` listener ではローカルアクセスフィルタが既定で有効です。`Forwarded` / `X-Forwarded-For` が無い request は loopback またはローカル私設アドレス (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`) の送信元のみ許可し、forward 系ヘッダー付き request は `oidcld.access_filter.max_forwarded_hops` を既定 `0` から上げない限り拒否します。`--port` を指定し、issuer のホストがローカル (`localhost`/loopback) の場合は、issuer のポートも同じ値に同期されます。
 
 - `oidcld health`: サーバーヘルスをチェック
   - フラグ: `--url`, `--port`, `--config`, `--timeout`
