@@ -68,6 +68,9 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "# OpenID Connect IdP settings"), "Should contain main comment")
 	assert.True(t, strings.Contains(yamlContent, "# Standard scopes (openid, profile, email) are always included"), "Should contain scope comment")
 	assert.True(t, strings.Contains(yamlContent, "aud_claim_format: string"), "Should contain default audience claim format")
+	assert.True(t, strings.Contains(yamlContent, "access_filter:"), "Should contain access filter section")
+	assert.True(t, strings.Contains(yamlContent, "enabled: true"), "Should contain default access filter enabled state")
+	assert.True(t, strings.Contains(yamlContent, "max_forwarded_hops: 0"), "Should contain default forwarded hops")
 
 	// Verify empty line between sections
 	assert.True(t, strings.Contains(yamlContent, "# User definitions\nusers:"), "Should have proper section separation")
@@ -84,6 +87,72 @@ func TestGenerateConfigYAML(t *testing.T) {
 func TestCreateDefaultConfig_DefaultAudienceClaimFormat(t *testing.T) {
 	config := createDefaultConfig(ModeStandard)
 	assert.Equal(t, AudienceClaimFormatString, config.OIDCLD.NormalizedAudienceClaimFormat())
+	assert.True(t, config.OIDCLD.AccessFilter.Enabled)
+	assert.Equal(t, 0, config.OIDCLD.AccessFilter.MaxForwardedHops)
+	assert.Equal(t, 0, len(config.OIDCLD.AccessFilter.ExtraAllowedIPs))
+}
+
+func TestLoadConfig_NormalizesMissingAccessFilter(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidcld:
+  iss: "http://localhost:18888"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.True(t, cfg.OIDCLD.AccessFilter.Enabled)
+	assert.Equal(t, 0, cfg.OIDCLD.AccessFilter.MaxForwardedHops)
+	assert.Equal(t, []string{}, cfg.OIDCLD.AccessFilter.ExtraAllowedIPs)
+}
+
+func TestLoadConfig_NormalizesExtraAllowedIPs(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidcld:
+  iss: "http://localhost:18888"
+  access_filter:
+    enabled: true
+    extra_allowed_ips:
+      - "203.0.113.10"
+      - "198.51.100.0/24"
+    max_forwarded_hops: 1
+users:
+  admin:
+    display_name: "Administrator"
+`), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"203.0.113.10/32", "198.51.100.0/24"}, cfg.OIDCLD.AccessFilter.ExtraAllowedIPs)
+	assert.Equal(t, 1, cfg.OIDCLD.AccessFilter.MaxForwardedHops)
+}
+
+func TestLoadConfig_RejectsInvalidExtraAllowedIPs(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidcld:
+  iss: "http://localhost:18888"
+  access_filter:
+    extra_allowed_ips:
+      - "not-an-ip"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "extra_allowed_ips"))
 }
 
 func TestGenerateConfigYAMLWithEntraID(t *testing.T) {

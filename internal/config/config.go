@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,12 +40,13 @@ type Config struct {
 
 // OIDCLDConfig represents the core OpenID Connect configuration.
 type OIDCLDConfig struct {
-	Issuer              string   `yaml:"iss,omitempty"`
-	PKCERequired        bool     `yaml:"pkce_required,omitempty"`
-	NonceRequired       bool     `yaml:"nonce_required,omitempty"`
-	ExpiredIn           int      `yaml:"expired_in,omitempty"` // Token expiration in seconds
-	AudienceClaimFormat string   `yaml:"aud_claim_format,omitempty"`
-	ValidScopes         []string `yaml:"valid_scopes,omitempty"`
+	Issuer              string              `yaml:"iss,omitempty"`
+	PKCERequired        bool                `yaml:"pkce_required,omitempty"`
+	NonceRequired       bool                `yaml:"nonce_required,omitempty"`
+	ExpiredIn           int                 `yaml:"expired_in,omitempty"` // Token expiration in seconds
+	AudienceClaimFormat string              `yaml:"aud_claim_format,omitempty"`
+	ValidScopes         []string            `yaml:"valid_scopes,omitempty"`
+	AccessFilter        *AccessFilterConfig `yaml:"access_filter,omitempty"`
 	// TLS certificate file paths for serving HTTPS when not using autocert.
 	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
 	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
@@ -73,6 +75,14 @@ func normalizeAudienceClaimFormat(format string) string {
 
 func (c OIDCLDConfig) NormalizedAudienceClaimFormat() string {
 	return normalizeAudienceClaimFormat(c.AudienceClaimFormat)
+}
+
+func DefaultAccessFilterConfig() *AccessFilterConfig {
+	return &AccessFilterConfig{
+		Enabled:          true,
+		ExtraAllowedIPs:  []string{},
+		MaxForwardedHops: 0,
+	}
 }
 
 func DefaultServePort(useHTTPS bool) string {
@@ -125,6 +135,13 @@ type CORSConfig struct {
 	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
 	AllowedMethods []string `yaml:"allowed_methods,omitempty"`
 	AllowedHeaders []string `yaml:"allowed_headers,omitempty"`
+}
+
+// AccessFilterConfig represents local-only filtering for serve listeners.
+type AccessFilterConfig struct {
+	Enabled          bool     `yaml:"enabled,omitempty"`
+	ExtraAllowedIPs  []string `yaml:"extra_allowed_ips,omitempty"`
+	MaxForwardedHops int      `yaml:"max_forwarded_hops,omitempty"`
 }
 
 // AutocertConfig represents automatic HTTPS certificate configuration.
@@ -192,17 +209,19 @@ func loadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	// Ensure default OIDC scopes are present. If EntraID compatibility is configured,
-	// do not add address/phone by passing isEntra=true.
-	isEntra := config.EntraID != nil
-	ensureDefaultScopes(&config.OIDCLD, isEntra)
-	config.OIDCLD.AudienceClaimFormat = normalizeAudienceClaimFormat(config.OIDCLD.AudienceClaimFormat)
+	if err := config.Normalize(); err != nil {
+		return nil, err
+	}
 
 	return &config, nil
 }
 
 // SaveConfig saves configuration to a YAML file using text template.
 func SaveConfig(configPath string, config *Config) error {
+	if err := config.Normalize(); err != nil {
+		return err
+	}
+
 	// Resolve the absolute path
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -405,6 +424,7 @@ func createDefaultConfig(mode Mode) *Config {
 			ExpiredIn:                 3600,
 			AudienceClaimFormat:       AudienceClaimFormatString,
 			ValidScopes:               []string{"admin", "read", "write"},
+			AccessFilter:              DefaultAccessFilterConfig(),
 			RefreshTokenEnabled:       true,
 			RefreshTokenExpiry:        86400,
 			EndSessionEnabled:         true,
@@ -440,9 +460,9 @@ func createDefaultConfig(mode Mode) *Config {
 		config.OIDCLD.Issuer = "http://localhost:18888"
 	}
 
-	// ensure standard OIDC scopes are present on generated defaults
-	isEntra := mode == ModeEntraIDv1 || mode == ModeEntraIDv2
-	ensureDefaultScopes(&config.OIDCLD, isEntra)
+	if err := config.Normalize(); err != nil {
+		panic(err)
+	}
 
 	return config
 }
@@ -579,6 +599,87 @@ func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message str
 	return useHTTPS, message
 }
 
+// Normalize applies runtime defaults and validates the configuration.
+func (c *Config) Normalize() error {
+	if c == nil {
+		return nil
+	}
+
+	isEntra := c.EntraID != nil
+	ensureDefaultScopes(&c.OIDCLD, isEntra)
+	c.OIDCLD.AudienceClaimFormat = normalizeAudienceClaimFormat(c.OIDCLD.AudienceClaimFormat)
+
+	accessFilter, err := normalizeAccessFilterConfig(c.OIDCLD.AccessFilter)
+	if err != nil {
+		return err
+	}
+	c.OIDCLD.AccessFilter = accessFilter
+
+	return nil
+}
+
+func normalizeAccessFilterConfig(cfg *AccessFilterConfig) (*AccessFilterConfig, error) {
+	normalized := DefaultAccessFilterConfig()
+	if cfg != nil {
+		normalized.Enabled = cfg.Enabled
+		normalized.ExtraAllowedIPs = append([]string{}, cfg.ExtraAllowedIPs...)
+		normalized.MaxForwardedHops = cfg.MaxForwardedHops
+	}
+
+	if normalized.MaxForwardedHops < 0 {
+		return nil, fmt.Errorf("oidcld.access_filter.max_forwarded_hops must be >= 0")
+	}
+
+	entries, err := normalizeAllowedIPEntries(normalized.ExtraAllowedIPs)
+	if err != nil {
+		return nil, err
+	}
+	normalized.ExtraAllowedIPs = entries
+
+	return normalized, nil
+}
+
+func normalizeAllowedIPEntries(entries []string) ([]string, error) {
+	if len(entries) == 0 {
+		return []string{}, nil
+	}
+
+	normalized := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		value, err := normalizeAllowedIPEntry(entry)
+		if err != nil {
+			return nil, err
+		}
+		normalized = append(normalized, value)
+	}
+
+	return normalized, nil
+}
+
+func normalizeAllowedIPEntry(entry string) (string, error) {
+	value := strings.TrimSpace(entry)
+	if value == "" {
+		return "", fmt.Errorf("oidcld.access_filter.extra_allowed_ips contains an empty entry")
+	}
+
+	if strings.Contains(value, "/") {
+		_, ipNet, err := net.ParseCIDR(value)
+		if err != nil {
+			return "", fmt.Errorf("invalid oidcld.access_filter.extra_allowed_ips entry %q: %w", entry, err)
+		}
+		return ipNet.String(), nil
+	}
+
+	ip := net.ParseIP(value)
+	if ip == nil {
+		return "", fmt.Errorf("invalid oidcld.access_filter.extra_allowed_ips entry %q", entry)
+	}
+	if ipv4 := ip.To4(); ipv4 != nil {
+		return (&net.IPNet{IP: ipv4, Mask: net.CIDRMask(32, 32)}).String(), nil
+	}
+	return (&net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}).String(), nil
+}
+
 // generateConfigYAML generates YAML configuration using text template
 func generateConfigYAML(config *Config) (string, error) {
 	tmpl := `# OpenID Connect IdP settings
@@ -592,6 +693,11 @@ oidcld:{{if .OIDCLD.Issuer}}
   # Standard scopes (openid, profile, email) are always included
   valid_scopes:  # Optional custom scopes{{range .OIDCLD.ValidScopes}}
     - "{{.}}"{{end}}
+  access_filter:
+    enabled: {{.OIDCLD.AccessFilter.Enabled}}
+    extra_allowed_ips:{{if .OIDCLD.AccessFilter.ExtraAllowedIPs}}{{range .OIDCLD.AccessFilter.ExtraAllowedIPs}}
+      - "{{.}}"{{end}}{{else}} []{{end}}
+    max_forwarded_hops: {{.OIDCLD.AccessFilter.MaxForwardedHops}}
   refresh_token_enabled: {{.OIDCLD.RefreshTokenEnabled}}             # Enable refresh token support
   refresh_token_expiry: {{.OIDCLD.RefreshTokenExpiry}}             # Refresh token expiry in seconds (24 hours)
   end_session_enabled: {{.OIDCLD.EndSessionEnabled}}               # Enable logout/end session functionality

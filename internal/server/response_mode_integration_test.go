@@ -13,6 +13,9 @@ import (
 
 // createTestServer creates a test server with the given config
 func createTestServer(cfg *config.Config) *Server {
+	if cfg.OIDCLD.AccessFilter == nil {
+		cfg.OIDCLD.AccessFilter = &config.AccessFilterConfig{Enabled: false}
+	}
 	// Use proper constructor to initialize all fields including Manager
 	server, err := New(cfg)
 	if err != nil {

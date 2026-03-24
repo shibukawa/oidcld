@@ -91,12 +91,17 @@ func TestServerStartingUsesTenantPlaceholderForEntraIDModes(t *testing.T) {
 func TestServerStartingShowsHTTPMetadataCompanionEndpoints(t *testing.T) {
 	logger := NewLogger()
 	output := captureStdout(t, func() {
-		logger.ServerStarting(":18443", "https://oidc.localhost:18443", true, nil, ":18888")
+		logger.ServerStarting(":18443", "https://oidc.localhost:18443", true, nil, ":18888", accessFilterStartupInfo{
+			Enabled:          true,
+			ExtraAllowedIPs:  2,
+			MaxForwardedHops: 1,
+		})
 	})
 
 	assert.True(t, strings.Contains(output, "HTTP Metadata Companion"))
 	assert.True(t, strings.Contains(output, ":18888"))
 	assert.True(t, strings.Contains(output, "Discovery, JWKS, Health Check only"))
+	assert.True(t, strings.Contains(output, "enabled (extra allowlist: 2, max forwarded hops: 1)"))
 	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/.well-known/openid-configuration"))
 	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/keys"))
 	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/health"))
@@ -111,6 +116,7 @@ func TestServerStartingShowsHTTPMetadataCompanionEndpointsForEntraID(t *testing.
 			true,
 			&config.EntraIDConfig{TenantID: "12345678-1234-1234-1234-123456789abc", Version: "v2"},
 			":18888",
+			accessFilterStartupInfo{Enabled: true},
 		)
 	})
 
