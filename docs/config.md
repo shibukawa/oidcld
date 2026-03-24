@@ -168,9 +168,11 @@ When using EntraID templates, users automatically include:
 ## Environment Variables
 
 ### Server Configuration
-| Environment Variable | Description | Default |
-|---------------------|-------------|---------|
-| `PORT` | Override server port | 18888 |
+| Environment Variable | Description | Current implementation status |
+|---------------------|-------------|-------------------------------|
+| `OIDCLD_VERBOSE` | Enable verbose serve logging | Implemented via `serve` command env binding |
+| `OIDCLD_CONFIG` | Config path used by container/health workflows | Used by runtime conventions and health auto-detection |
+| `PORT` | Documented server port override | Not directly read by the current Go entrypoints; prefer `oidcld serve --port ...` |
 
 ### ACME/Autocert Overrides
 Environment overrides auto-enable autocert even if the file sets `enabled: false` (useful in container deployments). Only the following variables are currently parsed:
@@ -182,6 +184,17 @@ Environment overrides auto-enable autocert even if the file sets `enabled: false
 | `OIDCLD_ACME_DOMAIN` | Comma-separated domain list | Overrides `domains` entirely |
 | `OIDCLD_ACME_CACHE_DIR` | Cache directory | Defaults to `/tmp/autocert` if unset when env overrides present |
 | `OIDCLD_ACME_AGREE_TOS` | Accept TOS (`true` / `false`) | Must be true to pass validation |
+
+### Values Shown In Compose But Not Currently Parsed
+
+The repository's `compose.yaml` currently includes these values, but `internal/config.LoadConfig()` does not read them yet:
+
+| Environment Variable | Status |
+|----------------------|--------|
+| `OIDCLD_ACME_INSECURE_SKIP_VERIFY` | Present in compose example only; currently non-effective in config loading |
+| `OIDCLD_ACME_RENEWAL_THRESHOLD` | Present in compose example only; currently non-effective in config loading |
+
+These should be treated as example drift unless the implementation is extended.
 
 ### Example Client Environment (Device Flow)
 | Environment Variable | Default | Description |

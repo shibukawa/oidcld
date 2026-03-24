@@ -10,6 +10,8 @@
 
 English: see [README.md](README.md)
 
+クイックリンク: [llms.txt](llms.txt) | [設定ガイド](docs/config.ja.md)
+
 ## 目次
 - [用語](#用語)
 - [主な機能](#主な機能)
@@ -266,6 +268,7 @@ curl -k https://localhost:18443/.well-known/openid-configuration
 
 詳細ドキュメント (この README から分離):
 
+- 生成 AI 向けリポジトリ要約: [llms.txt](llms.txt)
 - 設定ガイド: [docs/config.ja.md](docs/config.ja.md)
 - 他の OAuth/OIDC フロー: [docs/otherflows.ja.md](docs/otherflows.ja.md)
 

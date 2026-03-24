@@ -10,6 +10,8 @@ A fake OpenID Connect Identity Provider (IdP) designed for testing and developme
 
 Japanese: see [README.ja.md](README.ja.md)
 
+Quick links: [llms.txt](llms.txt) | [Configuration Guide](docs/config.md)
+
 ## Table of Contents
 - [Terminology](#terminology)
 - [Primary Function](#primary-function)
@@ -268,6 +270,7 @@ These trade-offs are deliberate to maximize developer ergonomics in local enviro
 
 Extended docs (kept out of this top-level README for brevity):
 
+- AI-oriented repository summary: [llms.txt](llms.txt)
 - Configuration Guide: [docs/config.md](docs/config.md)
 - Other OAuth/OIDC Flows: [docs/otherflows.md](docs/otherflows.md)
 
