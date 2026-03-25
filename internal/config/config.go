@@ -673,11 +673,15 @@ func (c *Config) Normalize() error {
 	}
 	c.OIDCLD.AccessFilter = accessFilter
 
-	loginUI, err := normalizeLoginUIConfig(c.OIDCLD.LoginUI, c.sourceDir)
+	loginUI, omitLoginUI, err := normalizeLoginUIConfig(c.OIDCLD.LoginUI, c.sourceDir)
 	if err != nil {
 		return err
 	}
-	c.OIDCLD.LoginUI = loginUI
+	if omitLoginUI {
+		c.OIDCLD.LoginUI = nil
+	} else {
+		c.OIDCLD.LoginUI = loginUI
+	}
 
 	return nil
 }
@@ -757,9 +761,9 @@ func normalizeAllowedIPEntry(entry string) (string, error) {
 	return (&net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}).String(), nil
 }
 
-func normalizeLoginUIConfig(cfg *LoginUIConfig, sourceDir string) (*LoginUIConfig, error) {
+func normalizeLoginUIConfig(cfg *LoginUIConfig, sourceDir string) (*LoginUIConfig, bool, error) {
 	if cfg == nil {
-		return nil, nil
+		return nil, true, nil
 	}
 
 	cfg.EnvTitle = strings.TrimSpace(cfg.EnvTitle)
@@ -770,13 +774,13 @@ func normalizeLoginUIConfig(cfg *LoginUIConfig, sourceDir string) (*LoginUIConfi
 	cfg.resolvedInfoMarkdownFile = ""
 
 	if cfg.EnvTitle == "" && cfg.AccentColor == "" && cfg.InfoMarkdownFile == "" {
-		return nil, nil
+		return nil, true, nil
 	}
 
 	if cfg.AccentColor != "" {
 		normalizedColor, err := normalizeHexColor(cfg.AccentColor)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		cfg.AccentColor = normalizedColor
 		cfg.resolvedAccentColor = normalizedColor
@@ -787,7 +791,7 @@ func normalizeLoginUIConfig(cfg *LoginUIConfig, sourceDir string) (*LoginUIConfi
 	if cfg.InfoMarkdownFile != "" {
 		resolvedPath, err := resolveConfigRelativePath(sourceDir, cfg.InfoMarkdownFile)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		cfg.resolvedInfoMarkdownFile = resolvedPath
 	}
@@ -796,7 +800,7 @@ func normalizeLoginUIConfig(cfg *LoginUIConfig, sourceDir string) (*LoginUIConfi
 		cfg.resolvedTextColor = contrastTextColor(accent)
 	}
 
-	return cfg, nil
+	return cfg, false, nil
 }
 
 func resolveConfigRelativePath(sourceDir, rawPath string) (string, error) {
