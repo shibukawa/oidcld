@@ -4,7 +4,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"maps"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,6 +25,7 @@ var (
 	ErrAccessFilterNegativeMaxForwardedHops = errors.New("oidcld.access_filter.max_forwarded_hops must be >= 0")
 	ErrAccessFilterEmptyAllowedIPEntry      = errors.New("oidcld.access_filter.extra_allowed_ips contains an empty entry")
 	ErrAccessFilterInvalidAllowedIPEntry    = errors.New("invalid oidcld.access_filter.extra_allowed_ips entry")
+	ErrLoginUIInvalidAccentColor            = errors.New("oidcld.login_ui.accent_color must be a hex color like #RRGGBB")
 )
 
 // Static errors for better error handling.
@@ -39,6 +42,8 @@ type Config struct {
 	CORS     *CORSConfig     `yaml:"cors,omitempty"`
 	Autocert *AutocertConfig `yaml:"autocert,omitempty"`
 	Users    map[string]User `yaml:"users"`
+
+	sourceDir string `yaml:"-"`
 }
 
 // OIDCLDConfig represents the core OpenID Connect configuration.
@@ -50,6 +55,7 @@ type OIDCLDConfig struct {
 	AudienceClaimFormat string              `yaml:"aud_claim_format,omitempty"`
 	ValidScopes         []string            `yaml:"valid_scopes,omitempty"`
 	AccessFilter        *AccessFilterConfig `yaml:"access_filter,omitempty"`
+	LoginUI             *LoginUIConfig      `yaml:"login_ui,omitempty"`
 	// TLS certificate file paths for serving HTTPS when not using autocert.
 	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
 	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
@@ -147,6 +153,48 @@ type AccessFilterConfig struct {
 	MaxForwardedHops int      `yaml:"max_forwarded_hops,omitempty"`
 }
 
+// LoginUIConfig configures login-page-specific environment cues.
+type LoginUIConfig struct {
+	EnvTitle         string `yaml:"env_title,omitempty"`
+	AccentColor      string `yaml:"accent_color,omitempty"`
+	InfoMarkdownFile string `yaml:"info_markdown_file,omitempty"`
+
+	resolvedAccentColor      string `yaml:"-"`
+	resolvedTextColor        string `yaml:"-"`
+	resolvedInfoMarkdownFile string `yaml:"-"`
+}
+
+func (c *LoginUIConfig) HasEnvironmentBanner() bool {
+	return c != nil && strings.TrimSpace(c.EnvTitle) != ""
+}
+
+func (c *LoginUIConfig) EffectiveAccentColor() string {
+	if c == nil {
+		return ""
+	}
+	if c.resolvedAccentColor != "" {
+		return c.resolvedAccentColor
+	}
+	return strings.TrimSpace(c.AccentColor)
+}
+
+func (c *LoginUIConfig) EffectiveTextColor() string {
+	if c == nil {
+		return ""
+	}
+	return c.resolvedTextColor
+}
+
+func (c *LoginUIConfig) EffectiveInfoMarkdownFile() string {
+	if c == nil {
+		return ""
+	}
+	if c.resolvedInfoMarkdownFile != "" {
+		return c.resolvedInfoMarkdownFile
+	}
+	return strings.TrimSpace(c.InfoMarkdownFile)
+}
+
 // AutocertConfig represents automatic HTTPS certificate configuration.
 type AutocertConfig struct {
 	Enabled            bool                     `yaml:"enabled,omitempty"`
@@ -212,6 +260,10 @@ func loadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	if err := config.setSourceDir(configPath); err != nil {
+		return nil, err
+	}
+
 	if err := config.Normalize(); err != nil {
 		return nil, err
 	}
@@ -221,10 +273,6 @@ func loadConfig(configPath string) (*Config, error) {
 
 // SaveConfig saves configuration to a YAML file using text template.
 func SaveConfig(configPath string, config *Config) error {
-	if err := config.Normalize(); err != nil {
-		return err
-	}
-
 	// Resolve the absolute path
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
@@ -235,6 +283,13 @@ func SaveConfig(configPath string, config *Config) error {
 	dir := filepath.Dir(absPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	if err := config.setSourceDir(absPath); err != nil {
+		return err
+	}
+	if err := config.Normalize(); err != nil {
+		return err
 	}
 
 	// Generate YAML content using template
@@ -618,6 +673,25 @@ func (c *Config) Normalize() error {
 	}
 	c.OIDCLD.AccessFilter = accessFilter
 
+	loginUI, err := normalizeLoginUIConfig(c.OIDCLD.LoginUI, c.sourceDir)
+	if err != nil {
+		return err
+	}
+	c.OIDCLD.LoginUI = loginUI
+
+	return nil
+}
+
+func (c *Config) setSourceDir(configPath string) error {
+	if c == nil || strings.TrimSpace(configPath) == "" {
+		return nil
+	}
+
+	absPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return fmt.Errorf("invalid config path: %w", err)
+	}
+	c.sourceDir = filepath.Dir(absPath)
 	return nil
 }
 
@@ -683,6 +757,158 @@ func normalizeAllowedIPEntry(entry string) (string, error) {
 	return (&net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}).String(), nil
 }
 
+func normalizeLoginUIConfig(cfg *LoginUIConfig, sourceDir string) (*LoginUIConfig, error) {
+	if cfg == nil {
+		return nil, nil
+	}
+
+	cfg.EnvTitle = strings.TrimSpace(cfg.EnvTitle)
+	cfg.AccentColor = strings.TrimSpace(cfg.AccentColor)
+	cfg.InfoMarkdownFile = strings.TrimSpace(cfg.InfoMarkdownFile)
+	cfg.resolvedAccentColor = ""
+	cfg.resolvedTextColor = ""
+	cfg.resolvedInfoMarkdownFile = ""
+
+	if cfg.EnvTitle == "" && cfg.AccentColor == "" && cfg.InfoMarkdownFile == "" {
+		return nil, nil
+	}
+
+	if cfg.AccentColor != "" {
+		normalizedColor, err := normalizeHexColor(cfg.AccentColor)
+		if err != nil {
+			return nil, err
+		}
+		cfg.AccentColor = normalizedColor
+		cfg.resolvedAccentColor = normalizedColor
+	} else if cfg.EnvTitle != "" {
+		cfg.resolvedAccentColor = generateAccentColorFromTitle(cfg.EnvTitle)
+	}
+
+	if cfg.InfoMarkdownFile != "" {
+		resolvedPath, err := resolveConfigRelativePath(sourceDir, cfg.InfoMarkdownFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg.resolvedInfoMarkdownFile = resolvedPath
+	}
+
+	if accent := cfg.EffectiveAccentColor(); accent != "" {
+		cfg.resolvedTextColor = contrastTextColor(accent)
+	}
+
+	return cfg, nil
+}
+
+func resolveConfigRelativePath(sourceDir, rawPath string) (string, error) {
+	trimmedPath := strings.TrimSpace(rawPath)
+	if trimmedPath == "" {
+		return "", nil
+	}
+	if filepath.IsAbs(trimmedPath) {
+		return filepath.Clean(trimmedPath), nil
+	}
+	if strings.TrimSpace(sourceDir) == "" {
+		absPath, err := filepath.Abs(trimmedPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve login_ui.info_markdown_file: %w", err)
+		}
+		return filepath.Clean(absPath), nil
+	}
+	return filepath.Clean(filepath.Join(sourceDir, trimmedPath)), nil
+}
+
+func normalizeHexColor(value string) (string, error) {
+	trimmedValue := strings.TrimSpace(value)
+	if len(trimmedValue) != 7 || trimmedValue[0] != '#' {
+		return "", ErrLoginUIInvalidAccentColor
+	}
+
+	var normalized strings.Builder
+	normalized.Grow(len(trimmedValue))
+	normalized.WriteByte('#')
+	for i := 1; i < len(trimmedValue); i++ {
+		ch := trimmedValue[i]
+		switch {
+		case ch >= '0' && ch <= '9':
+			normalized.WriteByte(ch)
+		case ch >= 'a' && ch <= 'f':
+			normalized.WriteByte(ch - ('a' - 'A'))
+		case ch >= 'A' && ch <= 'F':
+			normalized.WriteByte(ch)
+		default:
+			return "", ErrLoginUIInvalidAccentColor
+		}
+	}
+
+	return normalized.String(), nil
+}
+
+func generateAccentColorFromTitle(title string) string {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(strings.TrimSpace(title)))
+	hashValue := hasher.Sum32()
+
+	hue := float64(hashValue % 360)
+	saturation := 0.60 + float64((hashValue>>9)%11)/100.0
+	value := 0.78 + float64((hashValue>>17)%11)/100.0
+
+	red, green, blue := hsvToRGB(hue, saturation, value)
+	return fmt.Sprintf("#%02X%02X%02X", red, green, blue)
+}
+
+func hsvToRGB(hue, saturation, value float64) (int, int, int) {
+	chroma := value * saturation
+	segment := hue / 60.0
+	x := chroma * (1 - math.Abs(math.Mod(segment, 2)-1))
+
+	var redPrime, greenPrime, bluePrime float64
+	switch {
+	case segment < 1:
+		redPrime, greenPrime = chroma, x
+	case segment < 2:
+		redPrime, greenPrime = x, chroma
+	case segment < 3:
+		greenPrime, bluePrime = chroma, x
+	case segment < 4:
+		greenPrime, bluePrime = x, chroma
+	case segment < 5:
+		redPrime, bluePrime = x, chroma
+	default:
+		redPrime, bluePrime = chroma, x
+	}
+
+	match := value - chroma
+	red := int(math.Round((redPrime + match) * 255))
+	green := int(math.Round((greenPrime + match) * 255))
+	blue := int(math.Round((bluePrime + match) * 255))
+
+	return red, green, blue
+}
+
+func contrastTextColor(hexColor string) string {
+	if len(hexColor) != 7 || hexColor[0] != '#' {
+		return "#111111"
+	}
+
+	parseChannel := func(value string) int64 {
+		channel, err := strconv.ParseInt(value, 16, 64)
+		if err != nil {
+			return 0
+		}
+		return channel
+	}
+
+	red := parseChannel(hexColor[1:3])
+	green := parseChannel(hexColor[3:5])
+	blue := parseChannel(hexColor[5:7])
+
+	brightness := ((red * 299) + (green * 587) + (blue * 114)) / 1000
+	if brightness >= 150 {
+		return "#111111"
+	}
+	return "#FFFFFF"
+}
+
 // generateConfigYAML generates YAML configuration using text template
 func generateConfigYAML(config *Config) (string, error) {
 	tmpl := `# OpenID Connect IdP settings
@@ -701,6 +927,17 @@ oidcld:{{if .OIDCLD.Issuer}}
     extra_allowed_ips:{{if .OIDCLD.AccessFilter.ExtraAllowedIPs}}{{range .OIDCLD.AccessFilter.ExtraAllowedIPs}}
       - "{{.}}"{{end}}{{else}} []{{end}}
     max_forwarded_hops: {{.OIDCLD.AccessFilter.MaxForwardedHops}}
+{{if .OIDCLD.LoginUI}}
+  login_ui:{{if .OIDCLD.LoginUI.EnvTitle}}
+    env_title: "{{.OIDCLD.LoginUI.EnvTitle}}"{{end}}{{if .OIDCLD.LoginUI.AccentColor}}
+    accent_color: "{{.OIDCLD.LoginUI.AccentColor}}"{{end}}{{if .OIDCLD.LoginUI.InfoMarkdownFile}}
+    info_markdown_file: "{{.OIDCLD.LoginUI.InfoMarkdownFile}}"{{end}}
+{{else}}
+  # login_ui:
+  #   env_title: "Staging"
+  #   accent_color: "#D97A00"
+  #   info_markdown_file: "./docs/login-links.staging.md"
+{{end}}
   refresh_token_enabled: {{.OIDCLD.RefreshTokenEnabled}}             # Enable refresh token support
   refresh_token_expiry: {{.OIDCLD.RefreshTokenExpiry}}             # Refresh token expiry in seconds (24 hours)
   end_session_enabled: {{.OIDCLD.EndSessionEnabled}}               # Enable logout/end session functionality
@@ -1027,6 +1264,29 @@ func LoadConfig(configPath string, verbose bool) (*Config, error) {
 	}
 	if hasOverride {
 		applyAutocertOverrides(cfg, o)
+	}
+
+	if title, ok := os.LookupEnv("OIDCLD_ENV_TITLE"); ok {
+		if cfg.OIDCLD.LoginUI == nil {
+			cfg.OIDCLD.LoginUI = &LoginUIConfig{}
+		}
+		cfg.OIDCLD.LoginUI.EnvTitle = strings.TrimSpace(title)
+	}
+	if color, ok := os.LookupEnv("OIDCLD_ENV_COLOR"); ok {
+		if cfg.OIDCLD.LoginUI == nil {
+			cfg.OIDCLD.LoginUI = &LoginUIConfig{}
+		}
+		cfg.OIDCLD.LoginUI.AccentColor = strings.TrimSpace(color)
+	}
+	if markdownFile, ok := os.LookupEnv("OIDCLD_ENV_MARKDOWN_FILE"); ok {
+		if cfg.OIDCLD.LoginUI == nil {
+			cfg.OIDCLD.LoginUI = &LoginUIConfig{}
+		}
+		cfg.OIDCLD.LoginUI.InfoMarkdownFile = strings.TrimSpace(markdownFile)
+	}
+
+	if err := cfg.Normalize(); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

@@ -37,6 +37,10 @@ oidcld:
     enabled: true                         # serve listener を既定でローカル送信元のみに制限
     extra_allowed_ips: []                 # 追加で許可する IP / CIDR
     max_forwarded_hops: 0                 # Forwarded / X-Forwarded-For は既定拒否
+  login_ui:
+    env_title: "Staging"                  # /login 専用の環境ラベル
+    accent_color: "#D97A00"               # 省略時は env_title から安定した色を自動生成
+    info_markdown_file: "./docs/login-links.staging.md"  # /login に表示する Markdown
   refresh_token_enabled: true
   refresh_token_expiry: 86400             # リフレッシュトークン TTL (秒)
   end_session_enabled: true
@@ -46,6 +50,7 @@ oidcld:
   tls_key_file: ""
 ```
 標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。`access_filter.enabled` は `serve` listener で既定 `true` です。`Forwarded` / `X-Forwarded-For` が無い場合は loopback / ローカル私設アドレス (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`) のみ許可します。`extra_allowed_ips` は単一 IP と CIDR の両方を受け付け、単一 IP は内部で `/32` または `/128` に正規化されます。`max_forwarded_hops` は既定 `0` なので、forward 系ヘッダー付きリクエストは明示設定がない限り拒否されます。
+`login_ui.env_title` と `login_ui.info_markdown_file` は `/login` のみへ適用され、device や logout の画面は変更しません。`login_ui.accent_color` は `#RRGGBB` のみ受け付けます。未指定で `env_title` がある場合は、視認性を意識した色をタイトルから決定的に自動生成します。`info_markdown_file` は設定ファイルの位置基準で解決され、`/login` へのアクセスごとに再読み込みされます。
 
 #### 2. EntraID 互換設定 (`entraid`)
 ```yaml
@@ -100,6 +105,9 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | OIDCLD_VERBOSE | `serve` の詳細ログを有効化 | `serve` コマンドの env binding で実装済み |
 | OIDCLD_CONFIG | コンテナ / health 系で使う設定ファイルパス | 実行時の慣例と health 自動判定で利用 |
 | PORT | ポート上書き | 現在の Go エントリポイントでは直接読んでいない。確実に制御したい場合は `oidcld serve --port ...` を使う |
+| OIDCLD_ENV_TITLE | `oidcld.login_ui.env_title` を上書き | `/login` に環境バナーを表示 |
+| OIDCLD_ENV_COLOR | `oidcld.login_ui.accent_color` を上書き | `#RRGGBB` のみ。未設定なら env_title から自動色生成可 |
+| OIDCLD_ENV_MARKDOWN_FILE | `oidcld.login_ui.info_markdown_file` を上書き | 相対パスは設定ファイル基準で解決 |
 
 ### ACME / autocert 上書き
 設定ファイルより優先され、存在すると `enabled: true` に強制。

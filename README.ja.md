@@ -47,6 +47,15 @@ English: see [README.md](README.md)
 
 ログイン画面: パスワード不要—クリックでログイン。テストに便利。開発環境だけのログイン回避はもう不要です。
 
+`/login` には環境名、色、Markdownメモも出せます。
+
+```yaml
+oidcld:
+  login_ui:
+    env_title: "Staging"
+    info_markdown_file: "./docs/login-links.staging.md"
+```
+
 ----
 
 ## 主な機能

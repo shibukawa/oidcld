@@ -49,6 +49,15 @@ The term "fake" accurately describes this tool's role in testing scenarios - it'
 
 **Login Screen:** No password—just click to log in. Helps testing. No more dev-only login bypasses.
 
+You can also mark each environment on `/login` with a title, a color, and a Markdown note:
+
+```yaml
+oidcld:
+  login_ui:
+    env_title: "Staging"
+    info_markdown_file: "./docs/login-links.staging.md"
+```
+
 ----
 
 ## Primary Function
