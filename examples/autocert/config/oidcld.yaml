@@ -8,6 +8,10 @@ oidcld:
   nonce_required: true
   expired_in: 3600
   aud_claim_format: string  # Keep single-audience aud aligned with EntraID-style output
+  login_ui:
+    env_title: "Compose Sample"
+    accent_color: "#2563EB"
+    info_markdown_file: "./login-info.md"
   refresh_token_enabled: true
   refresh_token_expiry: 86400
   end_session_enabled: true

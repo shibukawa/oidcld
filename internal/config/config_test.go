@@ -82,6 +82,7 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "developer:"), "Should contain developer")
 	assert.True(t, strings.Contains(yamlContent, "analyst:"), "Should contain analyst")
 	assert.True(t, strings.Contains(yamlContent, "guest:"), "Should contain guest")
+	assert.True(t, strings.Contains(yamlContent, "# login_ui:"), "Should contain login_ui sample")
 }
 
 func TestCreateDefaultConfig_DefaultAudienceClaimFormat(t *testing.T) {
@@ -186,6 +187,110 @@ func TestLoadAndSaveConfig(t *testing.T) {
 	assert.Equal(t, originalConfig.OIDCLD.PKCERequired, loadedConfig.OIDCLD.PKCERequired)
 	assert.Equal(t, originalConfig.OIDCLD.RefreshTokenEnabled, loadedConfig.OIDCLD.RefreshTokenEnabled)
 	assert.Equal(t, len(originalConfig.Users), len(loadedConfig.Users))
+}
+
+func TestLoadConfig_LoginUIEnvOverridePriority(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidcld:
+  iss: "http://localhost:18888"
+  login_ui:
+    env_title: "Local"
+    accent_color: "#123456"
+    info_markdown_file: "./docs/local.md"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0644)
+	assert.NoError(t, err)
+
+	t.Setenv("OIDCLD_ENV_TITLE", "Staging")
+	t.Setenv("OIDCLD_ENV_COLOR", "#ABCDEF")
+	t.Setenv("OIDCLD_ENV_MARKDOWN_FILE", "./docs/staging.md")
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "Staging", cfg.OIDCLD.LoginUI.EnvTitle)
+	assert.Equal(t, "#ABCDEF", cfg.OIDCLD.LoginUI.AccentColor)
+	assert.Equal(t, "./docs/staging.md", cfg.OIDCLD.LoginUI.InfoMarkdownFile)
+	assert.Equal(t, filepath.Join(tempDir, "docs", "staging.md"), cfg.OIDCLD.LoginUI.resolvedInfoMarkdownFile)
+	assert.Equal(t, "#111111", cfg.OIDCLD.LoginUI.EffectiveTextColor())
+}
+
+func TestNormalizeLoginUIGeneratesDeterministicAccentColor(t *testing.T) {
+	cfg := &Config{
+		OIDCLD: OIDCLDConfig{
+			Issuer: "http://localhost:18888",
+			LoginUI: &LoginUIConfig{
+				EnvTitle: "Staging",
+			},
+		},
+		Users: map[string]User{
+			"admin": {DisplayName: "Administrator"},
+		},
+	}
+
+	err := cfg.Normalize()
+	assert.NoError(t, err)
+	assert.NotEqual(t, "", cfg.OIDCLD.LoginUI.EffectiveAccentColor())
+	assert.Equal(t, generateAccentColorFromTitle("Staging"), cfg.OIDCLD.LoginUI.EffectiveAccentColor())
+
+	secondCfg := &Config{
+		OIDCLD: OIDCLDConfig{
+			Issuer: "http://localhost:18888",
+			LoginUI: &LoginUIConfig{
+				EnvTitle: "Staging",
+			},
+		},
+		Users: map[string]User{
+			"admin": {DisplayName: "Administrator"},
+		},
+	}
+	err = secondCfg.Normalize()
+	assert.NoError(t, err)
+	assert.Equal(t, cfg.OIDCLD.LoginUI.EffectiveAccentColor(), secondCfg.OIDCLD.LoginUI.EffectiveAccentColor())
+}
+
+func TestNormalizeLoginUIKeepsExplicitAccentColor(t *testing.T) {
+	cfg := &Config{
+		OIDCLD: OIDCLDConfig{
+			Issuer: "http://localhost:18888",
+			LoginUI: &LoginUIConfig{
+				EnvTitle:    "Staging",
+				AccentColor: "#d97a00",
+			},
+		},
+		Users: map[string]User{
+			"admin": {DisplayName: "Administrator"},
+		},
+	}
+
+	err := cfg.Normalize()
+	assert.NoError(t, err)
+	assert.Equal(t, "#D97A00", cfg.OIDCLD.LoginUI.AccentColor)
+	assert.Equal(t, "#D97A00", cfg.OIDCLD.LoginUI.EffectiveAccentColor())
+}
+
+func TestLoadConfig_LoginUIResolvesMarkdownPathRelativeToConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidcld:
+  iss: "http://localhost:18888"
+  login_ui:
+    env_title: "Docs"
+    info_markdown_file: "./notes/login.md"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.Equal(t, "./notes/login.md", cfg.OIDCLD.LoginUI.InfoMarkdownFile)
+	assert.Equal(t, filepath.Join(tempDir, "notes", "login.md"), cfg.OIDCLD.LoginUI.EffectiveInfoMarkdownFile())
 }
 
 func TestAddUser(t *testing.T) {

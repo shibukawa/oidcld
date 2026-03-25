@@ -426,23 +426,25 @@ func (s *Server) createDeviceHandler() http.Handler {
 
 // renderLoginForm renders the user selection/login form using shared template
 func (s *Server) renderLoginForm(w http.ResponseWriter, authRequestID string, authReq op.AuthRequest) {
-	config := UserSelectionConfig{
-		Title: "Select Test User",
-		Description: fmt.Sprintf(`
-        <div class="client-info">
-            <p><strong>Client:</strong> %s</p>
-            <p><strong>Scopes:</strong> %s</p>
-        </div>`,
-			authReq.GetClientID(),
-			fmt.Sprintf("%v", authReq.GetScopes())),
-		FormAction: "",
-		HiddenFields: map[string]string{
-			"authRequestID": html.EscapeString(authRequestID),
-		},
-		ButtonAction: "submit",
+	loginPageConfig := LoginPageConfig{
+		AuthRequestID: authRequestID,
+		ClientID:      authReq.GetClientID(),
+		Scopes:        append([]string(nil), authReq.GetScopes()...),
+	}
+	if loginUI := s.config.OIDCLD.LoginUI; loginUI != nil {
+		loginPageConfig.EnvironmentTitle = loginUI.EnvTitle
+		loginPageConfig.AccentColor = loginUI.EffectiveAccentColor()
+		loginPageConfig.HeaderTextColor = loginUI.EffectiveTextColor()
+		infoPanelHTML, err := s.renderLoginInfoPanel(loginUI)
+		if err != nil {
+			s.logger.Warn("Failed to render login info markdown", "error", err, "path", loginUI.EffectiveInfoMarkdownFile())
+			loginPageConfig.InfoPanelHTML = renderLoginInfoWarning("Environment notes are currently unavailable.")
+		} else {
+			loginPageConfig.InfoPanelHTML = infoPanelHTML
+		}
 	}
 
-	s.renderSharedUserSelectionPage(w, config)
+	s.renderLoginPage(w, loginPageConfig)
 }
 
 // processLogin processes the login form submission

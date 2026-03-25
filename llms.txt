@@ -18,6 +18,7 @@ Compact guidance for AI systems working with this repository.
 - OpenID Connect discovery and JWKS endpoints
 - Optional EntraID-compatible issuer and claim shape modes
 - In-memory users with click-to-login UX instead of passwords
+- Optional `/login` environment banner and Markdown info panel for environment-specific notes
 
 ## Commands
 
@@ -70,6 +71,10 @@ oidcld:
     enabled: true
     extra_allowed_ips: []
     max_forwarded_hops: 0
+  login_ui:
+    env_title: "Staging"
+    accent_color: "#D97A00"
+    info_markdown_file: "./docs/login-links.staging.md"
   refresh_token_enabled: true
   refresh_token_expiry: 86400
   end_session_enabled: true
@@ -118,6 +123,9 @@ users:
 - `oidcld.iss` is the issuer URL.
 - `aud_claim_format` controls whether a single `aud` claim is emitted as a string or array.
 - `access_filter` is important in local and container setups because it limits who can reach the server.
+- `login_ui` affects the `/login` page only.
+- `login_ui.accent_color` must be `#RRGGBB`; if omitted and `env_title` is set, oidcld generates a stable readable color from `env_title`.
+- `login_ui.info_markdown_file` is resolved relative to the config file when not absolute and is re-read on each `/login` request.
 - `autocert.acme_server` is the YAML field name even when environment variables use the term `DIRECTORY_URL`.
 - `users` is a map keyed by username-like identifiers, with per-user claims and extra scopes.
 
@@ -158,6 +166,15 @@ Environment variables currently consumed by the implementation:
 - `OIDCLD_CONFIG`
   - Used as a runtime convention in container examples.
   - Important for `health` auto-detection behavior in container-style setups.
+
+- `OIDCLD_ENV_TITLE`
+  - Overrides `oidcld.login_ui.env_title`.
+
+- `OIDCLD_ENV_COLOR`
+  - Overrides `oidcld.login_ui.accent_color`.
+
+- `OIDCLD_ENV_MARKDOWN_FILE`
+  - Overrides `oidcld.login_ui.info_markdown_file`.
 
 - `OIDCLD_ACME_DIRECTORY_URL`
   - Overrides `autocert.acme_server`.

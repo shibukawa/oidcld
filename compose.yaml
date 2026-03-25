@@ -27,9 +27,9 @@ services:
       - "18888:18888"  # HTTP metadata companion listener (discovery/JWKS/health)
       - "8443:443"     # HTTPS OIDC server port
     volumes:
-      - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
+      - ./examples/autocert/config:/app/config:ro
     environment:
-      - OIDCLD_CONFIG=/app/config.yaml
+      - OIDCLD_CONFIG=/app/config/oidcld.yaml
       # Minimal autocert environment variables (TLS-ALPN challenge)
       - OIDCLD_ACME_DOMAIN=oidc.localhost
       - OIDCLD_ACME_DIRECTORY_URL=http://myencrypt.localhost/acme/directory
@@ -38,7 +38,7 @@ services:
       - OIDCLD_ACME_AGREE_TOS=true
       - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
       - OIDCLD_ACME_RENEWAL_THRESHOLD=1
-    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--http-readonly-port", "18888"]
+    command: ["serve", "--config", "/app/config/oidcld.yaml", "--port", "443", "--http-readonly-port", "18888"]
     healthcheck:
       test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"]
       interval: 30s

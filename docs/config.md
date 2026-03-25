@@ -38,6 +38,10 @@ oidcld:
     enabled: true                            # Restrict serve listeners to local peers by default
     extra_allowed_ips: []                    # Extra allowed peer IPs/CIDRs
     max_forwarded_hops: 0                    # Reject Forwarded/X-Forwarded-For by default
+  login_ui:
+    env_title: "Staging"                     # Optional label shown on /login only
+    accent_color: "#D97A00"                  # Optional hex color; auto-generated from env_title when omitted
+    info_markdown_file: "./docs/login-links.staging.md"  # Optional Markdown rendered on /login
   refresh_token_enabled: true                # Enable refresh tokens (default: true)
   refresh_token_expiry: 86400               # Refresh token TTL in seconds (default: 86400)
   end_session_enabled: true                 # Enable logout endpoint (default: true)
@@ -55,6 +59,9 @@ oidcld:
 - `access_filter.enabled` defaults to `true` for `serve` listeners. Requests without `Forwarded`/`X-Forwarded-For` are allowed only from loopback or local private peers (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`).
 - `access_filter.extra_allowed_ips` accepts both single IPs and CIDRs. Single IPs are normalized internally to `/32` or `/128`.
 - `access_filter.max_forwarded_hops` defaults to `0`, so requests carrying `Forwarded` or `X-Forwarded-For` are rejected unless you explicitly raise the limit.
+- `login_ui.env_title` and `login_ui.info_markdown_file` affect the `/login` page only. Device verification and logout pages stay unchanged.
+- `login_ui.accent_color` accepts only `#RRGGBB`. If omitted and `env_title` is set, oidcld generates a stable high-visibility color from the title.
+- `login_ui.info_markdown_file` is resolved relative to the config file location. Markdown is re-read on each `/login` request, so edits show up without restarting.
 
 #### 2. EntraID/AzureAD Compatibility (`entraid`)
 
@@ -173,6 +180,9 @@ When using EntraID templates, users automatically include:
 | `OIDCLD_VERBOSE` | Enable verbose serve logging | Implemented via `serve` command env binding |
 | `OIDCLD_CONFIG` | Config path used by container/health workflows | Used by runtime conventions and health auto-detection |
 | `PORT` | Documented server port override | Not directly read by the current Go entrypoints; prefer `oidcld serve --port ...` |
+| `OIDCLD_ENV_TITLE` | Override `oidcld.login_ui.env_title` | Shows an environment banner on `/login` |
+| `OIDCLD_ENV_COLOR` | Override `oidcld.login_ui.accent_color` | Must be `#RRGGBB`; if omitted, color can still auto-generate from `env_title` |
+| `OIDCLD_ENV_MARKDOWN_FILE` | Override `oidcld.login_ui.info_markdown_file` | Path is resolved relative to the config file when not absolute |
 
 ### ACME/Autocert Overrides
 Environment overrides auto-enable autocert even if the file sets `enabled: false` (useful in container deployments). Only the following variables are currently parsed:
