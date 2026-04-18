@@ -236,7 +236,7 @@ func TestLoadConfig_NormalizesReverseProxyStaticDirRelativeToConfig(t *testing.T
   iss: "http://localhost:18888"
 reverse_proxy:
   hosts:
-    - host: "app.localhost"
+    - host: "https://app.localhost"
       routes:
         - path: "/"
           static_dir: "./public"
@@ -250,6 +250,54 @@ users:
 	cfg, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
 	assert.Equal(t, filepath.Join(tempDir, "public"), cfg.ReverseProxy.Hosts[0].Routes[0].ResolvedStaticDir())
+}
+
+func TestLoadConfig_RejectsReverseProxyHostWithoutScheme(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "app.localhost"
+      routes:
+        - path: "/"
+          target_url: "http://127.0.0.1:3000"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "http:// or https://")
+}
+
+func TestLoadConfig_RejectsReverseProxyTLSFilesOnHTTPHost(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "http://app.localhost"
+      tls_cert_file: "./cert.pem"
+      tls_key_file: "./key.pem"
+      routes:
+        - path: "/"
+          target_url: "http://127.0.0.1:3000"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must use https")
 }
 
 func TestLoadAndSaveConfig(t *testing.T) {

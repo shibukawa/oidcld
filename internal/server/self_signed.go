@@ -227,7 +227,7 @@ func generateManagedLeafCertificate(cfg *config.Config, host string, caCert *x50
 
 	return generateManagedLeafCertificateFromRequest(managedLeafCertificateRequest{
 		Domain:       managedLeafCommonName(cfg, host, managedLeafIssuedDomains(cfg, host)),
-		Organization: "OIDCLD",
+		Organization: managedLeafOrganization(cfg, host),
 		NotBefore:    time.Now().UTC().Add(-time.Minute),
 		TTL:          leafTTL,
 	}, caCert, caKey, caCertPEM)
@@ -367,15 +367,21 @@ func (s *Server) loadManagedRootCAInfo() (map[string]any, error) {
 func (s *Server) loadManagedLeafCertificateInfos() ([]map[string]any, error) {
 	infos := make([]managedIssuedLeafInfo, 0, 4)
 	seenSerials := map[string]struct{}{}
-	leaf, err := s.ensureManagedLeafCertificate()
-	if err == nil {
+	for _, host := range managedSelfSignedHosts(s.config) {
+		leaf, err := s.ensureManagedLeafCertificateForHost(host)
+		if err != nil {
+			continue
+		}
 		info := managedIssuedLeafInfo{
 			subject:      leaf.certificate.Subject.String(),
 			organization: firstManagedOrganization(leaf.certificate.Subject.Organization),
 			serial:       leaf.certificate.SerialNumber.String(),
 			notBefore:    leaf.certificate.NotBefore,
 			notAfter:     leaf.certificate.NotAfter,
-			domain:       firstManagedDomain(leaf.certificate.DNSNames),
+			domain:       host,
+		}
+		if _, exists := seenSerials[info.serial]; exists {
+			continue
 		}
 		infos = append(infos, info)
 		seenSerials[info.serial] = struct{}{}
@@ -441,6 +447,61 @@ func firstManagedOrganization(values []string) string {
 		}
 	}
 	return ""
+}
+
+func managedSelfSignedHosts(cfg *config.Config) []string {
+	if cfg == nil || cfg.CertificateAuthority == nil {
+		return nil
+	}
+
+	hosts := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	appendHost := func(host string) {
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			return
+		}
+		if _, exists := seen[host]; exists {
+			return
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+
+	appendHost(config.IssuerHostname(cfg.OIDC.Issuer))
+	if cfg.ReverseProxy != nil {
+		for _, host := range cfg.ReverseProxy.Hosts {
+			if host.Scheme() != "https" || strings.TrimSpace(host.ResolvedTLSCertFile()) != "" {
+				continue
+			}
+			appendHost(host.Hostname())
+		}
+	}
+
+	return hosts
+}
+
+func managedLeafOrganization(cfg *config.Config, host string) string {
+	normalizedHost := strings.ToLower(strings.TrimSpace(host))
+	if normalizedHost == "" {
+		return "OIDCLD"
+	}
+	if cfg != nil {
+		if issuerHost := strings.ToLower(strings.TrimSpace(config.IssuerHostname(cfg.OIDC.Issuer))); issuerHost != "" && normalizedHost == issuerHost {
+			return "OIDCLD (OpenID Connect)"
+		}
+	}
+	if cfg != nil && cfg.ReverseProxy != nil {
+		for _, reverseProxyHost := range cfg.ReverseProxy.Hosts {
+			if reverseProxyHost.Scheme() != "https" || strings.TrimSpace(reverseProxyHost.ResolvedTLSCertFile()) != "" {
+				continue
+			}
+			if normalizedHost == strings.ToLower(strings.TrimSpace(reverseProxyHost.Hostname())) {
+				return "OIDCLD (Reverse Proxy)"
+			}
+		}
+	}
+	return "OIDCLD"
 }
 
 func managedWildcardHost(domains []string, domainLabel string) (string, error) {

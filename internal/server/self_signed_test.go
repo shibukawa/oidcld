@@ -144,7 +144,7 @@ func TestAdminHandler_CertificateAndDownloadEndpointsUseManagedAssets(t *testing
 	err = json.Unmarshal(res.Body.Bytes(), &certificatesPayload)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(certificatesPayload.LeafCertificates))
-	assert.Equal(t, "OIDCLD", certificatesPayload.LeafCertificates[0].Organization)
+	assert.Equal(t, "OIDCLD (OpenID Connect)", certificatesPayload.LeafCertificates[0].Organization)
 	assert.Equal(t, "localhost", certificatesPayload.LeafCertificates[0].Domain)
 }
 

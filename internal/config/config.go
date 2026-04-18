@@ -1190,8 +1190,7 @@ reverse_proxy:
   log_retention: {{.ReverseProxy.LogRetention}}
   hosts:{{range .ReverseProxy.Hosts}}
     - host: "{{.Host}}"
-      https: {{.HTTPS}}{{if .TLSCertFile}}
-      tls_cert_file: "{{.TLSCertFile}}"
+{{if .TLSCertFile}}      tls_cert_file: "{{.TLSCertFile}}"
       tls_key_file: "{{.TLSKeyFile}}"{{end}}
       routes:{{range .Routes}}
         - path: "{{.Path}}"{{if .TargetURL}}
@@ -1202,15 +1201,14 @@ reverse_proxy:
 {{else}}# reverse_proxy:
 #   log_retention: 200
 #   hosts:
-#     - host: "app.dev.localhost"
-#       https: true
+#     - host: "https://app.dev.localhost"
 #       routes:
 #         - path: "/api"
 #           target_url: "http://127.0.0.1:3000"
 #         - path: "/"
 #           static_dir: "./web/dist"
 #           spa_fallback: true
-#     - host: "app-ui.dev.localhost"
+#     - host: "http://app-ui.dev.localhost"
 #       routes:
 #         - path: "/"
 #           target_url: "http://127.0.0.1:5173"

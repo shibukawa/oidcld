@@ -89,7 +89,6 @@ type adminReverseProxyResponse struct {
 
 type adminReverseProxyHost struct {
 	Host      string                   `json:"host"`
-	HTTPS     bool                     `json:"https"`
 	TLSSource string                   `json:"tlsSource"`
 	Routes    []adminReverseProxyRoute `json:"routes"`
 }
@@ -153,6 +152,8 @@ func (s *Server) AdminHandler() http.Handler {
 	metadataHandler := s.ReadOnlyHTTPHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/":
+			http.Redirect(w, r, "/console/", http.StatusPermanentRedirect)
 		case isConsolePath(r.URL.Path):
 			consoleMux.ServeHTTP(w, r)
 		case s.shouldServeConsoleMetadata(r.URL.Path):
@@ -272,8 +273,7 @@ func (s *Server) handleAdminReverseProxy(w http.ResponseWriter, _ *http.Request)
 		response.LogRetention = s.config.ReverseProxy.LogRetention
 		for _, host := range s.config.ReverseProxy.Hosts {
 			item := adminReverseProxyHost{
-				Host:      host.Host,
-				HTTPS:     host.HTTPS,
+				Host:      host.NormalizedHost(),
 				TLSSource: adminReverseProxyTLSSource(s.config, host),
 			}
 			for _, route := range host.Routes {
@@ -340,7 +340,7 @@ func adminTLSSource(cfg *config.Config) string {
 }
 
 func adminReverseProxyTLSSource(cfg *config.Config, host config.ReverseProxyHost) string {
-	if !host.HTTPS {
+	if host.Scheme() != "https" {
 		return "http"
 	}
 	if strings.TrimSpace(host.ResolvedTLSCertFile()) != "" {

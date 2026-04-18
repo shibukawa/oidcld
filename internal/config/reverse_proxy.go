@@ -17,13 +17,16 @@ type ReverseProxyConfig struct {
 
 type ReverseProxyHost struct {
 	Host        string              `yaml:"host,omitempty"`
-	HTTPS       bool                `yaml:"https,omitempty"`
 	TLSCertFile string              `yaml:"tls_cert_file,omitempty"`
 	TLSKeyFile  string              `yaml:"tls_key_file,omitempty"`
 	Routes      []ReverseProxyRoute `yaml:"routes,omitempty"`
 
 	resolvedTLSCertFile string `yaml:"-"`
 	resolvedTLSKeyFile  string `yaml:"-"`
+	normalizedHost      string `yaml:"-"`
+	normalizedScheme    string `yaml:"-"`
+	normalizedHostname  string `yaml:"-"`
+	normalizedPort      string `yaml:"-"`
 }
 
 type ReverseProxyRoute struct {
@@ -41,7 +44,7 @@ func (c *Config) ReverseProxyUsesHTTPS() bool {
 		return false
 	}
 	for _, host := range c.ReverseProxy.Hosts {
-		if host.HTTPS {
+		if host.Scheme() == "https" {
 			return true
 		}
 	}
@@ -66,9 +69,9 @@ func normalizeReverseProxyConfig(cfg *ReverseProxyConfig, sourceDir string) (*Re
 		if err != nil {
 			return nil, err
 		}
-		hostKey := strings.ToLower(normalizedHost.Host)
+		hostKey := strings.ToLower(normalizedHost.NormalizedHost())
 		if _, exists := seenHosts[hostKey]; exists {
-			return nil, fmt.Errorf("duplicate reverse_proxy host %q", normalizedHost.Host)
+			return nil, fmt.Errorf("duplicate reverse_proxy host %q", normalizedHost.NormalizedHost())
 		}
 		seenHosts[hostKey] = struct{}{}
 		normalized.Hosts = append(normalized.Hosts, normalizedHost)
@@ -90,8 +93,19 @@ func normalizeReverseProxyHost(host ReverseProxyHost, sourceDir string) (Reverse
 	if (host.TLSCertFile == "") != (host.TLSKeyFile == "") {
 		return ReverseProxyHost{}, ErrReverseProxyTLSCertificateKeyRequired
 	}
+	normalizedHost, scheme, hostname, port, err := normalizeReverseProxyHostAuthority(host.Host)
+	if err != nil {
+		return ReverseProxyHost{}, err
+	}
+	host.Host = normalizedHost
+	host.normalizedHost = normalizedHost
+	host.normalizedScheme = scheme
+	host.normalizedHostname = hostname
+	host.normalizedPort = port
 	if host.TLSCertFile != "" {
-		host.HTTPS = true
+		if host.Scheme() != "https" {
+			return ReverseProxyHost{}, fmt.Errorf("reverse_proxy host %q must use https when tls_cert_file/tls_key_file are configured", host.Host)
+		}
 		resolvedCert, err := resolveConfigRelativePath(sourceDir, host.TLSCertFile)
 		if err != nil {
 			return ReverseProxyHost{}, fmt.Errorf("failed to resolve reverse_proxy.hosts[%s].tls_cert_file: %w", host.Host, err)
@@ -118,6 +132,35 @@ func normalizeReverseProxyHost(host ReverseProxyHost, sourceDir string) (Reverse
 	host.Routes = normalizedRoutes
 
 	return host, nil
+}
+
+func normalizeReverseProxyHostAuthority(value string) (normalizedHost string, scheme string, hostname string, port string, err error) {
+	parsed, err := neturl.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("reverse_proxy.hosts[].host must be a valid http:// or https:// URL authority")
+	}
+	scheme = strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	if scheme != "http" && scheme != "https" {
+		return "", "", "", "", fmt.Errorf("reverse_proxy.hosts[].host must start with http:// or https://")
+	}
+	if parsed.Host == "" || parsed.Opaque != "" {
+		return "", "", "", "", fmt.Errorf("reverse_proxy.hosts[].host must include a hostname")
+	}
+	if parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", "", "", "", fmt.Errorf("reverse_proxy.hosts[].host must not include path, query, fragment, or userinfo")
+	}
+
+	hostname = strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	port = strings.TrimSpace(parsed.Port())
+	if hostname == "" {
+		return "", "", "", "", fmt.Errorf("reverse_proxy.hosts[].host must include a hostname")
+	}
+
+	normalizedHost = scheme + "://" + hostname
+	if port != "" {
+		normalizedHost += ":" + port
+	}
+	return normalizedHost, scheme, hostname, port, nil
 }
 
 func normalizeReverseProxyRoute(route ReverseProxyRoute, sourceDir string) (ReverseProxyRoute, error) {
@@ -174,6 +217,46 @@ func (h ReverseProxyHost) ResolvedTLSKeyFile() string {
 		return h.resolvedTLSKeyFile
 	}
 	return h.TLSKeyFile
+}
+
+func (h ReverseProxyHost) NormalizedHost() string {
+	if h.normalizedHost != "" {
+		return h.normalizedHost
+	}
+	return strings.TrimSpace(h.Host)
+}
+
+func (h ReverseProxyHost) Scheme() string {
+	if h.normalizedScheme != "" {
+		return h.normalizedScheme
+	}
+	_, scheme, _, _, err := normalizeReverseProxyHostAuthority(h.Host)
+	if err != nil {
+		return ""
+	}
+	return scheme
+}
+
+func (h ReverseProxyHost) Hostname() string {
+	if h.normalizedHostname != "" {
+		return h.normalizedHostname
+	}
+	_, _, hostname, _, err := normalizeReverseProxyHostAuthority(h.Host)
+	if err != nil {
+		return ""
+	}
+	return hostname
+}
+
+func (h ReverseProxyHost) Port() string {
+	if h.normalizedPort != "" {
+		return h.normalizedPort
+	}
+	_, _, _, port, err := normalizeReverseProxyHostAuthority(h.Host)
+	if err != nil {
+		return ""
+	}
+	return port
 }
 
 func (r ReverseProxyRoute) ResolvedStaticDir() string {

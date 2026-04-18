@@ -318,7 +318,7 @@ services:
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "8443:443"     # HTTPS OIDC server port
+      - "8443:443"     # oidc.localhost と app.localhost を受ける HTTPS listener
       - "18889:18889"  # Developer Console + HTTP metadata companion
     volumes:
       - ./examples/autocert/config:/app/config:ro
@@ -341,11 +341,9 @@ services:
       args:
         VITE_OIDC_AUTHORITY: "https://oidc.localhost:8443"
         VITE_OIDC_CLIENT_ID: "test-client-id"
-        VITE_OIDC_REDIRECT_URI: "http://app.localhost:3000/redirect"
-        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "http://app.localhost:3000/"
+        VITE_OIDC_REDIRECT_URI: "https://app.localhost:8443/redirect"
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "https://app.localhost:8443/"
         VITE_OIDC_SCOPES: "openid,profile,email,offline_access,User.Read"
-    ports:
-      - "3000:80"
     depends_on:
       oidc.localhost:
         condition: service_healthy
@@ -355,7 +353,7 @@ volumes:
   oidcld-managed-ca:
 ```
 
-このサンプルでは、React アプリから logout すると `http://app.localhost:3000/` へ戻る想定です。途中で provider のログアウト成功ページを経由した場合でも、oidcld が数秒だけ成功メッセージを表示したあと自動的にアプリへ戻します。root CA は `http://localhost:18889/console/` からダウンロードでき、`oidcld-managed-ca` volume が残っている限り同じ CA が使われます。
+このサンプルでは、React アプリのブラウザ向け入口は `https://app.localhost:8443/` です。OIDCLD は `oidc.localhost` と `app.localhost` の TLS を同じ HTTPS listener で終端し、`app.localhost` 向けの通信は内部の frontend container に reverse proxy します。React アプリから logout すると `https://app.localhost:8443/` へ戻る想定です。途中で provider のログアウト成功ページを経由した場合でも、oidcld が数秒だけ成功メッセージを表示したあと自動的にアプリへ戻します。root CA は `http://localhost:18889/console/` からダウンロードでき、Developer Console では reverse proxy の設定と通信ログも確認できます。`oidcld-managed-ca` volume が残っている限り同じ CA が使われます。
 
 #### OIDCLD 向けの MSAL 設定例
 

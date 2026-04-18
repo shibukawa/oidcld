@@ -899,19 +899,27 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		} else {
 			s.prettyLog.RequestLog(r.Method, r.URL.Path, wrapper.statusCode, duration)
 		}
-		if wrapper.reverseProxy != nil && s.reverseProxyLog != nil {
+		logMeta := wrapper.reverseProxy
+		if logMeta == nil {
+			logMeta = s.oidcTrafficLogMeta(r)
+		}
+		if logMeta != nil && s.reverseProxyLog != nil {
+			logHost := strings.TrimSpace(r.Host)
+			if logHost == "" && r.URL != nil {
+				logHost = strings.TrimSpace(r.URL.Host)
+			}
 			s.reverseProxyLog.Add(reverseProxyLogEntry{
 				Timestamp:  time.Now().UTC(),
-				Host:       requestHostname(r),
+				Host:       logHost,
 				Method:     r.Method,
 				Path:       r.URL.Path,
 				StatusCode: wrapper.statusCode,
 				DurationMS: duration.Milliseconds(),
 				Bytes:      wrapper.bytesWritten,
-				RouteType:  wrapper.reverseProxy.RouteType,
-				RouteHost:  wrapper.reverseProxy.RouteHost,
-				RoutePath:  wrapper.reverseProxy.RoutePath,
-				Target:     wrapper.reverseProxy.Target,
+				RouteType:  logMeta.RouteType,
+				RouteHost:  logMeta.RouteHost,
+				RoutePath:  logMeta.RoutePath,
+				Target:     logMeta.Target,
 				RemoteAddr: r.RemoteAddr,
 			})
 		}
