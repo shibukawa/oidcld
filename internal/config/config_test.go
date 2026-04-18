@@ -297,7 +297,7 @@ users:
 
 	_, err = LoadConfig(configPath, false)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must use https")
+	assert.Contains(t, err.Error(), "require an https host")
 }
 
 func TestLoadAndSaveConfig(t *testing.T) {

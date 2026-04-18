@@ -37,6 +37,13 @@ var (
 	ErrReverseProxyRouteTargetRequired        = errors.New("reverse_proxy.hosts[].routes[] must define exactly one of target_url or static_dir")
 	ErrReverseProxyRouteTargetInvalid         = errors.New("reverse_proxy.hosts[].routes[].target_url must be an absolute http/https URL")
 	ErrReverseProxyTLSCertificateKeyRequired  = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file must be provided together")
+	ErrReverseProxyDuplicateHost              = errors.New("reverse_proxy.hosts[].host must be unique")
+	ErrReverseProxyHostAuthorityInvalid       = errors.New("reverse_proxy.hosts[].host must be a valid http:// or https:// URL authority")
+	ErrReverseProxyHostSchemeInvalid          = errors.New("reverse_proxy.hosts[].host must start with http:// or https://")
+	ErrReverseProxyHostNameRequired           = errors.New("reverse_proxy.hosts[].host must include a hostname")
+	ErrReverseProxyHostExtraComponents        = errors.New("reverse_proxy.hosts[].host must not include path, query, fragment, or userinfo")
+	ErrReverseProxyTLSRequiresHTTPSHost       = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file require an https host")
+	ErrReverseProxyRewritePathPrefixInvalid   = errors.New("reverse_proxy.hosts[].routes[].rewrite_path_prefix must start with /")
 )
 
 type autocertIssuerHostCoverageError struct {

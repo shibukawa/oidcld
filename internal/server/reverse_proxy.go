@@ -20,6 +20,7 @@ import (
 )
 
 var ErrReverseProxyHTTPSRequiresCertificateAuthority = errors.New("reverse proxy https hosts require certificate_authority or manual host certificates")
+var ErrReverseProxyHostNotCoveredByCADomains = errors.New("reverse proxy host is not covered by certificate_authority.domains")
 
 type compiledReverseProxy struct {
 	hosts map[string][]*compiledReverseProxyHost
@@ -86,6 +87,7 @@ type reverseProxyLogStore struct {
 
 func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) {
 	if cfg == nil || cfg.ReverseProxy == nil || len(cfg.ReverseProxy.Hosts) == 0 {
+		//nolint:nilnil // nil reverse proxy means no reverse proxy routes are configured.
 		return nil, nil
 	}
 
@@ -113,7 +115,7 @@ func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) 
 				return nil, fmt.Errorf("%w: %s", ErrReverseProxyHTTPSRequiresCertificateAuthority, host.Host)
 			}
 			if !config.HostMatchesCertificateDomains(item.hostname, cfg.CertificateAuthority.Domains) {
-				return nil, fmt.Errorf("reverse proxy host %q is not covered by certificate_authority.domains", host.Host)
+				return nil, fmt.Errorf("%w: %q", ErrReverseProxyHostNotCoveredByCADomains, host.Host)
 			}
 		}
 
@@ -394,9 +396,7 @@ func (s *Server) isReservedOIDCPath(path string) bool {
 	switch canonicalPath {
 	case "/.well-known/openid-configuration", "/authorize", "/login", "/device", "/logged-out", "/logout/success", "/health", "/token", "/userinfo", "/keys":
 		return true
-	}
-	switch {
-	case canonicalPath == "/oauth/introspect", canonicalPath == "/oauth/revoke":
+	case "/oauth/introspect", "/oauth/revoke":
 		return true
 	}
 	_, matched, err := matchEntraIDRoute(path, s.config.EntraID)

@@ -612,10 +612,6 @@ func loadPersistedManagedLeafCertificateInfos(cfg *config.Config) ([]managedIssu
 	return infos, nil
 }
 
-func (s *Server) ensureManagedLeafCertificate() (*managedLeafCertificate, error) {
-	return s.ensureManagedLeafCertificateForHost(config.IssuerHostname(s.config.OIDC.Issuer))
-}
-
 func (s *Server) ensureManagedLeafCertificateForHost(host string) (*managedLeafCertificate, error) {
 	s.managedLeafMu.Lock()
 	defer s.managedLeafMu.Unlock()
