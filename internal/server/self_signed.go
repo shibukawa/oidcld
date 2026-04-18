@@ -22,12 +22,16 @@ import (
 )
 
 var (
-	ErrSelfSignedConflictTLSProvided     = errors.New("self-signed TLS is configured and TLS certificate/key were also provided; choose one method")
-	ErrCertificateAuthorityConfigMissing = errors.New("certificate authority configuration is not available")
-	ErrIssuerHostNotCoveredByCADomains   = errors.New("oidc.iss host is not covered by certificate_authority.domains")
-	ErrRootCACertificateDecode           = errors.New("failed to decode root CA certificate")
-	ErrCAPEMDecode                       = errors.New("failed to decode CA PEM")
-	ErrCAKeyPEMDecode                    = errors.New("failed to decode CA key PEM")
+	ErrSelfSignedConflictTLSProvided      = errors.New("self-signed TLS is configured and TLS certificate/key were also provided; choose one method")
+	ErrCertificateAuthorityConfigMissing  = errors.New("certificate authority configuration is not available")
+	ErrIssuerHostNotCoveredByCADomains    = errors.New("oidc.iss host is not covered by certificate_authority.domains")
+	ErrManagedWildcardDomainNotConfigured = errors.New("managed wildcard domain is not configured")
+	ErrManagedWildcardDomainLabelRequired = errors.New("domain label is required")
+	ErrManagedWildcardDomainLabelInvalid  = errors.New("domain label must not contain dots or wildcard characters")
+	ErrManagedWildcardDomainNotCovered    = errors.New("domain is not covered by the managed wildcard domain")
+	ErrRootCACertificateDecode            = errors.New("failed to decode root CA certificate")
+	ErrCAPEMDecode                        = errors.New("failed to decode CA PEM")
+	ErrCAKeyPEMDecode                     = errors.New("failed to decode CA key PEM")
 )
 
 type managedTLSBundle struct {
@@ -405,19 +409,19 @@ func firstManagedOrganization(values []string) string {
 func managedWildcardHost(domains []string, domainLabel string) (string, error) {
 	wildcardDomain, ok := firstManagedWildcardDomain(domains)
 	if !ok {
-		return "", fmt.Errorf("managed wildcard domain is not configured")
+		return "", ErrManagedWildcardDomainNotConfigured
 	}
 	suffix, _ := strings.CutPrefix(wildcardDomain, "*.")
 	label := strings.TrimSpace(domainLabel)
 	if label == "" {
-		return "", fmt.Errorf("domain label is required")
+		return "", ErrManagedWildcardDomainLabelRequired
 	}
 	if strings.Contains(label, ".") || strings.Contains(label, "*") {
-		return "", fmt.Errorf("domain label must not contain dots or wildcard characters")
+		return "", ErrManagedWildcardDomainLabelInvalid
 	}
 	host := label + "." + suffix
 	if !config.HostMatchesCertificateDomain(host, wildcardDomain) {
-		return "", fmt.Errorf("domain %q is not covered by %q", host, wildcardDomain)
+		return "", fmt.Errorf("%w: %q is not covered by %q", ErrManagedWildcardDomainNotCovered, host, wildcardDomain)
 	}
 	return host, nil
 }
