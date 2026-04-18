@@ -154,6 +154,9 @@ func shouldUseHTTPSByDefault(cfg *config.Config, certFile, keyFile string) bool 
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			return true
 		}
+		if cfg.ReverseProxyUsesHTTPS() {
+			return true
+		}
 	}
 	return certFile != "" && keyFile != ""
 }

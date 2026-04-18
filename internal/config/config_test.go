@@ -72,6 +72,7 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "access_filter:"), "Should contain access filter section")
 	assert.True(t, strings.Contains(yamlContent, "console:"), "Should contain console section")
 	assert.True(t, strings.Contains(yamlContent, "certificate_authority:"), "Should contain certificate authority section")
+	assert.True(t, strings.Contains(yamlContent, "# reverse_proxy:"), "Should contain reverse proxy sample section")
 	assert.True(t, strings.Contains(yamlContent, "enabled: true"), "Should contain default access filter enabled state")
 	assert.True(t, strings.Contains(yamlContent, "max_forwarded_hops: 0"), "Should contain default forwarded hops")
 
@@ -225,6 +226,30 @@ func TestGenerateConfigYAMLWithEntraID(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "entraid:"), "Should contain entraid section")
 	assert.True(t, strings.Contains(yamlContent, "tenant_id:"), "Should contain tenant_id")
 	assert.True(t, strings.Contains(yamlContent, "version:"), "Should contain version")
+}
+
+func TestLoadConfig_NormalizesReverseProxyStaticDirRelativeToConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "app.localhost"
+      routes:
+        - path: "/"
+          static_dir: "./public"
+          spa_fallback: true
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(tempDir, "public"), cfg.ReverseProxy.Hosts[0].Routes[0].ResolvedStaticDir())
 }
 
 func TestLoadAndSaveConfig(t *testing.T) {

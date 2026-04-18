@@ -12,15 +12,15 @@ import (
 )
 
 var (
-	ErrTLSCertificateDecode            = errors.New("failed to decode TLS certificate")
-	ErrIssuerHostNotCoveredByTLSCertCN = errors.New("oidc.iss host is not covered by the TLS certificate SAN or CN")
+	ErrTLSCertificateDecode             = errors.New("failed to decode TLS certificate")
+	ErrIssuerHostNotCoveredByTLSCertCN  = errors.New("oidc.iss host is not covered by the TLS certificate SAN or CN")
 	ErrIssuerHostNotCoveredByTLSCertSAN = errors.New("oidc.iss host is not covered by the TLS certificate SAN")
 )
 
 type issuerHostCoverageError struct {
-	host   string
-	scope  string
-	inner  error
+	host  string
+	scope string
+	inner error
 }
 
 func (e *issuerHostCoverageError) Error() string {
@@ -36,7 +36,10 @@ func ValidateIssuerMatchesCertificate(issuer, certFile string) error {
 	if !ok || !strings.EqualFold(scheme, "https") {
 		return nil
 	}
+	return validateHostMatchesCertificate(host, certFile)
+}
 
+func validateHostMatchesCertificate(host, certFile string) error {
 	certPEM, err := os.ReadFile(certFile)
 	if err != nil {
 		return fmt.Errorf("failed to read TLS certificate %q: %w", certFile, err)

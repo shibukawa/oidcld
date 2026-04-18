@@ -158,7 +158,7 @@ func TestManagedLeafIssuedDomainsUseIssuerHostname(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, []string{"oidc.dev.localhost"}, managedLeafIssuedDomains(cfg))
+	assert.Equal(t, []string{"oidc.dev.localhost"}, managedLeafIssuedDomains(cfg, ""))
 }
 
 func TestValidateManagedIssuerDomainsRejectsMismatchedIssuer(t *testing.T) {
@@ -179,7 +179,7 @@ func TestValidateManagedIssuerDomainsRejectsMismatchedIssuer(t *testing.T) {
 func TestManagedLeafIssuedDomainsFallbackToLocalhost(t *testing.T) {
 	cfg := &config.Config{}
 
-	assert.Equal(t, []string{"localhost"}, managedLeafIssuedDomains(cfg))
+	assert.Equal(t, []string{"localhost"}, managedLeafIssuedDomains(cfg, ""))
 }
 
 func TestManagedWildcardHostBuildsCoveredHost(t *testing.T) {

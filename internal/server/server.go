@@ -1,11 +1,11 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/tls"
 	"errors"
 
 	// "log" was removed (diagnostic logs cleaned up)
@@ -18,6 +18,7 @@ import (
 	"log/slog"
 
 	// ...existing code...
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -56,12 +57,14 @@ type Server struct {
 	logger        *slog.Logger
 	prettyLog     *Logger // Add colorful logger
 	access        *compiledAccessFilter
-	managedLeaf   *managedLeafCertificate
+	managedLeaves map[string]*managedLeafCertificate
 	managedLeafMu sync.Mutex
 
 	// Autocert manager (optional)
 	autocertManager *AutocertManager
 	autocertCancel  context.CancelFunc
+	reverseProxy    *compiledReverseProxy
+	reverseProxyLog *reverseProxyLogStore
 }
 
 // SupportsAutocert reports whether this Server was built with autocert support
@@ -103,11 +106,12 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 
 	// Create the server instance
 	server := &Server{
-		config:     cfg,
-		storage:    storage,
-		privateKey: privateKey,
-		logger:     logger,
-		prettyLog:  NewLogger(), // Initialize colorful logger
+		config:        cfg,
+		storage:       storage,
+		privateKey:    privateKey,
+		logger:        logger,
+		prettyLog:     NewLogger(), // Initialize colorful logger
+		managedLeaves: map[string]*managedLeafCertificate{},
 	}
 
 	var err error
@@ -115,6 +119,11 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 	if err != nil {
 		return nil, fmt.Errorf("failed to build access filter: %w", err)
 	}
+	server.reverseProxy, err = newCompiledReverseProxy(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build reverse proxy routes: %w", err)
+	}
+	server.reverseProxyLog = newReverseProxyLogStore(reverseProxyLogRetention(cfg))
 
 	// Initialize the OpenID Provider
 	provider, err := server.createProvider()
@@ -269,6 +278,7 @@ func (s *Server) Handler() http.Handler {
 	if s.config.EntraID != nil {
 		baseHandler = s.entraIDRouteMiddleware(baseHandler)
 	}
+	baseHandler = s.reverseProxyMiddleware(baseHandler)
 
 	// Apply middleware in correct order so denied requests are still logged and get CORS headers.
 	handler := s.accessFilterMiddleware(baseHandler)
@@ -709,24 +719,28 @@ func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error
 	}
 
 	if certFile == "" && keyFile == "" {
-		leaf, err := s.ensureManagedLeafCertificate()
+		tlsConfig, err := s.buildListenerTLSConfig("", "")
 		if err != nil {
 			return err
 		}
-		server.TLSConfig = &tls.Config{
-			Certificates: []tls.Certificate{leaf.tlsCertificate},
-		}
+		server.TLSConfig = tlsConfig
 		if logStartup {
 			s.prettyLog.ServerStarting(s.startupSummary(true, "self-signed"))
 		}
 		return server.ListenAndServeTLS("", "")
 	}
 
+	tlsConfig, err := s.buildListenerTLSConfig(certFile, keyFile)
+	if err != nil {
+		return err
+	}
+	server.TLSConfig = tlsConfig
+
 	if logStartup {
 		s.prettyLog.ServerStarting(s.startupSummary(true, "manual"))
 	}
 
-	return server.ListenAndServeTLS(certFile, keyFile)
+	return server.ListenAndServeTLS("", "")
 }
 
 func (s *Server) startupSummary(tlsEnabled bool, tlsSource string) startupSummary {
@@ -829,10 +843,17 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 	if err != nil {
 		return err
 	}
+	compiledReverseProxy, err := newCompiledReverseProxy(newConfig)
+	if err != nil {
+		return err
+	}
 
 	// Update the configuration atomically
 	s.config = newConfig
 	s.access = compiledAccess
+	s.reverseProxy = compiledReverseProxy
+	s.reverseProxyLog = newReverseProxyLogStore(reverseProxyLogRetention(newConfig))
+	s.managedLeaves = map[string]*managedLeafCertificate{}
 
 	// Update storage adapter configuration
 	s.storage.UpdateConfig(newConfig)
@@ -864,7 +885,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		duration := time.Since(start)
 
 		// Health probes are intentionally silent to avoid access-log noise.
-		if r.URL != nil && r.URL.Path == "/health" {
+		if r.URL != nil && r.URL.Path == "/health" && wrapper.reverseProxy == nil {
 			return
 		}
 
@@ -878,6 +899,22 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		} else {
 			s.prettyLog.RequestLog(r.Method, r.URL.Path, wrapper.statusCode, duration)
 		}
+		if wrapper.reverseProxy != nil && s.reverseProxyLog != nil {
+			s.reverseProxyLog.Add(reverseProxyLogEntry{
+				Timestamp:  time.Now().UTC(),
+				Host:       requestHostname(r),
+				Method:     r.Method,
+				Path:       r.URL.Path,
+				StatusCode: wrapper.statusCode,
+				DurationMS: duration.Milliseconds(),
+				Bytes:      wrapper.bytesWritten,
+				RouteType:  wrapper.reverseProxy.RouteType,
+				RouteHost:  wrapper.reverseProxy.RouteHost,
+				RoutePath:  wrapper.reverseProxy.RoutePath,
+				Target:     wrapper.reverseProxy.Target,
+				RemoteAddr: r.RemoteAddr,
+			})
+		}
 	})
 }
 
@@ -885,12 +922,42 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 type responseWriter struct {
 	http.ResponseWriter
 
-	statusCode int
+	statusCode   int
+	bytesWritten int
+	reverseProxy *reverseProxyLogMeta
 }
 
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Write(data []byte) (int, error) {
+	n, err := rw.ResponseWriter.Write(data)
+	rw.bytesWritten += n
+	return n, err
+}
+
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := rw.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return hijacker.Hijack()
+}
+
+func (rw *responseWriter) Push(target string, opts *http.PushOptions) error {
+	pusher, ok := rw.ResponseWriter.(http.Pusher)
+	if !ok {
+		return http.ErrNotSupported
+	}
+	return pusher.Push(target, opts)
 }
 
 // handleDiscovery provides a custom discovery endpoint with pretty-printed JSON
