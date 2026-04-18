@@ -144,7 +144,7 @@ func TestAdminHandler_CertificateAndDownloadEndpointsUseManagedAssets(t *testing
 	err = json.Unmarshal(res.Body.Bytes(), &certificatesPayload)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(certificatesPayload.LeafCertificates))
-	assert.Equal(t, "OIDCLD", certificatesPayload.LeafCertificates[0].Organization)
+	assert.Equal(t, "OIDCLD (OpenID Connect)", certificatesPayload.LeafCertificates[0].Organization)
 	assert.Equal(t, "localhost", certificatesPayload.LeafCertificates[0].Domain)
 }
 
@@ -158,7 +158,7 @@ func TestManagedLeafIssuedDomainsUseIssuerHostname(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, []string{"oidc.dev.localhost"}, managedLeafIssuedDomains(cfg))
+	assert.Equal(t, []string{"oidc.dev.localhost"}, managedLeafIssuedDomains(cfg, ""))
 }
 
 func TestValidateManagedIssuerDomainsRejectsMismatchedIssuer(t *testing.T) {
@@ -179,7 +179,7 @@ func TestValidateManagedIssuerDomainsRejectsMismatchedIssuer(t *testing.T) {
 func TestManagedLeafIssuedDomainsFallbackToLocalhost(t *testing.T) {
 	cfg := &config.Config{}
 
-	assert.Equal(t, []string{"localhost"}, managedLeafIssuedDomains(cfg))
+	assert.Equal(t, []string{"localhost"}, managedLeafIssuedDomains(cfg, ""))
 }
 
 func TestManagedWildcardHostBuildsCoveredHost(t *testing.T) {

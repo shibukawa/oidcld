@@ -219,15 +219,15 @@ func generateManagedLeafCertificateFromRequest(request managedLeafCertificateReq
 	}, nil
 }
 
-func generateManagedLeafCertificate(cfg *config.Config, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, caCertPEM []byte) (*managedLeafCertificate, error) {
+func generateManagedLeafCertificate(cfg *config.Config, host string, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, caCertPEM []byte) (*managedLeafCertificate, error) {
 	leafTTL, err := time.ParseDuration(strings.TrimSpace(cfg.CertificateAuthority.LeafCertTTL))
 	if err != nil {
 		return nil, fmt.Errorf("invalid self-signed leaf certificate TTL: %w", err)
 	}
 
 	return generateManagedLeafCertificateFromRequest(managedLeafCertificateRequest{
-		Domain:       managedLeafCommonName(cfg, managedLeafIssuedDomains(cfg)),
-		Organization: "OIDCLD",
+		Domain:       managedLeafCommonName(cfg, host, managedLeafIssuedDomains(cfg, host)),
+		Organization: managedLeafOrganization(cfg, host),
 		NotBefore:    time.Now().UTC().Add(-time.Minute),
 		TTL:          leafTTL,
 	}, caCert, caKey, caCertPEM)
@@ -281,9 +281,12 @@ func firstManagedWildcardDomain(domains []string) (string, bool) {
 	return "", false
 }
 
-func managedLeafIssuedDomains(cfg *config.Config) []string {
+func managedLeafIssuedDomains(cfg *config.Config, host string) []string {
 	if cfg == nil {
 		return []string{"localhost"}
+	}
+	if trimmedHost := strings.TrimSpace(host); trimmedHost != "" {
+		return []string{trimmedHost}
 	}
 	if issuerHost := config.IssuerHostname(cfg.OIDC.Issuer); issuerHost != "" {
 		return []string{issuerHost}
@@ -291,9 +294,12 @@ func managedLeafIssuedDomains(cfg *config.Config) []string {
 	return []string{"localhost"}
 }
 
-func managedLeafCommonName(cfg *config.Config, domains []string) string {
+func managedLeafCommonName(cfg *config.Config, host string, domains []string) string {
 	if cfg == nil {
 		return firstManagedDomain(domains)
+	}
+	if trimmedHost := strings.TrimSpace(host); trimmedHost != "" && config.HostMatchesCertificateDomains(trimmedHost, domains) {
+		return trimmedHost
 	}
 	if issuerHost := config.IssuerHostname(cfg.OIDC.Issuer); issuerHost != "" && config.HostMatchesCertificateDomains(issuerHost, domains) {
 		return issuerHost
@@ -360,22 +366,59 @@ func (s *Server) loadManagedRootCAInfo() (map[string]any, error) {
 
 func (s *Server) loadManagedLeafCertificateInfos() ([]map[string]any, error) {
 	infos := make([]managedIssuedLeafInfo, 0, 4)
-	leaf, err := s.ensureManagedLeafCertificate()
-	if err == nil {
-		infos = append(infos, managedIssuedLeafInfo{
+	seenSerials := map[string]struct{}{}
+	for _, host := range managedSelfSignedHosts(s.config) {
+		leaf, err := s.ensureManagedLeafCertificateForHost(host)
+		if err != nil {
+			continue
+		}
+		info := managedIssuedLeafInfo{
 			subject:      leaf.certificate.Subject.String(),
 			organization: firstManagedOrganization(leaf.certificate.Subject.Organization),
 			serial:       leaf.certificate.SerialNumber.String(),
 			notBefore:    leaf.certificate.NotBefore,
 			notAfter:     leaf.certificate.NotAfter,
-			domain:       firstManagedDomain(leaf.certificate.DNSNames),
-		})
+			domain:       host,
+		}
+		if _, exists := seenSerials[info.serial]; exists {
+			continue
+		}
+		infos = append(infos, info)
+		seenSerials[info.serial] = struct{}{}
 	}
+
+	s.managedLeafMu.Lock()
+	for host, item := range s.managedLeaves {
+		if item == nil {
+			continue
+		}
+		serial := item.certificate.SerialNumber.String()
+		if _, exists := seenSerials[serial]; exists {
+			continue
+		}
+		infos = append(infos, managedIssuedLeafInfo{
+			subject:      item.certificate.Subject.String(),
+			organization: firstManagedOrganization(item.certificate.Subject.Organization),
+			serial:       serial,
+			notBefore:    item.certificate.NotBefore,
+			notAfter:     item.certificate.NotAfter,
+			domain:       host,
+		})
+		seenSerials[serial] = struct{}{}
+	}
+	s.managedLeafMu.Unlock()
+
 	persistedInfos, persistedErr := loadPersistedManagedLeafCertificateInfos(s.config)
 	if persistedErr != nil && len(infos) == 0 {
 		return nil, persistedErr
 	}
-	infos = append(infos, persistedInfos...)
+	for _, info := range persistedInfos {
+		if _, exists := seenSerials[info.serial]; exists {
+			continue
+		}
+		infos = append(infos, info)
+		seenSerials[info.serial] = struct{}{}
+	}
 	sort.Slice(infos, func(i, j int) bool {
 		return infos[i].notBefore.After(infos[j].notBefore)
 	})
@@ -404,6 +447,61 @@ func firstManagedOrganization(values []string) string {
 		}
 	}
 	return ""
+}
+
+func managedSelfSignedHosts(cfg *config.Config) []string {
+	if cfg == nil || cfg.CertificateAuthority == nil {
+		return nil
+	}
+
+	hosts := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	appendHost := func(host string) {
+		host = strings.ToLower(strings.TrimSpace(host))
+		if host == "" {
+			return
+		}
+		if _, exists := seen[host]; exists {
+			return
+		}
+		seen[host] = struct{}{}
+		hosts = append(hosts, host)
+	}
+
+	appendHost(config.IssuerHostname(cfg.OIDC.Issuer))
+	if cfg.ReverseProxy != nil {
+		for _, host := range cfg.ReverseProxy.Hosts {
+			if host.Scheme() != "https" || strings.TrimSpace(host.ResolvedTLSCertFile()) != "" {
+				continue
+			}
+			appendHost(host.Hostname())
+		}
+	}
+
+	return hosts
+}
+
+func managedLeafOrganization(cfg *config.Config, host string) string {
+	normalizedHost := strings.ToLower(strings.TrimSpace(host))
+	if normalizedHost == "" {
+		return "OIDCLD"
+	}
+	if cfg != nil {
+		if issuerHost := strings.ToLower(strings.TrimSpace(config.IssuerHostname(cfg.OIDC.Issuer))); issuerHost != "" && normalizedHost == issuerHost {
+			return "OIDCLD (OpenID Connect)"
+		}
+	}
+	if cfg != nil && cfg.ReverseProxy != nil {
+		for _, reverseProxyHost := range cfg.ReverseProxy.Hosts {
+			if reverseProxyHost.Scheme() != "https" || strings.TrimSpace(reverseProxyHost.ResolvedTLSCertFile()) != "" {
+				continue
+			}
+			if normalizedHost == strings.ToLower(strings.TrimSpace(reverseProxyHost.Hostname())) {
+				return "OIDCLD (Reverse Proxy)"
+			}
+		}
+	}
+	return "OIDCLD"
 }
 
 func managedWildcardHost(domains []string, domainLabel string) (string, error) {
@@ -514,14 +612,31 @@ func loadPersistedManagedLeafCertificateInfos(cfg *config.Config) ([]managedIssu
 	return infos, nil
 }
 
-func (s *Server) ensureManagedLeafCertificate() (*managedLeafCertificate, error) {
+func (s *Server) ensureManagedLeafCertificateForHost(host string) (*managedLeafCertificate, error) {
 	s.managedLeafMu.Lock()
 	defer s.managedLeafMu.Unlock()
 
-	if s.managedLeaf != nil && time.Now().Before(s.managedLeaf.certificate.NotAfter) {
-		return s.managedLeaf, nil
+	if s.managedLeaves == nil {
+		s.managedLeaves = map[string]*managedLeafCertificate{}
 	}
-	if err := validateManagedIssuerDomains(s.config); err != nil {
+	if s.config == nil || s.config.CertificateAuthority == nil {
+		return nil, ErrCertificateAuthorityConfigMissing
+	}
+	host = strings.TrimSpace(host)
+	if host == "" {
+		host = config.IssuerHostname(s.config.OIDC.Issuer)
+	}
+	if host == "" {
+		host = "localhost"
+	}
+
+	if leaf := s.managedLeaves[host]; leaf != nil && time.Now().Before(leaf.certificate.NotAfter) {
+		return leaf, nil
+	}
+	if !config.HostMatchesCertificateDomains(host, s.config.CertificateAuthority.Domains) {
+		return nil, &issuerHostCoverageError{host: host, scope: "certificate_authority.domains", inner: ErrIssuerHostNotCoveredByCADomains}
+	}
+	if err := validateManagedIssuerDomains(s.config); err != nil && host == config.IssuerHostname(s.config.OIDC.Issuer) {
 		return nil, err
 	}
 
@@ -533,11 +648,11 @@ func (s *Server) ensureManagedLeafCertificate() (*managedLeafCertificate, error)
 	if err != nil {
 		return nil, err
 	}
-	leaf, err := generateManagedLeafCertificate(s.config, caCert, caKey, caCertPEM)
+	leaf, err := generateManagedLeafCertificate(s.config, host, caCert, caKey, caCertPEM)
 	if err != nil {
 		return nil, err
 	}
-	s.managedLeaf = leaf
+	s.managedLeaves[host] = leaf
 	return leaf, nil
 }
 

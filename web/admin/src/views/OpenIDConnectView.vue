@@ -367,12 +367,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.oidc-page {
-  padding: 1.25rem;
-  height: 100%;
-  overflow: auto;
-}
-
 .oidc-layout {
   display: grid;
   gap: 1rem;
@@ -380,26 +374,6 @@ onBeforeUnmount(() => {
   grid-template-areas:
     "top top"
     "users endpoints";
-}
-
-.oidc-loading,
-.oidc-panel {
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 1.5rem;
-  background: rgba(255, 255, 255, 0.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 22px 48px rgba(3, 10, 27, 0.2);
-  backdrop-filter: blur(18px) saturate(130%);
-}
-
-.oidc-loading {
-  padding: 1rem 1.2rem;
-  color: rgba(240, 246, 255, 0.82);
-}
-
-.oidc-panel {
-  padding: 1.1rem 1.15rem;
 }
 
 .oidc-panel-top {
@@ -412,82 +386,6 @@ onBeforeUnmount(() => {
 
 .oidc-panel-endpoints {
   grid-area: endpoints;
-}
-
-.panel-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.8rem;
-  margin-bottom: 0.9rem;
-}
-
-.panel-eyebrow {
-  margin: 0 0 0.2rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(188, 226, 255, 0.86);
-}
-
-.panel-header h2,
-.panel-header h3 {
-  margin: 0;
-  color: #f6f9ff;
-  font-family: 'Fraunces', 'Times New Roman', serif;
-  font-size: 1.4rem;
-  line-height: 1.05;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem 1rem;
-}
-
-.detail-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.detail-row-wide,
-.detail-row-span-4 {
-  grid-column: 1 / -1;
-}
-
-.detail-row-span-2 {
-  grid-column: span 2;
-}
-
-.detail-label {
-  font-size: 0.73rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(188, 226, 255, 0.78);
-}
-
-.detail-value-group {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.detail-value,
-.endpoint-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: #f6f9ff;
-  font-size: 0.88rem;
-}
-
-.detail-text {
-  color: rgba(246, 249, 255, 0.9);
-  font-size: 0.92rem;
 }
 
 .option-list {
@@ -676,14 +574,6 @@ onBeforeUnmount(() => {
       "endpoints";
   }
 
-  .detail-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .detail-row-span-2 {
-    grid-column: 1 / -1;
-  }
-
   .endpoint-definition-list {
     grid-template-columns: 1fr;
   }
@@ -694,19 +584,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
-  .oidc-page {
-    padding: 0.9rem;
-  }
-
   .panel-header,
   .claims-header,
   .detail-value-group {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .detail-grid {
-    grid-template-columns: 1fr;
   }
 
   .user-button {

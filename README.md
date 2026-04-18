@@ -321,7 +321,7 @@ services:
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "8443:443"     # HTTPS OIDC server port
+      - "8443:443"     # HTTPS listener for oidc.localhost and app.localhost
       - "18889:18889"  # Developer Console + HTTP metadata companion
     volumes:
       - ./examples/autocert/config:/app/config:ro
@@ -344,11 +344,9 @@ services:
       args:
         VITE_OIDC_AUTHORITY: "https://oidc.localhost:8443"
         VITE_OIDC_CLIENT_ID: "test-client-id"
-        VITE_OIDC_REDIRECT_URI: "http://app.localhost:3000/redirect"
-        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "http://app.localhost:3000/"
+        VITE_OIDC_REDIRECT_URI: "https://app.localhost:8443/redirect"
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "https://app.localhost:8443/"
         VITE_OIDC_SCOPES: "openid,profile,email,offline_access,User.Read"
-    ports:
-      - "3000:80"
     depends_on:
       oidc.localhost:
         condition: service_healthy
@@ -358,7 +356,7 @@ volumes:
   oidcld-managed-ca:
 ```
 
-With this sample, logging out from the React app returns to `http://app.localhost:3000/`. If the provider lands on the logout success page first, oidcld now shows a short success message and automatically redirects back after a few seconds. The root CA can be downloaded from `http://localhost:18889/console/` and remains stable while the `oidcld-managed-ca` volume exists.
+With this sample, the browser-facing entrypoint for the React app is `https://app.localhost:8443/`. OIDCLD terminates TLS for both `oidc.localhost` and `app.localhost` on the same HTTPS listener, then reverse proxies `app.localhost` traffic to the internal frontend container. Logging out from the React app returns to `https://app.localhost:8443/`. If the provider lands on the logout success page first, oidcld now shows a short success message and automatically redirects back after a few seconds. The root CA can be downloaded from `http://localhost:18889/console/`, and the Developer Console also shows the reverse proxy configuration and request log while the `oidcld-managed-ca` volume remains stable.
 
 
 #### MSAL Configuration for OIDCLD

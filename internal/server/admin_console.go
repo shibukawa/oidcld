@@ -28,6 +28,7 @@ type adminStatusResponse struct {
 	AccessFilterEnabled  bool                        `json:"accessFilterEnabled"`
 	HTTPSExpected        bool                        `json:"httpsExpected"`
 	AutocertEnabled      bool                        `json:"autocertEnabled"`
+	ReverseProxyEnabled  bool                        `json:"reverseProxyEnabled"`
 	AdminConsole         *adminConsoleStatusResponse `json:"adminConsole,omitempty"`
 	OIDC                 *adminOIDCStatusResponse    `json:"oidc,omitempty"`
 	SelfSignedTLS        *selfSignedTLSStatus        `json:"selfSignedTls,omitempty"`
@@ -81,6 +82,29 @@ type adminUsersResponse struct {
 	Users []adminUserSummary `json:"users"`
 }
 
+type adminReverseProxyResponse struct {
+	LogRetention int                     `json:"logRetention"`
+	Hosts        []adminReverseProxyHost `json:"hosts"`
+}
+
+type adminReverseProxyHost struct {
+	Host      string                   `json:"host"`
+	TLSSource string                   `json:"tlsSource"`
+	Routes    []adminReverseProxyRoute `json:"routes"`
+}
+
+type adminReverseProxyRoute struct {
+	Path              string `json:"path"`
+	RouteType         string `json:"routeType"`
+	Target            string `json:"target"`
+	SPAFallback       bool   `json:"spaFallback"`
+	RewritePathPrefix string `json:"rewritePathPrefix,omitempty"`
+}
+
+type adminReverseProxyLogsResponse struct {
+	Entries []reverseProxyLogEntry `json:"entries"`
+}
+
 type adminUserSummary struct {
 	ID               string         `json:"id"`
 	DisplayName      string         `json:"displayName"`
@@ -112,6 +136,8 @@ func (s *Server) AdminHandler() http.Handler {
 	consoleMux.HandleFunc("/console/api/openid-connect/users", s.handleAdminUsers)
 	consoleMux.HandleFunc("/console/api/certificates", s.handleAdminCertificates)
 	consoleMux.HandleFunc("/console/api/certificates/issue", s.handleAdminIssueCertificate)
+	consoleMux.HandleFunc("/console/api/reverse-proxy", s.handleAdminReverseProxy)
+	consoleMux.HandleFunc("/console/api/reverse-proxy/logs", s.handleAdminReverseProxyLogs)
 	consoleMux.HandleFunc("/console/api/downloads/certificate-installer.zip", s.handleAdminCertificateInstallerDownload)
 	consoleMux.HandleFunc("/console/api/downloads/root-ca.pem", s.handleAdminRootCADownload)
 	consoleMux.HandleFunc("/console/api/downloads/install.sh", s.handleAdminUnixInstallScript)
@@ -126,6 +152,8 @@ func (s *Server) AdminHandler() http.Handler {
 	metadataHandler := s.ReadOnlyHTTPHandler()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/":
+			http.Redirect(w, r, "/console/", http.StatusPermanentRedirect)
 		case isConsolePath(r.URL.Path):
 			consoleMux.ServeHTTP(w, r)
 		case s.shouldServeConsoleMetadata(r.URL.Path):
@@ -157,6 +185,7 @@ func (s *Server) handleAdminStatus(w http.ResponseWriter, _ *http.Request) {
 		AccessFilterEnabled: s.config.AccessFilter != nil && s.config.AccessFilter.Enabled,
 		HTTPSExpected:       strings.HasPrefix(s.config.OIDC.Issuer, "https://") || (s.config.Autocert != nil && s.config.Autocert.Enabled),
 		AutocertEnabled:     s.config.Autocert != nil && s.config.Autocert.Enabled,
+		ReverseProxyEnabled: s.config.ReverseProxy != nil && len(s.config.ReverseProxy.Hosts) > 0,
 		UsersCount:          len(s.config.Users),
 		ValidScopes:         append([]string(nil), s.config.OIDC.ValidScopes...),
 		OIDC: &adminOIDCStatusResponse{
@@ -238,6 +267,50 @@ func (s *Server) handleAdminUsers(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+func (s *Server) handleAdminReverseProxy(w http.ResponseWriter, _ *http.Request) {
+	response := adminReverseProxyResponse{}
+	if s.config.ReverseProxy != nil {
+		response.LogRetention = s.config.ReverseProxy.LogRetention
+		for _, host := range s.config.ReverseProxy.Hosts {
+			item := adminReverseProxyHost{
+				Host:      host.NormalizedHost(),
+				TLSSource: adminReverseProxyTLSSource(s.config, host),
+			}
+			for _, route := range host.Routes {
+				target := route.TargetURL
+				routeType := "proxy"
+				if route.StaticDir != "" {
+					target = route.ResolvedStaticDir()
+					routeType = "static"
+				}
+				item.Routes = append(item.Routes, adminReverseProxyRoute{
+					Path:              route.Path,
+					RouteType:         routeType,
+					Target:            target,
+					SPAFallback:       route.SPAFallback,
+					RewritePathPrefix: route.RewritePathPrefix,
+				})
+			}
+			response.Hosts = append(response.Hosts, item)
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleAdminReverseProxyLogs(w http.ResponseWriter, _ *http.Request) {
+	response := adminReverseProxyLogsResponse{}
+	if s.reverseProxyLog != nil {
+		response.Entries = s.reverseProxyLog.Snapshot()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func cloneClaimsMap(src map[string]any) map[string]any {
 	if len(src) == 0 {
 		return map[string]any{}
@@ -264,6 +337,19 @@ func adminTLSSource(cfg *config.Config) string {
 		return "self-signed"
 	}
 	return "manual"
+}
+
+func adminReverseProxyTLSSource(cfg *config.Config, host config.ReverseProxyHost) string {
+	if host.Scheme() != "https" {
+		return "http"
+	}
+	if strings.TrimSpace(host.ResolvedTLSCertFile()) != "" {
+		return "manual"
+	}
+	if cfg != nil && cfg.CertificateAuthority != nil {
+		return "self-signed"
+	}
+	return "unknown"
 }
 
 func (s *Server) handleAdminCertificates(w http.ResponseWriter, _ *http.Request) {

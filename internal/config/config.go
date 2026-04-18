@@ -31,6 +31,19 @@ var (
 	ErrAccessFilterEmptyAllowedIPEntry        = errors.New("access_filter.extra_allowed_ips contains an empty entry")
 	ErrAccessFilterInvalidAllowedIPEntry      = errors.New("invalid access_filter.extra_allowed_ips entry")
 	ErrLoginUIInvalidAccentColor              = errors.New("oidc.login_ui.accent_color must be a hex color like #RRGGBB")
+	ErrReverseProxyHostRequired               = errors.New("reverse_proxy.hosts[].host is required")
+	ErrReverseProxyRouteRequired              = errors.New("reverse_proxy.hosts[].routes must not be empty")
+	ErrReverseProxyRoutePathInvalid           = errors.New("reverse_proxy.hosts[].routes[].path must start with /")
+	ErrReverseProxyRouteTargetRequired        = errors.New("reverse_proxy.hosts[].routes[] must define exactly one of target_url or static_dir")
+	ErrReverseProxyRouteTargetInvalid         = errors.New("reverse_proxy.hosts[].routes[].target_url must be an absolute http/https URL")
+	ErrReverseProxyTLSCertificateKeyRequired  = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file must be provided together")
+	ErrReverseProxyDuplicateHost              = errors.New("reverse_proxy.hosts[].host must be unique")
+	ErrReverseProxyHostAuthorityInvalid       = errors.New("reverse_proxy.hosts[].host must be a valid http:// or https:// URL authority")
+	ErrReverseProxyHostSchemeInvalid          = errors.New("reverse_proxy.hosts[].host must start with http:// or https://")
+	ErrReverseProxyHostNameRequired           = errors.New("reverse_proxy.hosts[].host must include a hostname")
+	ErrReverseProxyHostExtraComponents        = errors.New("reverse_proxy.hosts[].host must not include path, query, fragment, or userinfo")
+	ErrReverseProxyTLSRequiresHTTPSHost       = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file require an https host")
+	ErrReverseProxyRewritePathPrefixInvalid   = errors.New("reverse_proxy.hosts[].routes[].rewrite_path_prefix must start with /")
 )
 
 type autocertIssuerHostCoverageError struct {
@@ -61,6 +74,7 @@ type Config struct {
 	EntraID              *EntraIDConfig              `yaml:"entraid,omitempty"`
 	CORS                 *CORSConfig                 `yaml:"cors,omitempty"`
 	Autocert             *AutocertConfig             `yaml:"autocert,omitempty"`
+	ReverseProxy         *ReverseProxyConfig         `yaml:"reverse_proxy,omitempty"`
 	Users                map[string]User             `yaml:"users"`
 
 	sourceDir string `yaml:"-"`
@@ -777,6 +791,12 @@ func (c *Config) Normalize() error {
 	}
 	c.CertificateAuthority = certificateAuthority
 
+	reverseProxy, err := normalizeReverseProxyConfig(c.ReverseProxy, c.sourceDir)
+	if err != nil {
+		return err
+	}
+	c.ReverseProxy = reverseProxy
+
 	return nil
 }
 
@@ -1170,6 +1190,35 @@ cors:
     - "{{.}}"{{end}}{{end}}{{if .CORS.AllowedHeaders}}
   allowed_headers:{{range .CORS.AllowedHeaders}}
     - "{{.}}"{{end}}{{end}}
+{{end}}
+
+{{if .ReverseProxy}}# Reverse proxy and static hosting rules
+reverse_proxy:
+  log_retention: {{.ReverseProxy.LogRetention}}
+  hosts:{{range .ReverseProxy.Hosts}}
+    - host: "{{.Host}}"
+{{if .TLSCertFile}}      tls_cert_file: "{{.TLSCertFile}}"
+      tls_key_file: "{{.TLSKeyFile}}"{{end}}
+      routes:{{range .Routes}}
+        - path: "{{.Path}}"{{if .TargetURL}}
+          target_url: "{{.TargetURL}}"{{end}}{{if .StaticDir}}
+          static_dir: "{{.StaticDir}}"{{end}}
+          spa_fallback: {{.SPAFallback}}{{if .RewritePathPrefix}}
+          rewrite_path_prefix: "{{.RewritePathPrefix}}"{{end}}{{end}}{{end}}
+{{else}}# reverse_proxy:
+#   log_retention: 200
+#   hosts:
+#     - host: "https://app.dev.localhost"
+#       routes:
+#         - path: "/api"
+#           target_url: "http://127.0.0.1:3000"
+#         - path: "/"
+#           static_dir: "./web/dist"
+#           spa_fallback: true
+#     - host: "http://app-ui.dev.localhost"
+#       routes:
+#         - path: "/"
+#           target_url: "http://127.0.0.1:5173"
 {{end}}
 
 # User definitions

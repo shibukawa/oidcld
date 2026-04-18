@@ -39,8 +39,17 @@ certificate_authority:
   domains:
     - "localhost"
     - "oidc.localhost"
+    - "app.localhost"
   ca_cert_ttl: "87600h"
   leaf_cert_ttl: "720h"
+
+reverse_proxy:
+  log_retention: 200
+  hosts:
+    - host: "https://app.localhost"
+      routes:
+        - path: "/"
+          target_url: "http://app.localhost:80"
 
 # CORS for React development - using defaults
 cors:

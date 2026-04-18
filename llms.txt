@@ -140,21 +140,22 @@ The repository root `compose.yaml` defines three services:
 
 - `oidc.localhost`
   - Builds OIDCLD from the current repository.
-  - Binds `./examples/autocert/config/oidcld.yaml` to `/app/config.yaml` read-only.
-  - Exposes `18888:18888` for the HTTP metadata companion listener.
-  - Exposes `8443:443` for the HTTPS OIDC listener.
+  - Binds `./examples/autocert/config` into the container read-only.
+  - Exposes `18889:18889` for the Developer Console and HTTP metadata companion listener.
+  - Exposes `8443:443` for the shared HTTPS listener used by `oidc.localhost` and `app.localhost`.
   - Starts with:
-    - `serve --config /app/config.yaml --port 443 --http-readonly-port 18888`
+    - `serve --config /app/config/oidcld.yaml --port 443`
   - Health check uses:
-    - `oidcld health --url http://localhost:18888`
+    - `oidcld health --url http://localhost:18889`
 
 - `app.localhost`
   - Sample frontend container built from `examples/azure-msal-browser-react`.
-  - Exposes host port `3000`.
+  - Is only reachable inside the Docker network on port `80`.
   - Depends on `oidc.localhost` becoming healthy.
 
 - HTTPS traffic for the OIDC server comes in on `https://oidc.localhost:8443`.
-- HTTP on `http://localhost:18888` is a restricted metadata companion endpoint, not a full plaintext OIDC surface.
+- HTTPS traffic for the sample frontend comes in on `https://app.localhost:8443` and is reverse proxied by OIDCLD.
+- HTTP on `http://localhost:18889` is a restricted metadata companion endpoint plus the Developer Console, not a full plaintext OIDC surface.
 
 ## Environment
 

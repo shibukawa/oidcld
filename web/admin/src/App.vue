@@ -15,6 +15,16 @@ const navigation = [
     to: '/openid-connect',
     eyebrow: 'OIDC',
   },
+  {
+    label: 'Reverse Proxy',
+    to: '/reverse-proxy',
+    eyebrow: 'Proxy',
+  },
+  {
+    label: 'Traffic Logs',
+    to: '/reverse-proxy/logs',
+    eyebrow: 'Logs',
+  },
 ]
 </script>
 

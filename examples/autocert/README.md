@@ -3,7 +3,7 @@
 This sample uses the repository root [`compose.yaml`](/Users/shibukawayoshiki/develop/oidcld/compose.yaml) to run:
 
 - `oidc.localhost` as the OIDCLD HTTPS issuer
-- `app.localhost` as the MSAL browser sample
+- `app.localhost` as the MSAL browser sample served through OIDCLD's HTTPS reverse proxy
 
 ## Start
 
@@ -23,7 +23,9 @@ docker compose up --build
 - OIDC issuer: `https://oidc.localhost:8443`
 - Developer Console + metadata companion: `http://localhost:18889/console/`
 - Metadata-only HTTP endpoint: `http://localhost:18889/.well-known/openid-configuration`
-- React sample app: `http://app.localhost:3000/`
+- React sample app: `https://app.localhost:8443/`
+
+The browser-facing HTTPS listener is shared: OIDCLD terminates TLS for both `oidc.localhost` and `app.localhost`, then proxies `app.localhost` traffic to the internal sample container on Docker's private network. The reverse proxy configuration and request log are visible in the Developer Console.
 
 ## Login Screen Customization
 

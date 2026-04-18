@@ -100,6 +100,65 @@ func TestAdminHandler_CertificatesReturnsEmptyLeafsOutsideSelfSigned(t *testing.
 	assert.Equal(t, 0, len(payload.LeafCertificates))
 }
 
+func TestAdminHandler_CertificatesIncludeReverseProxyManagedHosts(t *testing.T) {
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer:      "https://oidc.localhost:18443",
+			ValidScopes: []string{"openid"},
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			CADir:       "./tls",
+			Domains:     []string{"oidc.localhost", "app.localhost"},
+			CACertTTL:   "87600h",
+			LeafCertTTL: "720h",
+		},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "https://app.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/", TargetURL: "http://app.localhost:80"},
+					},
+				},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/console/api/certificates", nil)
+	req.RemoteAddr = "127.0.0.1:41234"
+	res := httptest.NewRecorder()
+
+	server.AdminHandler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	var payload struct {
+		LeafCertificates []struct {
+			Organization string `json:"organization"`
+			Domain       string `json:"domain"`
+		} `json:"leafCertificates"`
+	}
+	err := json.Unmarshal(res.Body.Bytes(), &payload)
+	assert.NoError(t, err)
+	assert.True(t, len(payload.LeafCertificates) >= 2)
+
+	foundIssuer := false
+	foundProxy := false
+	for _, certificate := range payload.LeafCertificates {
+		if certificate.Domain == "oidc.localhost" && certificate.Organization == "OIDCLD (OpenID Connect)" {
+			foundIssuer = true
+		}
+		if certificate.Domain == "app.localhost" && certificate.Organization == "OIDCLD (Reverse Proxy)" {
+			foundProxy = true
+		}
+	}
+	assert.True(t, foundIssuer)
+	assert.True(t, foundProxy)
+}
+
 func TestAdminHandler_OpenIDConnectUsersReturnsConfiguredClaims(t *testing.T) {
 	server := createTestServer(&config.Config{
 		OIDC: config.OIDCConfig{
@@ -355,6 +414,27 @@ func TestAdminHandler_ServesFallbackWhenAssetsMissing(t *testing.T) {
 	assert.True(t,
 		containsAll(body, "Developer console assets were not found") || containsAll(body, "<div id=\"app\"></div>"),
 	)
+}
+
+func TestAdminHandler_RedirectsRootToConsole(t *testing.T) {
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "http://localhost:18888",
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "127.0.0.1:41234"
+	res := httptest.NewRecorder()
+
+	server.AdminHandler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusPermanentRedirect, res.Code)
+	assert.Equal(t, "/console/", res.Header().Get("Location"))
 }
 
 func TestAdminHandler_ServesReadOnlyMetadataOnConsoleListenerForHTTPS(t *testing.T) {

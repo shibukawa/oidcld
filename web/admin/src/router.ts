@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import CertificateAuthorityView from './views/CertificateAuthorityView.vue'
 import OpenIDConnectView from './views/OpenIDConnectView.vue'
+import ReverseProxyLogsView from './views/ReverseProxyLogsView.vue'
+import ReverseProxyView from './views/ReverseProxyView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -8,6 +10,8 @@ const router = createRouter({
     { path: '/', redirect: '/certificate-authority' },
     { path: '/certificate-authority', name: 'certificate-authority', component: CertificateAuthorityView },
     { path: '/openid-connect', name: 'openid-connect', component: OpenIDConnectView },
+    { path: '/reverse-proxy', name: 'reverse-proxy', component: ReverseProxyView },
+    { path: '/reverse-proxy/logs', name: 'reverse-proxy-logs', component: ReverseProxyLogsView },
     { path: '/dashboard', redirect: '/openid-connect' },
     { path: '/status', redirect: '/openid-connect' },
     { path: '/certificates', redirect: '/certificate-authority' },
