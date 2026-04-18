@@ -11,3 +11,8 @@ docs/PHASE4_REFACTORING_ANALYSIS.md
 docs/TESTING.md
 docs/TODO.md
 *.pem
+internal/server/adminassets/generated/*
+!internal/server/adminassets/generated/placeholder.txt
+
+node_modules
+web/admin/dist

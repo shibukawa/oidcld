@@ -19,7 +19,7 @@ func TestStorageAdapter_CreateAuthRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write"},
 		},
 	}, privateKey)
@@ -62,7 +62,7 @@ func TestStorageAdapter_AuthRequestByID(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{},
+		OIDC: config.OIDCConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -95,7 +95,7 @@ func TestStorageAdapter_SaveAuthCode_And_AuthRequestByCode(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{},
+		OIDC: config.OIDCConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -139,7 +139,7 @@ func TestStorageAdapter_DeleteAuthRequest(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{},
+		OIDC: config.OIDCConfig{},
 	}, privateKey)
 
 	ctx := t.Context()
@@ -172,7 +172,7 @@ func TestStorageAdapter_CreateAccessToken(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ExpiredIn: 3600,
 		},
 	}, privateKey)
@@ -209,7 +209,7 @@ func TestStorageAdapter_CreateAccessAndRefreshTokens(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ExpiredIn:           3600,
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
@@ -256,7 +256,7 @@ func TestStorageAdapter_TokenRequestByRefreshToken(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			RefreshTokenEnabled: true,
 			RefreshTokenExpiry:  86400,
 		},
@@ -324,7 +324,7 @@ func TestStorageAdapter_GetClientByID(t *testing.T) {
 	assert.NoError(t, err)
 
 	adapter := NewStorageAdapter(&config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}, privateKey)

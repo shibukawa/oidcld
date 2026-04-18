@@ -34,6 +34,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "valid production autocert config",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth.example.com",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:          true,
 					Domains:          []string{"auth.example.com"},
@@ -49,6 +52,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "valid staging autocert config",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth-staging.example.com",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:          true,
 					Domains:          []string{"auth-staging.example.com"},
@@ -63,6 +69,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "valid local autocert config",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth.local.dev",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Domains:  []string{"auth.local.dev"},
@@ -75,6 +84,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "missing domains should fail",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth.example.com",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Email:    "admin@example.com",
@@ -87,6 +99,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "empty domains should fail",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth.example.com",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Domains:  []string{},
@@ -100,6 +115,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "missing email should fail",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth.example.com",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Domains:  []string{"auth.example.com"},
@@ -112,6 +130,9 @@ func TestAutocertConfig_Validation(t *testing.T) {
 		{
 			name: "missing agree_tos should fail",
 			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://auth.example.com",
+				},
 				Autocert: &AutocertConfig{
 					Enabled:  true,
 					Domains:  []string{"auth.example.com"},
@@ -121,6 +142,22 @@ func TestAutocertConfig_Validation(t *testing.T) {
 			},
 			expectError: true,
 			errorMsg:    "autocert.agree_tos must be true when autocert is enabled",
+		},
+		{
+			name: "issuer host outside autocert domains should fail",
+			config: &Config{
+				OIDC: OIDCConfig{
+					Issuer: "https://issuer.example.com",
+				},
+				Autocert: &AutocertConfig{
+					Enabled:  true,
+					Domains:  []string{"auth.example.com"},
+					Email:    "admin@example.com",
+					AgreeTOS: true,
+				},
+			},
+			expectError: true,
+			errorMsg:    `oidc.iss host "issuer.example.com" is not covered by autocert.domains`,
 		},
 	}
 
@@ -341,7 +378,7 @@ func TestGetAutocertDefaults(t *testing.T) {
 func TestAutocertConfig_YAMLSerialization(t *testing.T) {
 	// Test YAML marshaling and unmarshaling
 	originalConfig := &Config{
-		OIDCLD: OIDCLDConfig{
+		OIDC: OIDCConfig{
 			Issuer: "https://auth.example.com",
 		},
 		Autocert: &AutocertConfig{
@@ -417,7 +454,7 @@ func TestAutocertConfig_FileOperations(t *testing.T) {
 
 	// Create test configuration
 	config := &Config{
-		OIDCLD: OIDCLDConfig{
+		OIDC: OIDCConfig{
 			Issuer: "https://auth.example.com",
 		},
 		Autocert: &AutocertConfig{

@@ -70,3 +70,6 @@ docker-compose*.yml
 *.bak
 *.backup
 *~
+
+# Node.js
+node_modules

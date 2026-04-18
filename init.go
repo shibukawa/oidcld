@@ -11,12 +11,13 @@ import (
 	cfgpkg "github.com/shibukawa/oidcld/internal/config"
 )
 
-// promptCertificateMethod asks user for certificate method (manual/ACME)
+// promptCertificateMethod asks user for certificate method (manual/ACME/self-signed)
 // and fills corresponding fields on InitCmd. Shared by standard and EntraID flows.
 func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
 	fmt.Println("1. Manual certificates (provide your own cert/key files)")
 	fmt.Println("2. ACME (Let's Encrypt's protocol for automatic certificates)")
-	fmt.Print("Choose certificate method [1/2]: ")
+	fmt.Println("3. Self-signed managed certificates (OIDCLD generates and manages a local root CA)")
+	fmt.Print("Choose certificate method [1/2/3]: ")
 	choice, err := reader.ReadString('\n')
 	if err != nil {
 		return fmt.Errorf("failed to read certificate choice: %w", err)
@@ -66,6 +67,13 @@ func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
 			email = "admin@localhost"
 		}
 		cmd.Email = email
+	case "3":
+		cmd.HTTPS = true
+		cmd.SelfSignedTLS = true
+		fmt.Println("Self-signed managed certificate configuration selected.")
+		fmt.Println("OIDCLD will generate a local root CA, manage leaf certificates, and enable the Developer Console.")
+		fmt.Println("Default development domain suffix: dev.localhost")
+		fmt.Println("Default Developer Console port: 18889")
 	default:
 		fmt.Println("Invalid choice, defaulting to manual certificates.")
 		fmt.Println("You will need to provide certificate files when starting the server.")
@@ -82,11 +90,12 @@ type InitCmd struct {
 	Issuer   string `help:"Custom issuer URL"`
 	HTTPS    bool   `help:"Enable HTTPS mode (default for EntraID templates)"`
 	// ACME/Autocert settings
-	Autocert   bool   `help:"Enable autocert for automatic HTTPS certificates"`
-	ACMEServer string `help:"ACME server URL for autocert" env:"OIDCLD_ACME_DIRECTORY_URL"`
-	Domains    string `help:"Comma-separated list of domains for autocert certificates"`
-	Email      string `help:"Email address for ACME registration" env:"OIDCLD_ACME_EMAIL"`
-	Overwrite  bool   `short:"w" help:"Overwrite existing files without confirmation"`
+	Autocert      bool   `help:"Enable autocert for automatic HTTPS certificates"`
+	SelfSignedTLS bool   `help:"Enable managed self-signed HTTPS certificates"`
+	ACMEServer    string `help:"ACME server URL for autocert" env:"OIDCLD_ACME_DIRECTORY_URL"`
+	Domains       string `help:"Comma-separated list of domains for autocert certificates"`
+	Email         string `help:"Email address for ACME registration" env:"OIDCLD_ACME_EMAIL"`
+	Overwrite     bool   `short:"w" help:"Overwrite existing files without confirmation"`
 }
 
 // Run executes the initialization command with the provided configuration.
@@ -131,14 +140,15 @@ func (cmd *InitCmd) Run() error {
 		}
 	}
 	cfg.ApplyInitServerOptions(mode, &cfgpkg.InitServerOptions{
-		TenantID:   cmd.TenantID,
-		Port:       cmd.Port,
-		Issuer:     cmd.Issuer,
-		HTTPS:      cmd.HTTPS,
-		Autocert:   cmd.Autocert,
-		ACMEServer: cmd.ACMEServer,
-		Domains:    domains,
-		Email:      cmd.Email,
+		TenantID:      cmd.TenantID,
+		Port:          cmd.Port,
+		Issuer:        cmd.Issuer,
+		HTTPS:         cmd.HTTPS,
+		Autocert:      cmd.Autocert,
+		SelfSignedTLS: cmd.SelfSignedTLS,
+		ACMEServer:    cmd.ACMEServer,
+		Domains:       domains,
+		Email:         cmd.Email,
 	})
 
 	// Save configuration file
@@ -153,6 +163,10 @@ func (cmd *InitCmd) Run() error {
 		fmt.Printf("  ACME enabled (server: %s)\n", cmd.ACMEServer)
 		fmt.Println("  Place any required cache dir or ensure ports 80/443 accessible.")
 		fmt.Println("  (For a custom ACME like 'myencrypt', set --acme-server URL appropriately.)")
+	} else if cmd.SelfSignedTLS {
+		fmt.Println("  Managed self-signed TLS: enabled")
+		fmt.Println("  Developer Console: enabled on http://127.0.0.1:18889/console/")
+		fmt.Println("  Default root CA storage: ./tls")
 	} else if cmd.HTTPS {
 		fmt.Println()
 		fmt.Println("HTTPS enabled - provide certificate files when starting:")
@@ -315,6 +329,9 @@ func (cmd *InitCmd) runWizard() error {
 			fmt.Printf("  ACME: enabled\n")
 			fmt.Printf("  ACME server: %s\n", cmd.ACMEServer)
 			fmt.Printf("  domains: %s\n", cmd.Domains)
+		} else if cmd.SelfSignedTLS {
+			fmt.Printf("  Managed self-signed TLS: enabled\n")
+			fmt.Printf("  Developer Console: enabled\n")
 		}
 	}
 	fmt.Printf("  Config file: %s\n", cmd.Config)

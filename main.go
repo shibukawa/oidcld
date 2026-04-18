@@ -262,8 +262,8 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 
 	// Use loaded config. Prefer explicit issuer if set.
 	if cfg != nil {
-		if cfg.OIDCLD.Issuer != "" {
-			if scheme, issuerHost, issuerPort, ok := config.IssuerURLParts(cfg.OIDCLD.Issuer); ok {
+		if cfg.OIDC.Issuer != "" {
+			if scheme, issuerHost, issuerPort, ok := config.IssuerURLParts(cfg.OIDC.Issuer); ok {
 				protocol = scheme
 				hostname = issuerHost
 				port = issuerPort
@@ -274,7 +274,7 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 			if len(cfg.Autocert.Domains) > 0 {
 				hostname = cfg.Autocert.Domains[0]
 			}
-		} else if cfg.OIDCLD.TLSCertFile != "" && cfg.OIDCLD.TLSKeyFile != "" {
+		} else if cfg.OIDC.TLSCertFile != "" && cfg.OIDC.TLSKeyFile != "" {
 			// TLS configured via cert files
 			protocol = "https"
 			port = config.DefaultServePort(true)

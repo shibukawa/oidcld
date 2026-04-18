@@ -234,7 +234,7 @@ func (s *StorageAdapter) CreateAccessToken(ctx context.Context, request op.Token
 	defer s.lock.Unlock()
 
 	tokenID := uuid.NewString()
-	expiration := time.Now().Add(time.Duration(s.config.OIDCLD.ExpiredIn) * time.Second)
+	expiration := time.Now().Add(time.Duration(s.config.OIDC.ExpiredIn) * time.Second)
 
 	token := &Token{
 		ID:        tokenID,
@@ -263,7 +263,7 @@ func (s *StorageAdapter) CreateAccessAndRefreshTokens(ctx context.Context, reque
 
 	// Create access token
 	accessTokenID := uuid.NewString()
-	expiration := time.Now().Add(time.Duration(s.config.OIDCLD.ExpiredIn) * time.Second)
+	expiration := time.Now().Add(time.Duration(s.config.OIDC.ExpiredIn) * time.Second)
 
 	accessToken := &Token{
 		ID:        accessTokenID,
@@ -277,9 +277,9 @@ func (s *StorageAdapter) CreateAccessAndRefreshTokens(ctx context.Context, reque
 
 	// Create refresh token if enabled
 	var refreshTokenID string
-	if s.config.OIDCLD.RefreshTokenEnabled {
+	if s.config.OIDC.RefreshTokenEnabled {
 		refreshTokenID = uuid.NewString()
-		refreshExpiration := time.Now().Add(time.Duration(s.config.OIDCLD.RefreshTokenExpiry) * time.Second)
+		refreshExpiration := time.Now().Add(time.Duration(s.config.OIDC.RefreshTokenExpiry) * time.Second)
 
 		refreshToken := &RefreshToken{
 			ID:        refreshTokenID,
@@ -614,7 +614,7 @@ func (s *StorageAdapter) AuthorizeClientIDSecret(ctx context.Context, clientID, 
 // buildScopes builds the complete list of supported scopes
 func (s *StorageAdapter) buildScopes() []string {
 	scopes := []string{"openid", "profile", "email"}
-	scopes = append(scopes, s.config.OIDCLD.ValidScopes...)
+	scopes = append(scopes, s.config.OIDC.ValidScopes...)
 	return scopes
 }
 

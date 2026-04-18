@@ -1,8 +1,7 @@
-# OIDCLD + ACME Auto Cert
+# OIDCLD + Managed Self-Signed TLS
 
 This sample uses the repository root [`compose.yaml`](/Users/shibukawayoshiki/develop/oidcld/compose.yaml) to run:
 
-- `myencrypt.localhost` as a local ACME server
 - `oidc.localhost` as the OIDCLD HTTPS issuer
 - `app.localhost` as the MSAL browser sample
 
@@ -14,16 +13,17 @@ docker compose up --build
 
 ## Trust The Local CA
 
-1. Open `http://localhost:14000/download`
-2. Download `rootCA.pem`
+1. Open `http://localhost:18889/console/`
+2. Download the root CA from the Certificate Authority page or `http://localhost:18889/console/api/downloads/root-ca.pem`
 3. Import it into your browser or OS trust store for local testing
+4. The CA stays the same across restarts while the `oidcld-managed-ca` Docker volume remains
 
 ## URLs
 
 - OIDC issuer: `https://oidc.localhost:8443`
-- Metadata-only HTTP endpoint: `http://localhost:18888`
+- Developer Console + metadata companion: `http://localhost:18889/console/`
+- Metadata-only HTTP endpoint: `http://localhost:18889/.well-known/openid-configuration`
 - React sample app: `http://app.localhost:3000/`
-- ACME helper UI: `http://localhost:14000/download`
 
 ## Login Screen Customization
 

@@ -16,8 +16,8 @@ import (
 func createLoginUITestServer(t *testing.T, cfg *config.Config) *Server {
 	t.Helper()
 
-	if cfg.OIDCLD.AccessFilter == nil {
-		cfg.OIDCLD.AccessFilter = &config.AccessFilterConfig{Enabled: false}
+	if cfg.AccessFilter == nil {
+		cfg.AccessFilter = &config.AccessFilterConfig{Enabled: false}
 	}
 
 	server, err := New(cfg)
@@ -45,7 +45,7 @@ func TestLoginHandlerRendersEnvironmentBannerAndMarkdown(t *testing.T) {
 	assert.NoError(t, err)
 
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 			LoginUI: &config.LoginUIConfig{
 				EnvTitle:         "Staging",
@@ -71,7 +71,7 @@ func TestLoginHandlerRendersEnvironmentBannerAndMarkdown(t *testing.T) {
 	assert.Equal(t, http.StatusOK, response.Code)
 	assert.Contains(t, body, "(Staging) OIDCLD: Login Page")
 	assert.Contains(t, body, `href="https://github.com/shibukawa/oidcld"`)
-	assert.Contains(t, body, cfg.OIDCLD.LoginUI.EffectiveAccentColor())
+	assert.Contains(t, body, cfg.OIDC.LoginUI.EffectiveAccentColor())
 	assert.Contains(t, body, "login-main")
 	assert.Contains(t, body, "users-panel")
 	assert.Contains(t, body, "request-card")
@@ -84,7 +84,7 @@ func TestLoginHandlerRendersEnvironmentBannerAndMarkdown(t *testing.T) {
 
 func TestLoginHandlerMissingMarkdownStillReturnsOK(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 			LoginUI: &config.LoginUIConfig{
 				EnvTitle:         "Staging",
@@ -118,7 +118,7 @@ func TestDeviceHandlerIgnoresLoginUIConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 			LoginUI: &config.LoginUIConfig{
 				EnvTitle:         "Staging",

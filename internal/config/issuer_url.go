@@ -60,6 +60,52 @@ func IssuerURLParts(issuer string) (scheme string, hostname string, port string,
 	return scheme, hostname, port, true
 }
 
+func IssuerHostname(issuer string) string {
+	_, hostname, _, ok := IssuerURLParts(issuer)
+	if !ok {
+		return ""
+	}
+	return hostname
+}
+
+func HostMatchesCertificateDomains(host string, domains []string) bool {
+	for _, domain := range domains {
+		if HostMatchesCertificateDomain(host, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+func HostMatchesCertificateDomain(host, domain string) bool {
+	host = strings.TrimSpace(host)
+	domain = strings.TrimSpace(domain)
+	if host == "" || domain == "" {
+		return false
+	}
+
+	if hostIP := net.ParseIP(host); hostIP != nil {
+		domainIP := net.ParseIP(strings.Trim(domain, "[]"))
+		return domainIP != nil && hostIP.Equal(domainIP)
+	}
+	if net.ParseIP(strings.Trim(domain, "[]")) != nil {
+		return false
+	}
+
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
+	if strings.HasPrefix(domain, "*.") {
+		suffix := strings.TrimPrefix(domain, "*.")
+		if suffix == "" || host == suffix || !strings.HasSuffix(host, "."+suffix) {
+			return false
+		}
+		prefix := strings.TrimSuffix(host, "."+suffix)
+		return prefix != "" && !strings.Contains(prefix, ".")
+	}
+
+	return host == domain
+}
+
 func normalizeEntraIssuerPath(issuer string, entraid *EntraIDConfig) string {
 	expectedPath := expectedEntraIssuerPath(entraid)
 	if issuer == "" || expectedPath == "" {

@@ -58,7 +58,7 @@ func TestValidateClientCredentials(t *testing.T) {
 
 func TestNewClientCredentialsClient(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 			ExpiredIn:   3600,
 		},
@@ -87,7 +87,7 @@ func TestNewClientCredentialsClient(t *testing.T) {
 
 func TestClient_ScopeValidation(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
@@ -136,7 +136,7 @@ func TestClient_ScopeValidation(t *testing.T) {
 
 func TestClient_ScopeValidation_NoValidScopes(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{}, // No valid scopes configured
 		},
 	}
@@ -151,7 +151,7 @@ func TestClient_ScopeValidation_NoValidScopes(t *testing.T) {
 
 func TestUpdateClientCredentialsClient(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write"},
 		},
 	}
@@ -196,7 +196,7 @@ func TestUpdateClientCredentialsClient(t *testing.T) {
 
 func TestUpdateClientCredentialsClient_NoValidScopes(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{}, // No valid scopes configured
 		},
 	}
@@ -225,7 +225,7 @@ func TestClientCredentialsTokenRequest(t *testing.T) {
 func TestStorageAdapter_ClientCredentials(t *testing.T) {
 	// Create test configuration
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
@@ -289,7 +289,7 @@ func TestStorageAdapter_ClientCredentials(t *testing.T) {
 func TestStorageAdapter_ClientCredentialsTokenRequest(t *testing.T) {
 	// Create test configuration
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
@@ -319,7 +319,7 @@ func TestStorageAdapter_ClientCredentialsTokenRequest(t *testing.T) {
 func TestStorageAdapter_ClientCredentialsIntegration(t *testing.T) {
 	// Create test configuration
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
@@ -382,7 +382,7 @@ func BenchmarkValidateClientCredentials(b *testing.B) {
 // Benchmark client creation
 func BenchmarkNewClientCredentialsClient(b *testing.B) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}
@@ -396,7 +396,7 @@ func BenchmarkNewClientCredentialsClient(b *testing.B) {
 // Benchmark scope validation
 func BenchmarkClient_IsScopeAllowed(b *testing.B) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write", "admin"},
 		},
 	}

@@ -18,14 +18,18 @@ import (
 )
 
 var (
-	ErrAutocertDomainsRequired              = errors.New("autocert.domains is required when autocert is enabled")
-	ErrAutocertEmailRequired                = errors.New("autocert.email is required when autocert is enabled")
-	ErrAutocertAgreeTOS                     = errors.New("autocert.agree_tos must be true when autocert is enabled")
-	ErrAutocertConflict                     = errors.New("autocert is enabled but TLS cert/key are also configured in oidcld config; choose one method")
-	ErrAccessFilterNegativeMaxForwardedHops = errors.New("oidcld.access_filter.max_forwarded_hops must be >= 0")
-	ErrAccessFilterEmptyAllowedIPEntry      = errors.New("oidcld.access_filter.extra_allowed_ips contains an empty entry")
-	ErrAccessFilterInvalidAllowedIPEntry    = errors.New("invalid oidcld.access_filter.extra_allowed_ips entry")
-	ErrLoginUIInvalidAccentColor            = errors.New("oidcld.login_ui.accent_color must be a hex color like #RRGGBB")
+	ErrAutocertDomainsRequired                = errors.New("autocert.domains is required when autocert is enabled")
+	ErrAutocertEmailRequired                  = errors.New("autocert.email is required when autocert is enabled")
+	ErrAutocertAgreeTOS                       = errors.New("autocert.agree_tos must be true when autocert is enabled")
+	ErrAutocertConflict                       = errors.New("autocert is enabled but TLS cert/key are also configured in oidc config; choose one method")
+	ErrCertificateAuthorityDomainsRequired    = errors.New("certificate_authority.domains is required")
+	ErrLegacyOIDCLDConfig                     = errors.New("legacy top-level key 'oidcld' is no longer supported; use 'oidc', 'console', and 'certificate_authority'")
+	ErrLegacyCertificateAuthorityDomainSuffix = errors.New("legacy key 'certificate_authority.domain_suffix' is no longer supported; use 'certificate_authority.domains'")
+	ErrLegacyCertificateAuthorityServerNames  = errors.New("legacy key 'certificate_authority.server_names' is no longer supported; use 'certificate_authority.domains'")
+	ErrAccessFilterNegativeMaxForwardedHops   = errors.New("access_filter.max_forwarded_hops must be >= 0")
+	ErrAccessFilterEmptyAllowedIPEntry        = errors.New("access_filter.extra_allowed_ips contains an empty entry")
+	ErrAccessFilterInvalidAllowedIPEntry      = errors.New("invalid access_filter.extra_allowed_ips entry")
+	ErrLoginUIInvalidAccentColor              = errors.New("oidc.login_ui.accent_color must be a hex color like #RRGGBB")
 )
 
 // Static errors for better error handling.
@@ -37,25 +41,27 @@ var (
 
 // Config represents the OIDCLD configuration.
 type Config struct {
-	OIDCLD   OIDCLDConfig    `yaml:"oidcld"`
-	EntraID  *EntraIDConfig  `yaml:"entraid,omitempty"`
-	CORS     *CORSConfig     `yaml:"cors,omitempty"`
-	Autocert *AutocertConfig `yaml:"autocert,omitempty"`
-	Users    map[string]User `yaml:"users"`
+	AccessFilter         *AccessFilterConfig         `yaml:"access_filter,omitempty"`
+	OIDC                 OIDCConfig                  `yaml:"oidc"`
+	Console              *ConsoleConfig              `yaml:"console,omitempty"`
+	CertificateAuthority *CertificateAuthorityConfig `yaml:"certificate_authority,omitempty"`
+	EntraID              *EntraIDConfig              `yaml:"entraid,omitempty"`
+	CORS                 *CORSConfig                 `yaml:"cors,omitempty"`
+	Autocert             *AutocertConfig             `yaml:"autocert,omitempty"`
+	Users                map[string]User             `yaml:"users"`
 
 	sourceDir string `yaml:"-"`
 }
 
-// OIDCLDConfig represents the core OpenID Connect configuration.
-type OIDCLDConfig struct {
-	Issuer              string              `yaml:"iss,omitempty"`
-	PKCERequired        bool                `yaml:"pkce_required,omitempty"`
-	NonceRequired       bool                `yaml:"nonce_required,omitempty"`
-	ExpiredIn           int                 `yaml:"expired_in,omitempty"` // Token expiration in seconds
-	AudienceClaimFormat string              `yaml:"aud_claim_format,omitempty"`
-	ValidScopes         []string            `yaml:"valid_scopes,omitempty"`
-	AccessFilter        *AccessFilterConfig `yaml:"access_filter,omitempty"`
-	LoginUI             *LoginUIConfig      `yaml:"login_ui,omitempty"`
+// OIDCConfig represents the core OpenID Connect configuration.
+type OIDCConfig struct {
+	Issuer              string         `yaml:"iss,omitempty"`
+	PKCERequired        bool           `yaml:"pkce_required,omitempty"`
+	NonceRequired       bool           `yaml:"nonce_required,omitempty"`
+	ExpiredIn           int            `yaml:"expired_in,omitempty"` // Token expiration in seconds
+	AudienceClaimFormat string         `yaml:"aud_claim_format,omitempty"`
+	ValidScopes         []string       `yaml:"valid_scopes,omitempty"`
+	LoginUI             *LoginUIConfig `yaml:"login_ui,omitempty"`
 	// TLS certificate file paths for serving HTTPS when not using autocert.
 	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
 	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
@@ -82,7 +88,7 @@ func normalizeAudienceClaimFormat(format string) string {
 	}
 }
 
-func (c OIDCLDConfig) NormalizedAudienceClaimFormat() string {
+func (c OIDCConfig) NormalizedAudienceClaimFormat() string {
 	return normalizeAudienceClaimFormat(c.AudienceClaimFormat)
 }
 
@@ -104,7 +110,7 @@ func DefaultServePort(useHTTPS bool) string {
 // ensureDefaultScopes ensures that standard OIDC scopes are present in the provided config.
 // When isEntra is true (EntraID compatibility modes), `address` and `phone` are not added
 // because EntraID does not expose them in the same way.
-func ensureDefaultScopes(cfg *OIDCLDConfig, isEntra bool) {
+func ensureDefaultScopes(cfg *OIDCConfig, isEntra bool) {
 	if cfg == nil {
 		return
 	}
@@ -164,8 +170,38 @@ type LoginUIConfig struct {
 	resolvedInfoMarkdownFile string `yaml:"-"`
 }
 
+// ConsoleConfig configures the HTTP developer console listener.
+type ConsoleConfig struct {
+	Port        string `yaml:"port,omitempty"`
+	BindAddress string `yaml:"bind_address,omitempty"`
+}
+
+// CertificateAuthorityConfig configures locally managed development certificates.
+type CertificateAuthorityConfig struct {
+	CADir       string   `yaml:"ca_dir,omitempty"`
+	Domains     []string `yaml:"domains,omitempty"`
+	CACertTTL   string   `yaml:"ca_cert_ttl,omitempty"`
+	LeafCertTTL string   `yaml:"leaf_cert_ttl,omitempty"`
+}
+
 func (c *LoginUIConfig) HasEnvironmentBanner() bool {
 	return c != nil && strings.TrimSpace(c.EnvTitle) != ""
+}
+
+func DefaultConsoleConfig() *ConsoleConfig {
+	return &ConsoleConfig{
+		Port:        "18889",
+		BindAddress: "127.0.0.1",
+	}
+}
+
+func DefaultCertificateAuthorityConfig() *CertificateAuthorityConfig {
+	return &CertificateAuthorityConfig{
+		CADir:       "./tls",
+		Domains:     []string{"localhost", "*.dev.localhost"},
+		CACertTTL:   "87600h",
+		LeafCertTTL: "720h",
+	}
 }
 
 func (c *LoginUIConfig) EffectiveAccentColor() string {
@@ -255,6 +291,10 @@ func loadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	if err := detectLegacyConfigKeys(data); err != nil {
+		return nil, err
+	}
+
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
@@ -269,6 +309,27 @@ func loadConfig(configPath string) (*Config, error) {
 	}
 
 	return &config, nil
+}
+
+func detectLegacyConfigKeys(data []byte) error {
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	if _, exists := raw["oidcld"]; exists {
+		return ErrLegacyOIDCLDConfig
+	}
+	if rawCA, exists := raw["certificate_authority"]; exists {
+		if ca, ok := rawCA.(map[string]any); ok {
+			if _, exists := ca["domain_suffix"]; exists {
+				return ErrLegacyCertificateAuthorityDomainSuffix
+			}
+			if _, exists := ca["server_names"]; exists {
+				return ErrLegacyCertificateAuthorityServerNames
+			}
+		}
+	}
+	return nil
 }
 
 // SaveConfig saves configuration to a YAML file using text template.
@@ -476,18 +537,20 @@ func createDefaultConfig(mode Mode) *Config {
 	}
 
 	config := &Config{
-		OIDCLD: OIDCLDConfig{
+		AccessFilter: DefaultAccessFilterConfig(),
+		OIDC: OIDCConfig{
 			PKCERequired:              false,
 			NonceRequired:             false,
 			ExpiredIn:                 3600,
 			AudienceClaimFormat:       AudienceClaimFormatString,
 			ValidScopes:               []string{"admin", "read", "write"},
-			AccessFilter:              DefaultAccessFilterConfig(),
 			RefreshTokenEnabled:       true,
 			RefreshTokenExpiry:        86400,
 			EndSessionEnabled:         true,
 			EndSessionEndpointVisible: true,
 		},
+		Console:              DefaultConsoleConfig(),
+		CertificateAuthority: DefaultCertificateAuthorityConfig(),
 		// Add CORS configuration for SPA development - enabled by default for development ease
 		CORS: &CORSConfig{
 			Enabled: true,
@@ -499,23 +562,23 @@ func createDefaultConfig(mode Mode) *Config {
 
 	switch mode {
 	case ModeStandard:
-		config.OIDCLD.Issuer = "http://localhost:18888"
+		config.OIDC.Issuer = "http://localhost:18888"
 	case ModeEntraIDv1:
-		config.OIDCLD.Issuer = "https://login.microsoftonline.com/common"
-		config.OIDCLD.NonceRequired = true
+		config.OIDC.Issuer = "https://login.microsoftonline.com/common"
+		config.OIDC.NonceRequired = true
 		config.EntraID = &EntraIDConfig{
 			TenantID: "common",
 			Version:  "v1",
 		}
 	case ModeEntraIDv2:
-		config.OIDCLD.Issuer = "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789abc/v2.0"
-		config.OIDCLD.NonceRequired = true
+		config.OIDC.Issuer = "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789abc/v2.0"
+		config.OIDC.NonceRequired = true
 		config.EntraID = &EntraIDConfig{
 			TenantID: "12345678-1234-1234-1234-123456789abc",
 			Version:  "v2",
 		}
 	default:
-		config.OIDCLD.Issuer = "http://localhost:18888"
+		config.OIDC.Issuer = "http://localhost:18888"
 	}
 
 	if err := config.Normalize(); err != nil {
@@ -533,6 +596,7 @@ type InitServerOptions struct {
 	Issuer           string
 	HTTPS            bool
 	Autocert         bool
+	SelfSignedTLS    bool
 	ACMEServer       string
 	Domains          []string
 	Email            string
@@ -559,28 +623,28 @@ func (c *Config) ApplyInitServerOptions(mode Mode, opts *InitServerOptions) {
 		c.EntraID.TenantID = opts.TenantID
 		// For EntraID v2 set issuer if not explicitly overridden
 		if mode == ModeEntraIDv2 {
-			c.OIDCLD.Issuer = fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", opts.TenantID)
+			c.OIDC.Issuer = fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", opts.TenantID)
 		}
 	}
 
 	// Issuer selection precedence mirrors init wizard logic
 	switch {
 	case opts.Port != "" && opts.Issuer != "":
-		c.OIDCLD.Issuer = opts.Issuer
+		c.OIDC.Issuer = opts.Issuer
 	case opts.Port != "" && mode == ModeStandard:
 		if opts.HTTPS {
-			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", opts.Port)
+			c.OIDC.Issuer = fmt.Sprintf("https://localhost:%s", opts.Port)
 		} else {
-			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
+			c.OIDC.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
 		}
 	case opts.Issuer != "":
-		c.OIDCLD.Issuer = opts.Issuer
+		c.OIDC.Issuer = opts.Issuer
 	case mode == ModeStandard:
 		defaultPort := DefaultServePort(opts.HTTPS)
 		if opts.HTTPS {
-			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", defaultPort)
+			c.OIDC.Issuer = fmt.Sprintf("https://localhost:%s", defaultPort)
 		} else {
-			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", defaultPort)
+			c.OIDC.Issuer = fmt.Sprintf("http://localhost:%s", defaultPort)
 		}
 	}
 
@@ -604,6 +668,15 @@ func (c *Config) ApplyInitServerOptions(mode Mode, opts *InitServerOptions) {
 		}
 		if len(opts.Domains) > 0 {
 			c.Autocert.Domains = opts.Domains
+		}
+	}
+
+	if opts.SelfSignedTLS {
+		if c.CertificateAuthority == nil {
+			c.CertificateAuthority = DefaultCertificateAuthorityConfig()
+		}
+		if c.Console == nil {
+			c.Console = DefaultConsoleConfig()
 		}
 	}
 }
@@ -635,8 +708,8 @@ func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message str
 		return false, ""
 	}
 
-	// Determine HTTPS from existing issuer or autocert
-	if c.OIDCLD.Issuer != "" && strings.HasPrefix(c.OIDCLD.Issuer, "https://") {
+	// Determine HTTPS from issuer or autocert only.
+	if c.OIDC.Issuer != "" && strings.HasPrefix(c.OIDC.Issuer, "https://") {
 		useHTTPS = true
 	}
 	if c.Autocert != nil && c.Autocert.Enabled {
@@ -645,14 +718,14 @@ func (c *Config) PrepareForServe(opts *ServeOptions) (useHTTPS bool, message str
 	}
 
 	// Ensure issuer is set appropriately if missing
-	if c.OIDCLD.Issuer == "" {
+	if c.OIDC.Issuer == "" {
 		if useHTTPS {
-			c.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", opts.Port)
+			c.OIDC.Issuer = fmt.Sprintf("https://localhost:%s", opts.Port)
 		} else {
-			c.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
+			c.OIDC.Issuer = fmt.Sprintf("http://localhost:%s", opts.Port)
 		}
 	}
-	c.OIDCLD.Issuer = NormalizeIssuerForServe(c.OIDCLD.Issuer, opts.Port, c.EntraID)
+	c.OIDC.Issuer = NormalizeIssuerForServe(c.OIDC.Issuer, opts.Port, c.EntraID)
 
 	return useHTTPS, message
 }
@@ -664,26 +737,92 @@ func (c *Config) Normalize() error {
 	}
 
 	isEntra := c.EntraID != nil
-	ensureDefaultScopes(&c.OIDCLD, isEntra)
-	c.OIDCLD.AudienceClaimFormat = normalizeAudienceClaimFormat(c.OIDCLD.AudienceClaimFormat)
+	ensureDefaultScopes(&c.OIDC, isEntra)
+	c.OIDC.AudienceClaimFormat = normalizeAudienceClaimFormat(c.OIDC.AudienceClaimFormat)
 
-	accessFilter, err := normalizeAccessFilterConfig(c.OIDCLD.AccessFilter)
+	accessFilter, err := normalizeAccessFilterConfig(c.AccessFilter)
 	if err != nil {
 		return err
 	}
-	c.OIDCLD.AccessFilter = accessFilter
+	c.AccessFilter = accessFilter
 
-	loginUI, omitLoginUI, err := normalizeLoginUIConfig(c.OIDCLD.LoginUI, c.sourceDir)
+	loginUI, omitLoginUI, err := normalizeLoginUIConfig(c.OIDC.LoginUI, c.sourceDir)
 	if err != nil {
 		return err
 	}
 	if omitLoginUI {
-		c.OIDCLD.LoginUI = nil
+		c.OIDC.LoginUI = nil
 	} else {
-		c.OIDCLD.LoginUI = loginUI
+		c.OIDC.LoginUI = loginUI
 	}
+	console := normalizeConsoleConfig(c.Console)
+	c.Console = console
+
+	certificateAuthority, err := normalizeCertificateAuthorityConfig(c.CertificateAuthority)
+	if err != nil {
+		return err
+	}
+	c.CertificateAuthority = certificateAuthority
 
 	return nil
+}
+
+func normalizeConsoleConfig(cfg *ConsoleConfig) *ConsoleConfig {
+	normalized := DefaultConsoleConfig()
+	if cfg == nil {
+		return normalized
+	}
+	if value := strings.TrimSpace(cfg.Port); value != "" {
+		normalized.Port = value
+	}
+	if value := strings.TrimSpace(cfg.BindAddress); value != "" {
+		normalized.BindAddress = value
+	}
+	return normalized
+}
+
+func normalizeCertificateAuthorityConfig(cfg *CertificateAuthorityConfig) (*CertificateAuthorityConfig, error) {
+	normalized := DefaultCertificateAuthorityConfig()
+	if cfg == nil {
+		return normalized, nil
+	}
+	if value := strings.TrimSpace(cfg.CADir); value != "" {
+		normalized.CADir = value
+	}
+	normalized.Domains = normalizeCertificateDomains(cfg.Domains)
+	if len(normalized.Domains) == 0 {
+		normalized.Domains = append([]string{}, DefaultCertificateAuthorityConfig().Domains...)
+	}
+	if value := strings.TrimSpace(cfg.CACertTTL); value != "" {
+		normalized.CACertTTL = value
+	}
+	if value := strings.TrimSpace(cfg.LeafCertTTL); value != "" {
+		normalized.LeafCertTTL = value
+	}
+
+	if len(normalized.Domains) == 0 {
+		return nil, ErrCertificateAuthorityDomainsRequired
+	}
+
+	return normalized, nil
+}
+
+func normalizeCertificateDomains(domains []string) []string {
+	normalized := make([]string, 0, len(domains))
+	seen := map[string]struct{}{}
+	for _, domain := range domains {
+		trimmed := strings.TrimSpace(domain)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func (c *Config) setSourceDir(configPath string) error {
@@ -697,6 +836,13 @@ func (c *Config) setSourceDir(configPath string) error {
 	}
 	c.sourceDir = filepath.Dir(absPath)
 	return nil
+}
+
+func (c *Config) SourceDir() string {
+	if c == nil {
+		return ""
+	}
+	return c.sourceDir
 }
 
 func normalizeAccessFilterConfig(cfg *AccessFilterConfig) (*AccessFilterConfig, error) {
@@ -915,39 +1061,66 @@ func contrastTextColor(hexColor string) string {
 
 // generateConfigYAML generates YAML configuration using text template
 func generateConfigYAML(config *Config) (string, error) {
-	tmpl := `# OpenID Connect IdP settings
-oidcld:{{if .OIDCLD.Issuer}}
-  iss: "{{.OIDCLD.Issuer}}"{{else}}
+	tmpl := `# Access filtering for OIDC and console listeners
+access_filter:
+  enabled: {{.AccessFilter.Enabled}}
+  extra_allowed_ips:{{if .AccessFilter.ExtraAllowedIPs}}{{range .AccessFilter.ExtraAllowedIPs}}
+    - "{{.}}"{{end}}{{else}} []{{end}}
+  max_forwarded_hops: {{.AccessFilter.MaxForwardedHops}}
+
+# OpenID Connect IdP settings
+oidc:{{if .OIDC.Issuer}}
+  iss: "{{.OIDC.Issuer}}"{{else}}
   # iss: "http://localhost:18888"{{end}}
-  pkce_required: {{.OIDCLD.PKCERequired}}
-  nonce_required: {{.OIDCLD.NonceRequired}}
-  expired_in: {{.OIDCLD.ExpiredIn}}  # Token expiration in seconds
-  aud_claim_format: {{.OIDCLD.NormalizedAudienceClaimFormat}}  # string or array for single-audience aud claim serialization
+  pkce_required: {{.OIDC.PKCERequired}}
+  nonce_required: {{.OIDC.NonceRequired}}
+  expired_in: {{.OIDC.ExpiredIn}}  # Token expiration in seconds
+  aud_claim_format: {{.OIDC.NormalizedAudienceClaimFormat}}  # string or array for single-audience aud claim serialization
   # Standard scopes (openid, profile, email) are always included
-  valid_scopes:  # Optional custom scopes{{range .OIDCLD.ValidScopes}}
+  valid_scopes:  # Optional custom scopes{{range .OIDC.ValidScopes}}
     - "{{.}}"{{end}}
-  access_filter:
-    enabled: {{.OIDCLD.AccessFilter.Enabled}}
-    extra_allowed_ips:{{if .OIDCLD.AccessFilter.ExtraAllowedIPs}}{{range .OIDCLD.AccessFilter.ExtraAllowedIPs}}
-      - "{{.}}"{{end}}{{else}} []{{end}}
-    max_forwarded_hops: {{.OIDCLD.AccessFilter.MaxForwardedHops}}
-{{if .OIDCLD.LoginUI}}
-  login_ui:{{if .OIDCLD.LoginUI.EnvTitle}}
-    env_title: "{{.OIDCLD.LoginUI.EnvTitle}}"{{end}}{{if .OIDCLD.LoginUI.AccentColor}}
-    accent_color: "{{.OIDCLD.LoginUI.AccentColor}}"{{end}}{{if .OIDCLD.LoginUI.InfoMarkdownFile}}
-    info_markdown_file: "{{.OIDCLD.LoginUI.InfoMarkdownFile}}"{{end}}
+{{if .OIDC.LoginUI}}
+  login_ui:{{if .OIDC.LoginUI.EnvTitle}}
+    env_title: "{{.OIDC.LoginUI.EnvTitle}}"{{end}}{{if .OIDC.LoginUI.AccentColor}}
+    accent_color: "{{.OIDC.LoginUI.AccentColor}}"{{end}}{{if .OIDC.LoginUI.InfoMarkdownFile}}
+    info_markdown_file: "{{.OIDC.LoginUI.InfoMarkdownFile}}"{{end}}
 {{else}}
   # login_ui:
   #   env_title: "Staging"
   #   accent_color: "#D97A00"
   #   info_markdown_file: "./docs/login-links.staging.md"
 {{end}}
-  refresh_token_enabled: {{.OIDCLD.RefreshTokenEnabled}}             # Enable refresh token support
-  refresh_token_expiry: {{.OIDCLD.RefreshTokenExpiry}}             # Refresh token expiry in seconds (24 hours)
-  end_session_enabled: {{.OIDCLD.EndSessionEnabled}}               # Enable logout/end session functionality
-  end_session_endpoint_visible: {{.OIDCLD.EndSessionEndpointVisible}}      # Show end_session_endpoint in discovery (optional)
-{{if .EntraID}}
-# EntraID/AzureAD compatibility settings
+  refresh_token_enabled: {{.OIDC.RefreshTokenEnabled}}             # Enable refresh token support
+  refresh_token_expiry: {{.OIDC.RefreshTokenExpiry}}             # Refresh token expiry in seconds (24 hours)
+  end_session_enabled: {{.OIDC.EndSessionEnabled}}               # Enable logout/end session functionality
+  end_session_endpoint_visible: {{.OIDC.EndSessionEndpointVisible}}      # Show end_session_endpoint in discovery (optional)
+
+{{if .Console}}# Developer Console listener
+console:
+  port: "{{.Console.Port}}"
+  bind_address: "{{.Console.BindAddress}}"
+{{else}}# console:
+#   port: "18889"
+#   bind_address: "127.0.0.1"
+{{end}}
+
+{{if .CertificateAuthority}}# Managed development certificate authority
+certificate_authority:
+  ca_dir: "{{.CertificateAuthority.CADir}}"
+  domains:{{range .CertificateAuthority.Domains}}
+    - "{{.}}"{{end}}
+  ca_cert_ttl: "{{.CertificateAuthority.CACertTTL}}"
+  leaf_cert_ttl: "{{.CertificateAuthority.LeafCertTTL}}"
+{{else}}# certificate_authority:
+#   ca_dir: "./tls"
+#   domains:
+#     - "localhost"
+#     - "*.dev.localhost"
+#   ca_cert_ttl: "87600h"
+#   leaf_cert_ttl: "720h"
+{{end}}
+
+{{if .EntraID}}# EntraID/AzureAD compatibility settings
 entraid:
   tenant_id: "{{.EntraID.TenantID}}"
   version: "{{.EntraID.Version}}"
@@ -1067,31 +1240,31 @@ func applyConfigUpdate(config *Config, key string, value any) error {
 	switch key {
 	case "pkce_required":
 		if v, ok := value.(bool); ok {
-			config.OIDCLD.PKCERequired = v
+			config.OIDC.PKCERequired = v
 		}
 	case "nonce_required":
 		if v, ok := value.(bool); ok {
-			config.OIDCLD.NonceRequired = v
+			config.OIDC.NonceRequired = v
 		}
 	case "expired_in":
 		if v, ok := value.(int); ok {
-			config.OIDCLD.ExpiredIn = v
+			config.OIDC.ExpiredIn = v
 		}
 	case "aud_claim_format":
 		if v, ok := value.(string); ok {
-			config.OIDCLD.AudienceClaimFormat = normalizeAudienceClaimFormat(v)
+			config.OIDC.AudienceClaimFormat = normalizeAudienceClaimFormat(v)
 		}
 	case "issuer", "iss":
 		if v, ok := value.(string); ok {
-			config.OIDCLD.Issuer = v
+			config.OIDC.Issuer = v
 		}
 	case "refresh_token_enabled":
 		if v, ok := value.(bool); ok {
-			config.OIDCLD.RefreshTokenEnabled = v
+			config.OIDC.RefreshTokenEnabled = v
 		}
 	case "refresh_token_expiry":
 		if v, ok := value.(int); ok {
-			config.OIDCLD.RefreshTokenExpiry = v
+			config.OIDC.RefreshTokenExpiry = v
 		}
 	case "autocert_enabled":
 		if config.Autocert == nil {
@@ -1126,6 +1299,7 @@ func (c *Config) ValidateAutocertConfig() error {
 		return nil // Disabled or nil autocert is valid
 	}
 
+	c.Autocert.Domains = normalizeCertificateDomains(c.Autocert.Domains)
 	if len(c.Autocert.Domains) == 0 {
 		return ErrAutocertDomainsRequired
 	}
@@ -1193,8 +1367,11 @@ func (c *Config) ValidateAutocertConfig() error {
 		}
 	}
 	// If autocert is enabled, disallow explicit TLS cert/key in OIDCLD config to avoid ambiguity.
-	if c.OIDCLD.TLSCertFile != "" || c.OIDCLD.TLSKeyFile != "" {
+	if c.OIDC.TLSCertFile != "" || c.OIDC.TLSKeyFile != "" {
 		return ErrAutocertConflict
+	}
+	if scheme, host, _, ok := IssuerURLParts(c.OIDC.Issuer); ok && strings.EqualFold(scheme, "https") && !HostMatchesCertificateDomains(host, c.Autocert.Domains) {
+		return fmt.Errorf("oidc.iss host %q is not covered by autocert.domains", host)
 	}
 	return nil
 }
@@ -1239,7 +1416,7 @@ func LoadConfig(configPath string, verbose bool) (*Config, error) {
 
 	// Apply verbose logging override
 	if verbose {
-		cfg.OIDCLD.VerboseLogging = true
+		cfg.OIDC.VerboseLogging = true
 	}
 
 	// Collect environment-based autocert overrides
@@ -1271,22 +1448,22 @@ func LoadConfig(configPath string, verbose bool) (*Config, error) {
 	}
 
 	if title, ok := os.LookupEnv("OIDCLD_ENV_TITLE"); ok {
-		if cfg.OIDCLD.LoginUI == nil {
-			cfg.OIDCLD.LoginUI = &LoginUIConfig{}
+		if cfg.OIDC.LoginUI == nil {
+			cfg.OIDC.LoginUI = &LoginUIConfig{}
 		}
-		cfg.OIDCLD.LoginUI.EnvTitle = strings.TrimSpace(title)
+		cfg.OIDC.LoginUI.EnvTitle = strings.TrimSpace(title)
 	}
 	if color, ok := os.LookupEnv("OIDCLD_ENV_COLOR"); ok {
-		if cfg.OIDCLD.LoginUI == nil {
-			cfg.OIDCLD.LoginUI = &LoginUIConfig{}
+		if cfg.OIDC.LoginUI == nil {
+			cfg.OIDC.LoginUI = &LoginUIConfig{}
 		}
-		cfg.OIDCLD.LoginUI.AccentColor = strings.TrimSpace(color)
+		cfg.OIDC.LoginUI.AccentColor = strings.TrimSpace(color)
 	}
 	if markdownFile, ok := os.LookupEnv("OIDCLD_ENV_MARKDOWN_FILE"); ok {
-		if cfg.OIDCLD.LoginUI == nil {
-			cfg.OIDCLD.LoginUI = &LoginUIConfig{}
+		if cfg.OIDC.LoginUI == nil {
+			cfg.OIDC.LoginUI = &LoginUIConfig{}
 		}
-		cfg.OIDCLD.LoginUI.InfoMarkdownFile = strings.TrimSpace(markdownFile)
+		cfg.OIDC.LoginUI.InfoMarkdownFile = strings.TrimSpace(markdownFile)
 	}
 
 	if err := cfg.Normalize(); err != nil {

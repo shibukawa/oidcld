@@ -1,0 +1,114 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "build: admin assets",
+        "build: backend"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "build: admin assets",
+      "type": "shell",
+      "hide": true,
+      "command": "npm --prefix web/admin ci && npm --prefix web/admin run build && mkdir -p internal/server/adminassets/generated && find internal/server/adminassets/generated -mindepth 1 ! -name placeholder.txt -exec rm -rf {} + && cp -R web/admin/dist/. internal/server/adminassets/generated/",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "build: backend",
+      "type": "shell",
+      "hide": true,
+      "command": "GOFLAGS=-mod=mod go build -trimpath -ldflags=\"-s\" .",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev",
+      "dependsOn": [
+        "dev: backend",
+        "dev: admin"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "dev: backend",
+      "type": "shell",
+      "hide": true,
+      "command": "GOFLAGS=-mod=mod go run . serve -c .vscode/oidcld.dev.yaml",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": "^(.*)$",
+            "kind": "file",
+            "file": 1,
+            "message": 1
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Developer Console|OpenID Connect"
+        }
+      }
+    },
+    {
+      "label": "dev: admin",
+      "type": "shell",
+      "hide": true,
+      "command": "npm run dev -- --host 127.0.0.1 --strictPort --open /console/",
+      "options": {
+        "cwd": "${workspaceFolder}/web/admin"
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": "^(.*)$",
+            "kind": "file",
+            "file": 1,
+            "message": 1
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "ready in|Local:"
+        }
+      }
+    }
+  ]
+}

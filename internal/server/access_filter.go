@@ -42,6 +42,15 @@ type accessFilterStartupInfo struct {
 	MaxForwardedHops int
 }
 
+type accessDecision struct {
+	Allowed bool
+	Reason  string
+
+	ForwardedHops     int
+	XForwardedForHops int
+	MaxForwardedHops  int
+}
+
 func newCompiledAccessFilter(cfg *config.AccessFilterConfig) (*compiledAccessFilter, error) {
 	if cfg == nil {
 		cfg = config.DefaultAccessFilterConfig()
@@ -76,51 +85,74 @@ func (f *compiledAccessFilter) startupInfo() accessFilterStartupInfo {
 
 func (s *Server) accessFilterMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		allowed, reason := s.evaluateAccess(r)
-		if !allowed {
+		decision := s.evaluateAccess(r)
+		if !decision.Allowed {
 			s.logger.Warn("Access filter denied request",
-				"reason", reason,
+				"reason", decision.Reason,
 				"method", r.Method,
 				"path", r.URL.Path,
 				"remote_addr", r.RemoteAddr,
 			)
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			http.Error(w, s.accessDeniedMessage(decision), http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (s *Server) evaluateAccess(r *http.Request) (bool, string) {
+func (s *Server) evaluateAccess(r *http.Request) accessDecision {
 	if s == nil || s.access == nil || !s.access.enabled {
-		return true, ""
+		return accessDecision{Allowed: true}
 	}
 
 	forwardedHops, hasForwarded, err := countForwardedHeaderHops(r.Header)
 	if err != nil {
-		return false, "malformed_forward_header"
+		return accessDecision{Reason: "malformed_forward_header"}
 	}
 	xForwardedForHops, hasXForwardedFor, err := countXForwardedForHops(r.Header)
 	if err != nil {
-		return false, "malformed_forward_header"
+		return accessDecision{Reason: "malformed_forward_header"}
 	}
 
 	if hasForwarded || hasXForwardedFor {
 		effectiveHops := max(forwardedHops, xForwardedForHops)
 		if effectiveHops <= s.access.maxForwardedHops {
-			return true, ""
+			return accessDecision{Allowed: true}
 		}
-		return false, "forwarded_hops_exceeded"
+		return accessDecision{
+			Reason:            "forwarded_hops_exceeded",
+			ForwardedHops:     forwardedHops,
+			XForwardedForHops: xForwardedForHops,
+			MaxForwardedHops:  s.access.maxForwardedHops,
+		}
 	}
 
 	peerIP, err := remotePeerIP(r.RemoteAddr)
 	if err != nil {
-		return false, "peer_not_allowed"
+		return accessDecision{Reason: "peer_not_allowed"}
 	}
 	if s.access.isAllowedPeer(peerIP) {
-		return true, ""
+		return accessDecision{Allowed: true}
 	}
-	return false, "peer_not_allowed"
+	return accessDecision{Reason: "peer_not_allowed"}
+}
+
+func (s *Server) accessDeniedMessage(decision accessDecision) string {
+	switch decision.Reason {
+	case "forwarded_hops_exceeded":
+		effectiveHops := max(decision.ForwardedHops, decision.XForwardedForHops)
+		return fmt.Sprintf(
+			"Forbidden\n\nOIDCLD access_filter denied this request because the forwarded hop count exceeded the configured limit.\n\nConfigured max_forwarded_hops: %d\nObserved effective hops: %d\nForwarded header hops: %d\nX-Forwarded-For hops: %d\n\nAdjust access_filter.max_forwarded_hops if this proxy chain is expected.",
+			decision.MaxForwardedHops,
+			effectiveHops,
+			decision.ForwardedHops,
+			decision.XForwardedForHops,
+		)
+	case "malformed_forward_header":
+		return "Forbidden\n\nOIDCLD access_filter denied this request because the forwarded headers were malformed."
+	default:
+		return http.StatusText(http.StatusForbidden)
+	}
 }
 
 func (f *compiledAccessFilter) isAllowedPeer(ip net.IP) bool {

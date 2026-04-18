@@ -1,2 +1,2 @@
-oidcld:
+oidc:
   iss: "http://oidc.localhost:18888"

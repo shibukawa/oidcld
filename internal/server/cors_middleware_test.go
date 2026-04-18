@@ -14,11 +14,11 @@ import (
 
 func newEntraIDv2CORSConfig() *config.Config {
 	return &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		AccessFilter: &config.AccessFilterConfig{Enabled: false},
+		OIDC: config.OIDCConfig{
 			Issuer:                    "https://oidc.localhost:8443",
 			ExpiredIn:                 3600,
 			ValidScopes:               []string{"openid", "profile", "email"},
-			AccessFilter:              &config.AccessFilterConfig{Enabled: false},
 			PKCERequired:              true,
 			NonceRequired:             true,
 			EndSessionEnabled:         true,
@@ -47,11 +47,11 @@ func newEntraIDv2CORSConfig() *config.Config {
 
 func newEntraIDv1CORSConfig() *config.Config {
 	return &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		AccessFilter: &config.AccessFilterConfig{Enabled: false},
+		OIDC: config.OIDCConfig{
 			Issuer:                    "https://oidc.localhost:8443",
 			ExpiredIn:                 3600,
 			ValidScopes:               []string{"openid", "profile", "email"},
-			AccessFilter:              &config.AccessFilterConfig{Enabled: false},
 			PKCERequired:              true,
 			NonceRequired:             true,
 			EndSessionEnabled:         true,
@@ -253,11 +253,11 @@ func TestCORSMiddleware(t *testing.T) {
 func TestCORSMiddlewareIntegration(t *testing.T) {
 	// Create a minimal config with CORS enabled
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		AccessFilter: &config.AccessFilterConfig{Enabled: false},
+		OIDC: config.OIDCConfig{
 			Issuer:        "http://localhost:18888",
 			ExpiredIn:     3600,
 			ValidScopes:   []string{"read", "write"},
-			AccessFilter:  &config.AccessFilterConfig{Enabled: false},
 			PKCERequired:  false,
 			NonceRequired: false,
 		},
@@ -316,11 +316,11 @@ func TestCORSMiddlewareIntegration(t *testing.T) {
 
 func TestCORSMiddlewareIntegrationWithEntraIDv2PrefixedDiscovery(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		AccessFilter: &config.AccessFilterConfig{Enabled: false},
+		OIDC: config.OIDCConfig{
 			Issuer:                    "https://oidc.localhost:8443",
 			ExpiredIn:                 3600,
 			ValidScopes:               []string{"openid", "profile", "email"},
-			AccessFilter:              &config.AccessFilterConfig{Enabled: false},
 			PKCERequired:              true,
 			NonceRequired:             true,
 			EndSessionEnabled:         true,
@@ -372,7 +372,7 @@ func TestCORSMiddlewareIntegrationWithEntraIDv2PrefixedDiscovery(t *testing.T) {
 		return value
 	}
 
-	assert.Equal(t, cfg.OIDCLD.Issuer, getString("issuer"))
+	assert.Equal(t, cfg.OIDC.Issuer, getString("issuer"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/v2.0/authorize", getString("authorization_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/v2.0/token", getString("token_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/v2.0/logout", getString("end_session_endpoint"))
@@ -411,7 +411,7 @@ func TestCORSMiddlewareIntegrationWithEntraIDv2AliasTenantDiscovery(t *testing.T
 		return value
 	}
 
-	assert.Equal(t, cfg.OIDCLD.Issuer, getString("issuer"))
+	assert.Equal(t, cfg.OIDC.Issuer, getString("issuer"))
 	assert.Equal(t, "https://oidc.localhost:8443/common/oauth2/v2.0/authorize", getString("authorization_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/common/oauth2/v2.0/token", getString("token_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/common/v2.0/userinfo", getString("userinfo_endpoint"))
@@ -450,7 +450,7 @@ func TestCORSMiddlewareIntegrationWithEntraIDv2TenantlessDiscovery(t *testing.T)
 		return value
 	}
 
-	assert.Equal(t, cfg.OIDCLD.Issuer, getString("issuer"))
+	assert.Equal(t, cfg.OIDC.Issuer, getString("issuer"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/v2.0/authorize", getString("authorization_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/v2.0/token", getString("token_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/v2.0/userinfo", getString("userinfo_endpoint"))
@@ -514,7 +514,7 @@ func TestCORSMiddlewareIntegrationWithEntraIDv1AliasTenantDiscovery(t *testing.T
 		return value
 	}
 
-	assert.Equal(t, cfg.OIDCLD.Issuer, getString("issuer"))
+	assert.Equal(t, cfg.OIDC.Issuer, getString("issuer"))
 	assert.Equal(t, "https://oidc.localhost:8443/common/oauth2/authorize", getString("authorization_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/common/oauth2/token", getString("token_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/common/userinfo", getString("userinfo_endpoint"))
@@ -545,7 +545,7 @@ func TestCORSMiddlewareIntegrationWithEntraIDv1TenantlessDiscovery(t *testing.T)
 		return value
 	}
 
-	assert.Equal(t, cfg.OIDCLD.Issuer, getString("issuer"))
+	assert.Equal(t, cfg.OIDC.Issuer, getString("issuer"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/authorize", getString("authorization_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/oauth2/token", getString("token_endpoint"))
 	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/userinfo", getString("userinfo_endpoint"))

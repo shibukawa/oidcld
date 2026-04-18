@@ -131,7 +131,7 @@ func (t *InitTool) Execute(ctx context.Context, args map[string]any) (any, error
 	}
 
 	// Set issuer URL with port
-	cfg.OIDCLD.Issuer = fmt.Sprintf("http://localhost:%s", port)
+	cfg.OIDC.Issuer = fmt.Sprintf("http://localhost:%s", port)
 
 	// Save configuration
 	absPath, err := t.server.setConfigPath(configPath)
@@ -182,15 +182,15 @@ func (t *QueryConfigTool) Execute(ctx context.Context, args map[string]any) (any
 	// Mask sensitive information
 	result := map[string]any{
 		"oidcld": map[string]any{
-			"issuer":                       cfg.OIDCLD.Issuer,
-			"pkce_required":                cfg.OIDCLD.PKCERequired,
-			"nonce_required":               cfg.OIDCLD.NonceRequired,
-			"expired_in":                   cfg.OIDCLD.ExpiredIn,
-			"valid_scopes":                 cfg.OIDCLD.ValidScopes,
-			"refresh_token_enabled":        cfg.OIDCLD.RefreshTokenEnabled,
-			"refresh_token_expiry":         cfg.OIDCLD.RefreshTokenExpiry,
-			"end_session_enabled":          cfg.OIDCLD.EndSessionEnabled,
-			"end_session_endpoint_visible": cfg.OIDCLD.EndSessionEndpointVisible,
+			"issuer":                       cfg.OIDC.Issuer,
+			"pkce_required":                cfg.OIDC.PKCERequired,
+			"nonce_required":               cfg.OIDC.NonceRequired,
+			"expired_in":                   cfg.OIDC.ExpiredIn,
+			"valid_scopes":                 cfg.OIDC.ValidScopes,
+			"refresh_token_enabled":        cfg.OIDC.RefreshTokenEnabled,
+			"refresh_token_expiry":         cfg.OIDC.RefreshTokenExpiry,
+			"end_session_enabled":          cfg.OIDC.EndSessionEnabled,
+			"end_session_endpoint_visible": cfg.OIDC.EndSessionEndpointVisible,
 		},
 		"users": cfg.Users,
 	}
@@ -391,15 +391,15 @@ func (t *ModifyConfigTool) Execute(ctx context.Context, args map[string]any) (an
 	// Apply updates (simplified implementation)
 	if oidcldUpdates, ok := updates["oidcld"].(map[string]any); ok {
 		if pkceRequired, ok := oidcldUpdates["pkce_required"].(bool); ok {
-			cfg.OIDCLD.PKCERequired = pkceRequired
+			cfg.OIDC.PKCERequired = pkceRequired
 		}
 
 		if nonceRequired, ok := oidcldUpdates["nonce_required"].(bool); ok {
-			cfg.OIDCLD.NonceRequired = nonceRequired
+			cfg.OIDC.NonceRequired = nonceRequired
 		}
 
 		if expiredIn, ok := oidcldUpdates["expired_in"].(float64); ok {
-			cfg.OIDCLD.ExpiredIn = int(expiredIn)
+			cfg.OIDC.ExpiredIn = int(expiredIn)
 		}
 	}
 

@@ -25,7 +25,7 @@ type ClientCredentialsClient struct {
 func NewClientCredentialsClient(clientID, _ string, config *config.Config) *ClientCredentialsClient {
 	return &ClientCredentialsClient{
 		id:          clientID,
-		validScopes: config.OIDCLD.ValidScopes,
+		validScopes: config.OIDC.ValidScopes,
 	}
 }
 

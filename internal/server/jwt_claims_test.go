@@ -10,7 +10,7 @@ import (
 )
 
 func TestBuildDeviceFlowIDTokenClaims_IncludesExpectedProfileAndEmailClaims(t *testing.T) {
-	server := &Server{config: &config.Config{OIDCLD: config.OIDCLDConfig{Issuer: "https://issuer.example.com"}}}
+	server := &Server{config: &config.Config{OIDC: config.OIDCConfig{Issuer: "https://issuer.example.com"}}}
 	now := time.Unix(1700000000, 0)
 	expiry := now.Add(time.Hour)
 

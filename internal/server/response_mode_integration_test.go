@@ -13,8 +13,8 @@ import (
 
 // createTestServer creates a test server with the given config
 func createTestServer(cfg *config.Config) *Server {
-	if cfg.OIDCLD.AccessFilter == nil {
-		cfg.OIDCLD.AccessFilter = &config.AccessFilterConfig{Enabled: false}
+	if cfg.AccessFilter == nil {
+		cfg.AccessFilter = &config.AccessFilterConfig{Enabled: false}
 	}
 	// Use proper constructor to initialize all fields including Manager
 	server, err := New(cfg)
@@ -28,7 +28,7 @@ func createTestServer(cfg *config.Config) *Server {
 func TestResponseModeFragmentIntegration(t *testing.T) {
 	// Create test server with minimal config
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:      "http://localhost:18888",
 			ExpiredIn:   3600,
 			ValidScopes: []string{"read", "write", "openid", "profile", "email"},
@@ -184,8 +184,8 @@ func TestResponseModeFragmentIntegration(t *testing.T) {
 // TestResponseModeErrorHandling tests error responses with different response modes
 func TestResponseModeErrorHandling(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{},
-		Users:  map[string]config.User{},
+		OIDC:  config.OIDCConfig{},
+		Users: map[string]config.User{},
 	}
 	server := createTestServer(cfg)
 	t.Run("Fragment Mode Error Response", func(t *testing.T) {
@@ -215,7 +215,7 @@ func TestResponseModeErrorHandling(t *testing.T) {
 // TestResponseModeCompatibility tests compatibility with different client scenarios
 func TestResponseModeCompatibility(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write"},
 		},
 		Users: map[string]config.User{
@@ -263,7 +263,7 @@ func TestResponseModeCompatibility(t *testing.T) {
 // TestResponseModeValidation tests validation of response_mode parameter
 func TestResponseModeValidation(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{},
+		OIDC: config.OIDCConfig{},
 		Users: map[string]config.User{
 			"user1": {
 				DisplayName: "User One",

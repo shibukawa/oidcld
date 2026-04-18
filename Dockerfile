@@ -1,32 +1,54 @@
 # syntax=docker/dockerfile:1
 
-# Build stage
-FROM golang:1.26 AS builder
+# Build admin console assets
+FROM node:24-trixie AS admin-builder
 
-# Set working directory
+WORKDIR /app/web/admin
+
+COPY web/admin/package.json web/admin/package-lock.json ./
+
+RUN npm ci
+
+COPY web/admin/ ./
+
+RUN npm run build
+
+# Build stage
+FROM golang:1.26-trixie AS builder
+
 WORKDIR /app
 
-# Build arguments for version information
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
 
-# Copy go mod files and download dependencies with cache mount
-RUN --mount=type=bind,source=go.mod,target=go.mod \
-    --mount=type=bind,source=go.sum,target=go.sum \
-    --mount=type=cache,target=/go/pkg/mod \
+COPY go.mod go.sum ./
+
+RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download -x
 
-# Build the binary with bind mount for source and cache for build
-RUN --mount=type=bind,target=. \
-    --mount=type=cache,target=/go/pkg/mod \
+COPY . .
+COPY --from=admin-builder /app/web/admin/dist /tmp/admin-dist
+
+RUN mkdir -p internal/server/adminassets/generated && \
+    find internal/server/adminassets/generated -mindepth 1 ! -name placeholder.txt -exec rm -rf {} + && \
+    cp -R /tmp/admin-dist/. internal/server/adminassets/generated/
+
+RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
     -o /usr/local/bin/oidcld .
 
+RUN mkdir -p /tmp/runtime-app/tls
+
 # Final stage
-FROM gcr.io/distroless/base-debian12:nonroot
+FROM gcr.io/distroless/base-debian13:nonroot
+
+WORKDIR /app
+
+# Seed the named volume mount point with a nonroot-owned directory so the CA can persist files.
+COPY --from=builder --chown=nonroot:nonroot /tmp/runtime-app /app
 
 # Copy the binary from builder
 COPY --from=builder /usr/local/bin/oidcld /usr/local/bin/oidcld
