@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -19,7 +20,14 @@ import (
 	"github.com/shibukawa/oidcld/internal/config"
 )
 
-var ErrSelfSignedConflictTLSProvided = fmt.Errorf("self-signed TLS is configured and TLS certificate/key were also provided; choose one method")
+var (
+	ErrSelfSignedConflictTLSProvided     = errors.New("self-signed TLS is configured and TLS certificate/key were also provided; choose one method")
+	ErrCertificateAuthorityConfigMissing = errors.New("certificate authority configuration is not available")
+	ErrIssuerHostNotCoveredByCADomains   = errors.New("oidc.iss host is not covered by certificate_authority.domains")
+	ErrRootCACertificateDecode           = errors.New("failed to decode root CA certificate")
+	ErrCAPEMDecode                       = errors.New("failed to decode CA PEM")
+	ErrCAKeyPEMDecode                    = errors.New("failed to decode CA key PEM")
+)
 
 type managedTLSBundle struct {
 	CACertPath string
@@ -36,7 +44,7 @@ type managedLeafCertificate struct {
 
 func ensureManagedSelfSignedTLSAssets(cfg *config.Config) (*managedTLSBundle, error) {
 	if cfg == nil || cfg.CertificateAuthority == nil {
-		return nil, fmt.Errorf("certificate authority configuration is not available")
+		return nil, ErrCertificateAuthorityConfigMissing
 	}
 
 	caDir := resolveManagedTLSPath(cfg.SourceDir(), cfg.CertificateAuthority.CADir)
@@ -250,10 +258,10 @@ func managedLeafCommonName(cfg *config.Config, domains []string) string {
 
 func validateManagedIssuerDomains(cfg *config.Config) error {
 	if cfg == nil || cfg.CertificateAuthority == nil {
-		return fmt.Errorf("certificate authority configuration is not available")
+		return ErrCertificateAuthorityConfigMissing
 	}
 	if scheme, host, _, ok := config.IssuerURLParts(cfg.OIDC.Issuer); ok && strings.EqualFold(scheme, "https") && !config.HostMatchesCertificateDomains(host, cfg.CertificateAuthority.Domains) {
-		return fmt.Errorf("oidc.iss host %q is not covered by certificate_authority.domains", host)
+		return fmt.Errorf("%w: %q", ErrIssuerHostNotCoveredByCADomains, host)
 	}
 	return nil
 }
@@ -283,7 +291,7 @@ func (s *Server) loadManagedRootCAInfo() (map[string]any, error) {
 	}
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
-		return nil, fmt.Errorf("failed to decode root CA certificate")
+		return nil, ErrRootCACertificateDecode
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
@@ -361,11 +369,11 @@ func loadManagedCA(bundle *managedTLSBundle) (*x509.Certificate, *ecdsa.PrivateK
 	}
 	certBlock, _ := pem.Decode(certPEM)
 	if certBlock == nil {
-		return nil, nil, nil, fmt.Errorf("failed to decode CA PEM")
+		return nil, nil, nil, ErrCAPEMDecode
 	}
 	keyBlock, _ := pem.Decode(keyPEM)
 	if keyBlock == nil {
-		return nil, nil, nil, fmt.Errorf("failed to decode CA key PEM")
+		return nil, nil, nil, ErrCAKeyPEMDecode
 	}
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {

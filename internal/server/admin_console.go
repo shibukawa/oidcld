@@ -4,8 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -18,6 +20,8 @@ import (
 	"github.com/shibukawa/oidcld/internal/config"
 	"github.com/shibukawa/oidcld/internal/server/adminassets"
 )
+
+var ErrAdminConsolePortRequired = errors.New("admin console port is required")
 
 type adminStatusResponse struct {
 	Issuer               string                      `json:"issuer"`
@@ -92,7 +96,7 @@ func ConsoleURL(bindAddress, port string) string {
 	if strings.TrimSpace(port) == "" {
 		return ""
 	}
-	return fmt.Sprintf("http://%s:%s/console/", host, strings.TrimSpace(port))
+	return fmt.Sprintf("http://%s/console/", net.JoinHostPort(host, strings.TrimSpace(port)))
 }
 
 func (s *Server) AdminHandler() http.Handler {
@@ -128,7 +132,7 @@ func (s *Server) AdminHandler() http.Handler {
 
 func (s *Server) StartAdmin(bindAddress, port string) error {
 	if strings.TrimSpace(port) == "" {
-		return fmt.Errorf("admin console port is required")
+		return ErrAdminConsolePortRequired
 	}
 	address := net.JoinHostPort(strings.TrimSpace(bindAddress), strings.TrimSpace(port))
 	server := &http.Server{
@@ -231,9 +235,7 @@ func cloneClaimsMap(src map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	cloned := make(map[string]any, len(src))
-	for key, value := range src {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, src)
 	return cloned
 }
 
@@ -493,6 +495,7 @@ func (s *Server) consoleRequiresLoopbackClient() bool {
 	return ip.IsLoopback()
 }
 
+//nolint:dupword // Embedded shell script intentionally repeats shell keywords like fi.
 func generateUnixInstallScript() string {
 	return `#!/bin/sh
 set -eu
@@ -653,6 +656,7 @@ rm -f "$JAVA_DER_FILE"
 `
 }
 
+//nolint:dupword // Embedded shell script intentionally repeats shell keywords like fi.
 func generateUnixUninstallScript() string {
 	return `#!/bin/sh
 set -eu

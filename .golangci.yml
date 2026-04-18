@@ -36,6 +36,7 @@ linters:
     - wsl_v5
     - noinlineerr
     - prealloc
+    - tagliatelle
   settings:
     tagliatelle:
       case:

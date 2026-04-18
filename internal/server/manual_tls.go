@@ -3,11 +3,18 @@ package server
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/shibukawa/oidcld/internal/config"
+)
+
+var (
+	ErrTLSCertificateDecode            = errors.New("failed to decode TLS certificate")
+	ErrIssuerHostNotCoveredByTLSCertCN = errors.New("oidc.iss host is not covered by the TLS certificate SAN or CN")
+	ErrIssuerHostNotCoveredByTLSCertSAN = errors.New("oidc.iss host is not covered by the TLS certificate SAN")
 )
 
 func ValidateIssuerMatchesCertificate(issuer, certFile string) error {
@@ -23,7 +30,7 @@ func ValidateIssuerMatchesCertificate(issuer, certFile string) error {
 
 	block, _ := pem.Decode(certPEM)
 	if block == nil {
-		return fmt.Errorf("failed to decode TLS certificate %q", certFile)
+		return fmt.Errorf("%w: %q", ErrTLSCertificateDecode, certFile)
 	}
 
 	cert, err := x509.ParseCertificate(block.Bytes)
@@ -40,11 +47,11 @@ func ValidateIssuerMatchesCertificate(issuer, certFile string) error {
 		if cert.Subject.CommonName != "" && config.HostMatchesCertificateDomain(host, cert.Subject.CommonName) {
 			return nil
 		}
-		return fmt.Errorf("oidc.iss host %q is not covered by the TLS certificate SAN or CN", host)
+		return fmt.Errorf("%w: %q", ErrIssuerHostNotCoveredByTLSCertCN, host)
 	}
 
 	if !config.HostMatchesCertificateDomains(host, domains) {
-		return fmt.Errorf("oidc.iss host %q is not covered by the TLS certificate SAN", host)
+		return fmt.Errorf("%w: %q", ErrIssuerHostNotCoveredByTLSCertSAN, host)
 	}
 
 	return nil

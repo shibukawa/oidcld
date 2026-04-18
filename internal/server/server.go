@@ -36,6 +36,7 @@ var (
 	ErrIssuerURLCannotBeChanged           = fmt.Errorf("issuer URL cannot be changed at runtime")
 	ErrAutocertConflictTLSProvided        = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
 	ErrTLSMissingWithoutAutocert          = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
+	ErrManualTLSCertificateKeyRequired    = errors.New("both TLS certificate and key files are required for manual TLS")
 	ErrEntraIDTenantRequiresConfiguration = errors.New("tenant is not allowed without EntraID configuration")
 	ErrEntraIDTenantIDMismatch            = errors.New("tenant does not match configured tenant_id")
 	ErrEntraIDTenantNotAllowed            = errors.New("tenant is not allowed")
@@ -704,7 +705,7 @@ func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error
 	}
 
 	if (certFile == "") != (keyFile == "") {
-		return fmt.Errorf("both TLS certificate and key files are required for manual TLS")
+		return ErrManualTLSCertificateKeyRequired
 	}
 
 	if certFile == "" && keyFile == "" {

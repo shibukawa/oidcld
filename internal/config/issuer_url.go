@@ -94,8 +94,8 @@ func HostMatchesCertificateDomain(host, domain string) bool {
 
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
 	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
-	if strings.HasPrefix(domain, "*.") {
-		suffix := strings.TrimPrefix(domain, "*.")
+	if after, ok := strings.CutPrefix(domain, "*."); ok {
+		suffix := after
 		if suffix == "" || host == suffix || !strings.HasSuffix(host, "."+suffix) {
 			return false
 		}

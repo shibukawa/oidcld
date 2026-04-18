@@ -22,6 +22,7 @@ var (
 	ErrAutocertEmailRequired                  = errors.New("autocert.email is required when autocert is enabled")
 	ErrAutocertAgreeTOS                       = errors.New("autocert.agree_tos must be true when autocert is enabled")
 	ErrAutocertConflict                       = errors.New("autocert is enabled but TLS cert/key are also configured in oidc config; choose one method")
+	ErrAutocertIssuerHostNotCovered           = errors.New("oidc.iss host is not covered by autocert.domains")
 	ErrCertificateAuthorityDomainsRequired    = errors.New("certificate_authority.domains is required")
 	ErrLegacyOIDCLDConfig                     = errors.New("legacy top-level key 'oidcld' is no longer supported; use 'oidc', 'console', and 'certificate_authority'")
 	ErrLegacyCertificateAuthorityDomainSuffix = errors.New("legacy key 'certificate_authority.domain_suffix' is no longer supported; use 'certificate_authority.domains'")
@@ -314,7 +315,7 @@ func loadConfig(configPath string) (*Config, error) {
 func detectLegacyConfigKeys(data []byte) error {
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil
+		return fmt.Errorf("failed to parse config: %w", err)
 	}
 	if _, exists := raw["oidcld"]; exists {
 		return ErrLegacyOIDCLDConfig
@@ -1371,7 +1372,7 @@ func (c *Config) ValidateAutocertConfig() error {
 		return ErrAutocertConflict
 	}
 	if scheme, host, _, ok := IssuerURLParts(c.OIDC.Issuer); ok && strings.EqualFold(scheme, "https") && !HostMatchesCertificateDomains(host, c.Autocert.Domains) {
-		return fmt.Errorf("oidc.iss host %q is not covered by autocert.domains", host)
+		return fmt.Errorf("%w: %q", ErrAutocertIssuerHostNotCovered, host)
 	}
 	return nil
 }
