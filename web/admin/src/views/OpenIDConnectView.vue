@@ -181,8 +181,7 @@ onBeforeUnmount(() => {
       <section class="oidc-panel oidc-panel-top">
         <div class="panel-header">
           <div>
-            <p class="panel-eyebrow">OpenID Connect Identity Platform</p>
-            <h2>Runtime Overview</h2>
+            <h2>OpenID Connect Identity Provider for Local Development</h2>
           </div>
         </div>
 
@@ -199,6 +198,16 @@ onBeforeUnmount(() => {
                 {{ isCopied(copyStateKey('issuer', status?.issuer ?? 'Unavailable')) ? 'Copied' : 'Copy' }}
               </button>
             </div>
+          </div>
+
+          <div class="detail-row detail-row-span-4">
+            <span class="detail-label">Valid Scopes</span>
+            <code class="detail-value">{{ status?.validScopes.join(', ') || 'No scopes configured' }}</code>
+          </div>
+
+          <div v-if="(status?.oidc?.tenants ?? []).length > 0" class="detail-row detail-row-span-4">
+            <span class="detail-label">Tenant Paths</span>
+            <code class="detail-value">{{ status?.oidc?.tenants?.join(', ') }}</code>
           </div>
 
           <div class="detail-row detail-row-span-2">
@@ -227,11 +236,6 @@ onBeforeUnmount(() => {
                 {{ option.label }}
               </span>
             </div>
-          </div>
-
-          <div class="detail-row detail-row-span-4">
-            <span class="detail-label">Access Filter</span>
-            <span class="detail-text">{{ status?.oidc?.accessFilter ?? 'disabled' }}</span>
           </div>
 
           <div class="detail-row">
@@ -279,22 +283,17 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="detail-row detail-row-span-4">
-            <span class="detail-label">Valid Scopes</span>
-            <code class="detail-value">{{ status?.validScopes.join(', ') || 'No scopes configured' }}</code>
+            <span class="detail-label">Access Filter</span>
+            <span class="detail-text">{{ status?.oidc?.accessFilter ?? 'disabled' }}</span>
           </div>
 
-          <div v-if="(status?.oidc?.tenants ?? []).length > 0" class="detail-row detail-row-span-4">
-            <span class="detail-label">Tenant Paths</span>
-            <code class="detail-value">{{ status?.oidc?.tenants?.join(', ') }}</code>
-          </div>
         </div>
       </section>
 
       <section class="oidc-panel oidc-panel-users">
         <div class="panel-header">
           <div>
-            <p class="panel-eyebrow">Available Users</p>
-            <h3>{{ users.length }} configured</h3>
+            <h3>Available Users</h3>
           </div>
         </div>
 
@@ -339,8 +338,7 @@ onBeforeUnmount(() => {
       <section class="oidc-panel oidc-panel-endpoints">
         <div class="panel-header">
           <div>
-            <p class="panel-eyebrow">Endpoints</p>
-            <h3>Published URLs</h3>
+            <h3>Published Endpoints</h3>
           </div>
         </div>
 

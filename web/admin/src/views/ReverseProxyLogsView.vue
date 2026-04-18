@@ -69,8 +69,7 @@ onMounted(() => {
     <article v-else class="section-card panel-sheen">
       <div class="section-heading">
         <div>
-          <p class="page-eyebrow">Traffic Logs</p>
-          <h3>Recent OIDC and reverse proxy requests</h3>
+          <h3>Access Logs</h3>
         </div>
         <span class="status-pill" :class="{ 'status-pill-muted': entries.length === 0 }">
           {{ entries.length === 0 ? 'No traffic yet' : `${entries.length} entries` }}

@@ -6,24 +6,20 @@ const route = useRoute()
 
 const navigation = [
   {
-    label: 'Certificate Authority',
+    label: 'Local Certificate Authority',
     to: '/certificate-authority',
-    eyebrow: 'Trust',
   },
   {
-    label: 'OpenID Connect',
+    label: 'OpenID Connect IdP',
     to: '/openid-connect',
-    eyebrow: 'OIDC',
   },
   {
     label: 'Reverse Proxy',
     to: '/reverse-proxy',
-    eyebrow: 'Proxy',
   },
   {
-    label: 'Traffic Logs',
+    label: 'Access Logs',
     to: '/reverse-proxy/logs',
-    eyebrow: 'Logs',
   },
 ]
 </script>
@@ -51,7 +47,6 @@ const navigation = [
           class="nav-link"
           :class="{ 'nav-link-active': route.path === item.to }"
         >
-          <p class="nav-eyebrow">{{ item.eyebrow }}</p>
           <p class="nav-label">{{ item.label }}</p>
         </RouterLink>
       </nav>

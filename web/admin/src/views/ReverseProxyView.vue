@@ -59,8 +59,7 @@ onMounted(() => {
       <section class="oidc-panel proxy-panel">
         <div class="panel-header">
           <div>
-            <p class="panel-eyebrow">Reverse Proxy</p>
-            <h2>Configured hosts and routes</h2>
+            <h2>Reverse Proxy Configurations</h2>
           </div>
           <span class="status-pill" :class="{ 'status-pill-muted': hosts.length === 0 }">
             {{ hosts.length === 0 ? 'Disabled' : 'Active' }}

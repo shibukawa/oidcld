@@ -171,7 +171,6 @@ a {
 }
 
 .eyebrow,
-.page-eyebrow,
 .metric-label,
 .table-label,
 .download-tag {
@@ -240,19 +239,6 @@ a {
   border-color: rgba(98, 201, 255, 0.4);
   background: linear-gradient(135deg, rgba(15, 124, 139, 0.9), rgba(21, 89, 165, 0.8));
   box-shadow: 0 22px 42px rgba(5, 23, 60, 0.28);
-}
-
-.nav-eyebrow,
-.nav-label {
-  margin: 0;
-}
-
-.nav-eyebrow {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(170, 222, 255, 0.78);
 }
 
 .nav-label {
@@ -622,15 +608,6 @@ a {
   justify-content: space-between;
   gap: 0.8rem;
   margin-bottom: 0.9rem;
-}
-
-.panel-eyebrow {
-  margin: 0 0 0.2rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(188, 226, 255, 0.86);
 }
 
 .panel-header h2,
