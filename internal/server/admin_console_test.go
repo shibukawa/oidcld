@@ -1,6 +1,8 @@
 package server
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -199,6 +201,135 @@ func TestAdminHandler_AllowsNonLoopbackClientsWhenConsoleBindsPublicly(t *testin
 	server.AdminHandler().ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusOK, res.Code)
+}
+
+func TestAdminHandler_IssueCertificateReturnsZipForWildcardDomain(t *testing.T) {
+	tempDir := t.TempDir()
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://localhost:18443",
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			CADir:       tempDir,
+			Domains:     []string{"localhost", "*.dev.localhost"},
+			CACertTTL:   "87600h",
+			LeafCertTTL: "720h",
+		},
+	})
+
+	body := `{"organization":"Example Org","domainLabel":"admin","ttl":"720h","notBefore":"2026-04-18T00:00:00Z"}`
+	req := httptest.NewRequest(http.MethodPost, "/console/api/certificates/issue", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:41234"
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	server.AdminHandler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, "application/zip", res.Header().Get("Content-Type"))
+	assert.Contains(t, res.Header().Get("Content-Disposition"), "certificate-admin.dev.localhost.zip")
+
+	reader, err := zip.NewReader(bytes.NewReader(res.Body.Bytes()), int64(res.Body.Len()))
+	assert.NoError(t, err)
+	entries := map[string]bool{}
+	for _, file := range reader.File {
+		entries[file.Name] = true
+	}
+	assert.Equal(t, true, entries["certificate.pem"])
+	assert.Equal(t, true, entries["private-key.pem"])
+	assert.Equal(t, false, entries["chain.pem"])
+	assert.Equal(t, false, entries["root-ca.pem"])
+
+	listReq := httptest.NewRequest(http.MethodGet, "/console/api/certificates", nil)
+	listReq.RemoteAddr = "127.0.0.1:41234"
+	listRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(listRes, listReq)
+	assert.Equal(t, http.StatusOK, listRes.Code)
+
+	var payload struct {
+		LeafCertificates []struct {
+			Organization string `json:"organization"`
+			Domain       string `json:"domain"`
+		} `json:"leafCertificates"`
+	}
+	err = json.Unmarshal(listRes.Body.Bytes(), &payload)
+	assert.NoError(t, err)
+	assert.True(t, len(payload.LeafCertificates) >= 2)
+	foundIssued := false
+	for _, certificate := range payload.LeafCertificates {
+		if certificate.Organization == "Example Org" && certificate.Domain == "admin.dev.localhost" {
+			foundIssued = true
+			break
+		}
+	}
+	assert.True(t, foundIssued)
+}
+
+func TestAdminHandler_IssueCertificateRejectsInvalidInput(t *testing.T) {
+	tempDir := t.TempDir()
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://localhost:18443",
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			CADir:       tempDir,
+			Domains:     []string{"localhost", "*.dev.localhost"},
+			CACertTTL:   "87600h",
+			LeafCertTTL: "720h",
+		},
+	})
+
+	cases := []string{
+		`{"organization":"Example Org","domainLabel":"a.b","ttl":"720h","notBefore":"2026-04-18T00:00:00Z"}`,
+		`{"organization":"Example Org","domainLabel":"admin","ttl":"bad","notBefore":"2026-04-18T00:00:00Z"}`,
+		`{"organization":"Example Org","domainLabel":"admin","ttl":"720h","notBefore":"invalid"}`,
+	}
+
+	for _, body := range cases {
+		req := httptest.NewRequest(http.MethodPost, "/console/api/certificates/issue", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:41234"
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		server.AdminHandler().ServeHTTP(res, req)
+		assert.Equal(t, http.StatusBadRequest, res.Code)
+	}
+}
+
+func TestAdminHandler_IssueCertificateRejectsMissingWildcardDomain(t *testing.T) {
+	tempDir := t.TempDir()
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://localhost:18443",
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			CADir:       tempDir,
+			Domains:     []string{"localhost"},
+			CACertTTL:   "87600h",
+			LeafCertTTL: "720h",
+		},
+	})
+
+	body := `{"organization":"Example Org","domainLabel":"admin","ttl":"720h","notBefore":"2026-04-18T00:00:00Z"}`
+	req := httptest.NewRequest(http.MethodPost, "/console/api/certificates/issue", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:41234"
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+
+	server.AdminHandler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusBadRequest, res.Code)
 }
 
 func TestAdminHandler_ServesFallbackWhenAssetsMissing(t *testing.T) {

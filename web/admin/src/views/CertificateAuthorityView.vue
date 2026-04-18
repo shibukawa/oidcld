@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 type StatusPayload = {
   selfSignedTls?: {
@@ -40,8 +40,71 @@ type CertificatePayload = {
 const status = ref<StatusPayload | null>(null)
 const certificates = ref<CertificatePayload | null>(null)
 const loading = ref(true)
+const issueSubmitting = ref(false)
+const issueError = ref('')
+const copiedKey = ref<string | null>(null)
+const issuanceOrganization = ref('')
+const issuanceDomainLabel = ref('')
+const issuanceTTL = ref('720h')
+const issuanceStartLocal = ref(defaultStartDateTimeLocal())
 
 const installerDownloadHref = '/console/api/downloads/certificate-installer.zip'
+
+let copiedTimer: number | undefined
+
+const wildcardDomain = computed(() => {
+  return status.value?.selfSignedTls?.domains?.find((domain) => domain.startsWith('*.')) ?? ''
+})
+
+const wildcardSuffix = computed(() => wildcardDomain.value.replace(/^\*\./, ''))
+const fullIssuedDomain = computed(() => {
+  const label = issuanceDomainLabel.value.trim()
+  return label && wildcardSuffix.value ? `${label}.${wildcardSuffix.value}` : ''
+})
+const startRFC3339 = computed(() => {
+  if (!issuanceStartLocal.value) {
+    return ''
+  }
+  const date = new Date(issuanceStartLocal.value)
+  if (Number.isNaN(date.getTime())) {
+    return ''
+  }
+  return date.toISOString()
+})
+const issuePayload = computed(() => ({
+  organization: issuanceOrganization.value.trim(),
+  domainLabel: issuanceDomainLabel.value.trim(),
+  ttl: issuanceTTL.value.trim(),
+  notBefore: startRFC3339.value,
+}))
+const curlPreview = computed(() => {
+  const payload = JSON.stringify(issuePayload.value)
+  const filename = `certificate-${fullIssuedDomain.value || 'host'}.zip`
+  return `curl -X POST /console/api/certificates/issue -H 'Content-Type: application/json' --data-raw ${shellSingleQuote(payload)} --output ${shellSingleQuote(filename)}`
+})
+const hasRequiredInputs = computed(() => {
+  return Boolean(
+    wildcardDomain.value &&
+    issuePayload.value.organization &&
+    issuePayload.value.domainLabel &&
+    issuePayload.value.ttl &&
+    issuePayload.value.notBefore,
+  )
+})
+const canSubmit = computed(() => hasRequiredInputs.value)
+
+function defaultStartDateTimeLocal() {
+  const now = new Date()
+  now.setHours(0, 0, 0, 0)
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}T00:00`
+}
+
+function shellSingleQuote(value: string) {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`
+}
 
 function joinValues(values?: string[], fallback = 'Not configured') {
   if (!values || values.length === 0) {
@@ -64,26 +127,95 @@ function formatValidity(from?: string, to?: string) {
   return `${formatDate(from)} to ${formatDate(to)}`
 }
 
-function formatIssued(from?: string) {
-  if (!from) {
-    return 'Issued unknown'
-  }
-  return `Issued ${formatDate(from)}`
-}
-
-function formatEnded(to?: string) {
-  if (!to) {
-    return 'Ends unknown'
-  }
-  return `Ends ${formatDate(to)}`
-}
-
 function issuedDomain(item: CertificatePayload['leafCertificates'][number]) {
   return item.domain ?? 'Unknown domain'
 }
 
 function issuedOrganization(item: CertificatePayload['leafCertificates'][number]) {
   return item.organization ?? 'Unknown organization'
+}
+
+function copyStateKey(prefix: string, value: string) {
+  return `${prefix}:${value}`
+}
+
+function clearCopyFeedback() {
+  if (copiedTimer !== undefined) {
+    window.clearTimeout(copiedTimer)
+    copiedTimer = undefined
+  }
+}
+
+async function copyToClipboard(key: string, value: string) {
+  if (!navigator.clipboard) {
+    return
+  }
+
+  await navigator.clipboard.writeText(value)
+  copiedKey.value = key
+  clearCopyFeedback()
+  copiedTimer = window.setTimeout(() => {
+    copiedKey.value = null
+    copiedTimer = undefined
+  }, 1800)
+}
+
+function isCopied(key: string) {
+  return copiedKey.value === key
+}
+
+function parseDownloadFilename(headerValue: string | null, fallback: string) {
+  if (!headerValue) {
+    return fallback
+  }
+  const utf8Match = headerValue.match(/filename\*=UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1])
+  }
+  const match = headerValue.match(/filename="?([^"]+)"?/i)
+  return match?.[1] ?? fallback
+}
+
+async function issueCertificate() {
+  if (!canSubmit.value || issueSubmitting.value) {
+    return
+  }
+
+  issueSubmitting.value = true
+  issueError.value = ''
+
+  try {
+    const response = await fetch('/console/api/certificates/issue', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(issuePayload.value),
+    })
+
+    if (!response.ok) {
+      issueError.value = await response.text()
+      return
+    }
+
+    const blob = await response.blob()
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = downloadUrl
+    anchor.download = parseDownloadFilename(
+      response.headers.get('Content-Disposition'),
+      `certificate-${fullIssuedDomain.value || 'host'}.zip`,
+    )
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.URL.revokeObjectURL(downloadUrl)
+    await loadPage()
+  } catch (error) {
+    issueError.value = error instanceof Error ? error.message : 'Certificate issuance failed.'
+  } finally {
+    issueSubmitting.value = false
+  }
 }
 
 async function loadPage() {
@@ -102,6 +234,10 @@ async function loadPage() {
 
 onMounted(() => {
   void loadPage()
+})
+
+onBeforeUnmount(() => {
+  clearCopyFeedback()
 })
 </script>
 
@@ -180,9 +316,67 @@ onMounted(() => {
           <span class="status-pill status-pill-muted">Managed</span>
         </div>
 
-        <div class="certificate-placeholder">
+        <div v-if="wildcardDomain" class="certificate-issuance">
+          <p class="table-helper">Generate a leaf certificate inside {{ wildcardDomain }} and download the PEM bundle immediately.</p>
+
+          <div class="issuance-grid">
+            <label class="issuance-field">
+              <span class="table-label">Organization (Name of Certificate)</span>
+              <input v-model="issuanceOrganization" class="issuance-input" type="text" autocomplete="off">
+            </label>
+
+            <label class="issuance-field">
+              <span class="table-label">Domain</span>
+              <div class="issuance-domain-row">
+                <input v-model="issuanceDomainLabel" class="issuance-input issuance-input-domain" type="text" autocomplete="off" placeholder="host">
+                <span class="issuance-domain-suffix">.{{ wildcardSuffix }}</span>
+              </div>
+            </label>
+
+            <div class="issuance-grid-spacer" aria-hidden="true"></div>
+
+            <label class="issuance-field issuance-field-expiration">
+              <span class="table-label">Expiration</span>
+              <input v-model="issuanceTTL" class="issuance-input" type="text" autocomplete="off">
+            </label>
+
+            <label class="issuance-field">
+              <span class="table-label">Start date/time</span>
+              <input v-model="issuanceStartLocal" class="issuance-input" type="datetime-local">
+            </label>
+
+            <div class="issuance-field issuance-field-action">
+              <button type="button" class="download-action issuance-submit" :disabled="!canSubmit || issueSubmitting" @click="issueCertificate">
+                {{ issueSubmitting ? 'Preparing...' : 'Create' }}
+              </button>
+            </div>
+          </div>
+
+          <p v-if="fullIssuedDomain" class="table-helper">Issued host: {{ fullIssuedDomain }}</p>
+
+          <p v-if="issueError" class="issuance-error">{{ issueError }}</p>
+
+          <div v-if="hasRequiredInputs" class="curl-preview">
+            <div class="curl-preview-header">
+              <div>
+                <p class="table-label">curl</p>
+                <p class="table-helper">Use the same API from a terminal.</p>
+              </div>
+              <button
+                type="button"
+                class="copy-button"
+                @click="copyToClipboard(copyStateKey('curl', curlPreview), curlPreview)"
+              >
+                {{ isCopied(copyStateKey('curl', curlPreview)) ? 'Copied' : 'Copy' }}
+              </button>
+            </div>
+            <pre class="curl-command">{{ curlPreview }}</pre>
+          </div>
+        </div>
+
+        <div v-else class="certificate-placeholder">
           <p class="placeholder-title">Managed self-signed issues single-host leaf certificates for each client.</p>
-          <p class="table-helper">The configured CA domains define what can be issued. The issued certificate list shows only certificates created by this managed self-signed flow.</p>
+          <p class="table-helper">The configured CA domains define what can be issued. Add a wildcard domain to enable manual host issuance from this page.</p>
         </div>
       </article>
     </template>
@@ -282,21 +476,171 @@ onMounted(() => {
 }
 
 .certificate-empty,
-.certificate-placeholder {
+.certificate-placeholder,
+.certificate-issuance {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.65rem;
 }
 
 .certificate-empty,
-.certificate-placeholder {
+.certificate-placeholder,
+.certificate-issuance {
   padding: 0.2rem 0 0;
+}
+
+.issuance-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+
+.issuance-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.issuance-grid-spacer {
+  min-height: 0;
+}
+
+.issuance-field-expiration {
+  grid-column: 1;
+}
+
+.issuance-domain-row,
+.curl-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.issuance-domain-row {
+  flex-wrap: wrap;
+}
+
+.issuance-input {
+  width: 100%;
+  min-height: 2.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(7, 17, 31, 0.45);
+  color: #f6f9ff;
+  font: inherit;
+}
+
+.issuance-input::placeholder {
+  color: rgba(224, 234, 250, 0.36);
+}
+
+.issuance-input:focus {
+  outline: none;
+  border-color: rgba(140, 212, 255, 0.45);
+  box-shadow: 0 0 0 3px rgba(55, 200, 192, 0.14);
+}
+
+.issuance-input-domain {
+  flex: 1 1 12rem;
+}
+
+.issuance-domain-suffix {
+  color: rgba(224, 234, 250, 0.9);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.issuance-submit {
+  border: 0;
+  width: auto;
+  min-width: 7.5rem;
+  min-height: 2.6rem;
+  margin-top: auto;
+}
+
+.issuance-field-action {
+  justify-self: end;
+  align-self: end;
+  width: auto;
+}
+
+.issuance-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.issuance-error {
+  margin: 0;
+  color: #ffb9b9;
+  font-size: 0.9rem;
+}
+
+.curl-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem 1.05rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  background: rgba(7, 17, 31, 0.34);
+}
+
+.curl-preview-header {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.curl-command {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #f6f9ff;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.copy-button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #eff7ff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.36rem 0.72rem;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    transform 140ms ease,
+    border-color 140ms ease;
+}
+
+.copy-button:hover {
+  transform: translateY(-1px);
+  background: rgba(43, 144, 220, 0.18);
+  border-color: rgba(140, 212, 255, 0.32);
 }
 
 @media (max-width: 960px) {
   .certificate-split,
-  .certificate-kv-grid {
+  .certificate-kv-grid,
+  .issuance-grid {
     grid-template-columns: 1fr;
+  }
+
+  .issuance-field-expiration {
+    grid-column: auto;
+  }
+
+  .issuance-field-action {
+    justify-self: stretch;
+    width: 100%;
+  }
+
+  .issuance-submit {
+    width: 100%;
   }
 
   .certificate-row-inline {
@@ -309,6 +653,12 @@ onMounted(() => {
     padding-top: 1rem;
     border-left: 0;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .curl-preview-header,
+  .issuance-domain-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

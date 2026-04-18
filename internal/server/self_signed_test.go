@@ -181,3 +181,89 @@ func TestManagedLeafIssuedDomainsFallbackToLocalhost(t *testing.T) {
 
 	assert.Equal(t, []string{"localhost"}, managedLeafIssuedDomains(cfg))
 }
+
+func TestManagedWildcardHostBuildsCoveredHost(t *testing.T) {
+	host, err := managedWildcardHost([]string{"localhost", "*.dev.localhost"}, "admin")
+	assert.NoError(t, err)
+	assert.Equal(t, "admin.dev.localhost", host)
+}
+
+func TestManagedWildcardHostRejectsInvalidLabel(t *testing.T) {
+	_, err := managedWildcardHost([]string{"*.dev.localhost"}, "a.b")
+	assert.Error(t, err)
+
+	_, err = managedWildcardHost([]string{"*.dev.localhost"}, "bad*label")
+	assert.Error(t, err)
+}
+
+func TestGenerateManagedLeafCertificateFromRequestAppliesRequestFields(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://localhost:18443",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			CADir:       tempDir,
+			Domains:     []string{"localhost", "*.dev.localhost"},
+			CACertTTL:   "87600h",
+			LeafCertTTL: "720h",
+		},
+	}
+
+	bundle, err := ensureManagedSelfSignedTLSAssets(cfg)
+	assert.NoError(t, err)
+	caCert, caKey, caCertPEM, err := loadManagedCA(bundle)
+	assert.NoError(t, err)
+
+	notBefore := time.Date(2026, time.April, 18, 0, 0, 0, 0, time.UTC)
+	leaf, err := generateManagedLeafCertificateFromRequest(managedLeafCertificateRequest{
+		Domain:       "admin.dev.localhost",
+		Organization: "Example Org",
+		NotBefore:    notBefore,
+		TTL:          720 * time.Hour,
+	}, caCert, caKey, caCertPEM)
+	assert.NoError(t, err)
+	assert.Equal(t, "Example Org", firstManagedOrganization(leaf.certificate.Subject.Organization))
+	assert.Equal(t, []string{"admin.dev.localhost"}, leaf.certificate.DNSNames)
+	assert.Equal(t, notBefore, leaf.certificate.NotBefore)
+	assert.Equal(t, notBefore.Add(720*time.Hour), leaf.certificate.NotAfter)
+}
+
+func TestPersistManagedLeafCertificateAndLoadInfos(t *testing.T) {
+	tempDir := t.TempDir()
+	cfg := &config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://localhost:18443",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			CADir:       tempDir,
+			Domains:     []string{"localhost", "*.dev.localhost"},
+			CACertTTL:   "87600h",
+			LeafCertTTL: "720h",
+		},
+	}
+
+	bundle, err := ensureManagedSelfSignedTLSAssets(cfg)
+	assert.NoError(t, err)
+	caCert, caKey, caCertPEM, err := loadManagedCA(bundle)
+	assert.NoError(t, err)
+
+	leaf, err := generateManagedLeafCertificateFromRequest(managedLeafCertificateRequest{
+		Domain:       "admin.dev.localhost",
+		Organization: "Example Org",
+		NotBefore:    time.Date(2026, time.April, 18, 0, 0, 0, 0, time.UTC),
+		TTL:          720 * time.Hour,
+	}, caCert, caKey, caCertPEM)
+	assert.NoError(t, err)
+
+	info, err := persistManagedLeafCertificate(cfg, leaf)
+	assert.NoError(t, err)
+	assert.Equal(t, "admin.dev.localhost", info.domain)
+
+	infos, err := loadPersistedManagedLeafCertificateInfos(cfg)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(infos))
+	assert.Equal(t, "Example Org", infos[0].organization)
+	assert.Equal(t, "admin.dev.localhost", infos[0].domain)
+	assert.Equal(t, filepath.Join(tempDir, "issued", infos[0].serial, "certificate.pem"), infos[0].certFile)
+}
