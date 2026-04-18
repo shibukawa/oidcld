@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,12 +22,16 @@ import (
 )
 
 var (
-	ErrSelfSignedConflictTLSProvided     = errors.New("self-signed TLS is configured and TLS certificate/key were also provided; choose one method")
-	ErrCertificateAuthorityConfigMissing = errors.New("certificate authority configuration is not available")
-	ErrIssuerHostNotCoveredByCADomains   = errors.New("oidc.iss host is not covered by certificate_authority.domains")
-	ErrRootCACertificateDecode           = errors.New("failed to decode root CA certificate")
-	ErrCAPEMDecode                       = errors.New("failed to decode CA PEM")
-	ErrCAKeyPEMDecode                    = errors.New("failed to decode CA key PEM")
+	ErrSelfSignedConflictTLSProvided      = errors.New("self-signed TLS is configured and TLS certificate/key were also provided; choose one method")
+	ErrCertificateAuthorityConfigMissing  = errors.New("certificate authority configuration is not available")
+	ErrIssuerHostNotCoveredByCADomains    = errors.New("oidc.iss host is not covered by certificate_authority.domains")
+	ErrManagedWildcardDomainNotConfigured = errors.New("managed wildcard domain is not configured")
+	ErrManagedWildcardDomainLabelRequired = errors.New("domain label is required")
+	ErrManagedWildcardDomainLabelInvalid  = errors.New("domain label must not contain dots or wildcard characters")
+	ErrManagedWildcardDomainNotCovered    = errors.New("domain is not covered by the managed wildcard domain")
+	ErrRootCACertificateDecode            = errors.New("failed to decode root CA certificate")
+	ErrCAPEMDecode                        = errors.New("failed to decode CA PEM")
+	ErrCAKeyPEMDecode                     = errors.New("failed to decode CA key PEM")
 )
 
 type managedTLSBundle struct {
@@ -40,6 +45,24 @@ type managedLeafCertificate struct {
 	certPEM        []byte
 	keyPEM         []byte
 	chainPEM       []byte
+}
+
+type managedLeafCertificateRequest struct {
+	Domain       string
+	Organization string
+	NotBefore    time.Time
+	TTL          time.Duration
+}
+
+type managedIssuedLeafInfo struct {
+	subject      string
+	organization string
+	serial       string
+	notBefore    time.Time
+	notAfter     time.Time
+	domain       string
+	certFile     string
+	keyFile      string
 }
 
 func ensureManagedSelfSignedTLSAssets(cfg *config.Config) (*managedTLSBundle, error) {
@@ -132,12 +155,7 @@ func ensureManagedRootCA(cfg *config.Config, bundle *managedTLSBundle) (*x509.Ce
 	return cert, privateKey, certPEM, nil
 }
 
-func generateManagedLeafCertificate(cfg *config.Config, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, caCertPEM []byte) (*managedLeafCertificate, error) {
-	leafTTL, err := time.ParseDuration(strings.TrimSpace(cfg.CertificateAuthority.LeafCertTTL))
-	if err != nil {
-		return nil, fmt.Errorf("invalid self-signed leaf certificate TTL: %w", err)
-	}
-
+func generateManagedLeafCertificateFromRequest(request managedLeafCertificateRequest, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, caCertPEM []byte) (*managedLeafCertificate, error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate leaf certificate key: %w", err)
@@ -147,21 +165,31 @@ func generateManagedLeafCertificate(cfg *config.Config, caCert *x509.Certificate
 		return nil, fmt.Errorf("failed to generate leaf certificate serial number: %w", err)
 	}
 
-	domains := managedLeafIssuedDomains(cfg)
-	now := time.Now().UTC().Add(-time.Minute)
+	domain := strings.TrimSpace(request.Domain)
+	if domain == "" {
+		domain = "localhost"
+	}
+	organization := strings.TrimSpace(request.Organization)
+	if organization == "" {
+		organization = "OIDCLD"
+	}
+	notBefore := request.NotBefore.UTC()
+	if notBefore.IsZero() {
+		notBefore = time.Now().UTC().Add(-time.Minute)
+	}
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			CommonName:   managedLeafCommonName(cfg, domains),
-			Organization: []string{"OIDCLD"},
+			CommonName:   domain,
+			Organization: []string{organization},
 		},
-		NotBefore:          now,
-		NotAfter:           now.Add(leafTTL),
+		NotBefore:          notBefore,
+		NotAfter:           notBefore.Add(request.TTL),
 		KeyUsage:           x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:        []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		SignatureAlgorithm: x509.ECDSAWithSHA256,
 	}
-	addManagedCertificateDomains(template, domains)
+	addManagedCertificateDomains(template, []string{domain})
 
 	der, err := x509.CreateCertificate(rand.Reader, template, caCert, &privateKey.PublicKey, caKey)
 	if err != nil {
@@ -189,6 +217,20 @@ func generateManagedLeafCertificate(cfg *config.Config, caCert *x509.Certificate
 		keyPEM:         keyPEM,
 		chainPEM:       chain,
 	}, nil
+}
+
+func generateManagedLeafCertificate(cfg *config.Config, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, caCertPEM []byte) (*managedLeafCertificate, error) {
+	leafTTL, err := time.ParseDuration(strings.TrimSpace(cfg.CertificateAuthority.LeafCertTTL))
+	if err != nil {
+		return nil, fmt.Errorf("invalid self-signed leaf certificate TTL: %w", err)
+	}
+
+	return generateManagedLeafCertificateFromRequest(managedLeafCertificateRequest{
+		Domain:       managedLeafCommonName(cfg, managedLeafIssuedDomains(cfg)),
+		Organization: "OIDCLD",
+		NotBefore:    time.Now().UTC().Add(-time.Minute),
+		TTL:          leafTTL,
+	}, caCert, caKey, caCertPEM)
 }
 
 func addManagedCertificateDomains(template *x509.Certificate, domains []string) {
@@ -227,6 +269,16 @@ func firstManagedDomain(domains []string) string {
 		}
 	}
 	return "localhost"
+}
+
+func firstManagedWildcardDomain(domains []string) (string, bool) {
+	for _, domain := range domains {
+		trimmed := strings.TrimSpace(domain)
+		if _, ok := strings.CutPrefix(trimmed, "*."); ok {
+			return trimmed, true
+		}
+	}
+	return "", false
 }
 
 func managedLeafIssuedDomains(cfg *config.Config) []string {
@@ -307,18 +359,41 @@ func (s *Server) loadManagedRootCAInfo() (map[string]any, error) {
 }
 
 func (s *Server) loadManagedLeafCertificateInfos() ([]map[string]any, error) {
+	infos := make([]managedIssuedLeafInfo, 0, 4)
 	leaf, err := s.ensureManagedLeafCertificate()
-	if err != nil {
-		return nil, err
+	if err == nil {
+		infos = append(infos, managedIssuedLeafInfo{
+			subject:      leaf.certificate.Subject.String(),
+			organization: firstManagedOrganization(leaf.certificate.Subject.Organization),
+			serial:       leaf.certificate.SerialNumber.String(),
+			notBefore:    leaf.certificate.NotBefore,
+			notAfter:     leaf.certificate.NotAfter,
+			domain:       firstManagedDomain(leaf.certificate.DNSNames),
+		})
 	}
-	return []map[string]any{{
-		"subject":      leaf.certificate.Subject.String(),
-		"organization": firstManagedOrganization(leaf.certificate.Subject.Organization),
-		"serial":       leaf.certificate.SerialNumber.String(),
-		"notBefore":    leaf.certificate.NotBefore.Format(time.RFC3339),
-		"notAfter":     leaf.certificate.NotAfter.Format(time.RFC3339),
-		"domain":       firstManagedDomain(leaf.certificate.DNSNames),
-	}}, nil
+	persistedInfos, persistedErr := loadPersistedManagedLeafCertificateInfos(s.config)
+	if persistedErr != nil && len(infos) == 0 {
+		return nil, persistedErr
+	}
+	infos = append(infos, persistedInfos...)
+	sort.Slice(infos, func(i, j int) bool {
+		return infos[i].notBefore.After(infos[j].notBefore)
+	})
+
+	result := make([]map[string]any, 0, len(infos))
+	for _, info := range infos {
+		result = append(result, map[string]any{
+			"subject":      info.subject,
+			"organization": info.organization,
+			"serial":       info.serial,
+			"notBefore":    info.notBefore.Format(time.RFC3339),
+			"notAfter":     info.notAfter.Format(time.RFC3339),
+			"domain":       info.domain,
+			"certFile":     info.certFile,
+			"keyFile":      info.keyFile,
+		})
+	}
+	return result, nil
 }
 
 func firstManagedOrganization(values []string) string {
@@ -329,6 +404,114 @@ func firstManagedOrganization(values []string) string {
 		}
 	}
 	return ""
+}
+
+func managedWildcardHost(domains []string, domainLabel string) (string, error) {
+	wildcardDomain, ok := firstManagedWildcardDomain(domains)
+	if !ok {
+		return "", ErrManagedWildcardDomainNotConfigured
+	}
+	suffix, _ := strings.CutPrefix(wildcardDomain, "*.")
+	label := strings.TrimSpace(domainLabel)
+	if label == "" {
+		return "", ErrManagedWildcardDomainLabelRequired
+	}
+	if strings.Contains(label, ".") || strings.Contains(label, "*") {
+		return "", ErrManagedWildcardDomainLabelInvalid
+	}
+	host := label + "." + suffix
+	if !config.HostMatchesCertificateDomain(host, wildcardDomain) {
+		return "", fmt.Errorf("%w: %q is not covered by %q", ErrManagedWildcardDomainNotCovered, host, wildcardDomain)
+	}
+	return host, nil
+}
+
+func managedIssuedLeafsDir(cfg *config.Config) string {
+	if cfg == nil || cfg.CertificateAuthority == nil {
+		return ""
+	}
+	return filepath.Join(resolveManagedTLSPath(cfg.SourceDir(), cfg.CertificateAuthority.CADir), "issued")
+}
+
+func persistManagedLeafCertificate(cfg *config.Config, leaf *managedLeafCertificate) (managedIssuedLeafInfo, error) {
+	issuedDir := managedIssuedLeafsDir(cfg)
+	if issuedDir == "" {
+		return managedIssuedLeafInfo{}, ErrCertificateAuthorityConfigMissing
+	}
+	entryDir := filepath.Join(issuedDir, leaf.certificate.SerialNumber.String())
+	if err := os.MkdirAll(entryDir, 0o755); err != nil {
+		return managedIssuedLeafInfo{}, fmt.Errorf("failed to create issued leaf directory: %w", err)
+	}
+
+	certFile := filepath.Join(entryDir, "certificate.pem")
+	keyFile := filepath.Join(entryDir, "private-key.pem")
+	chainFile := filepath.Join(entryDir, "chain.pem")
+	if err := os.WriteFile(certFile, leaf.certPEM, 0o644); err != nil {
+		return managedIssuedLeafInfo{}, fmt.Errorf("failed to write issued certificate: %w", err)
+	}
+	if err := os.WriteFile(keyFile, leaf.keyPEM, 0o600); err != nil {
+		return managedIssuedLeafInfo{}, fmt.Errorf("failed to write issued private key: %w", err)
+	}
+	if err := os.WriteFile(chainFile, leaf.chainPEM, 0o644); err != nil {
+		return managedIssuedLeafInfo{}, fmt.Errorf("failed to write issued chain: %w", err)
+	}
+
+	return managedIssuedLeafInfo{
+		subject:      leaf.certificate.Subject.String(),
+		organization: firstManagedOrganization(leaf.certificate.Subject.Organization),
+		serial:       leaf.certificate.SerialNumber.String(),
+		notBefore:    leaf.certificate.NotBefore,
+		notAfter:     leaf.certificate.NotAfter,
+		domain:       firstManagedDomain(leaf.certificate.DNSNames),
+		certFile:     certFile,
+		keyFile:      keyFile,
+	}, nil
+}
+
+func loadPersistedManagedLeafCertificateInfos(cfg *config.Config) ([]managedIssuedLeafInfo, error) {
+	issuedDir := managedIssuedLeafsDir(cfg)
+	if issuedDir == "" {
+		return nil, ErrCertificateAuthorityConfigMissing
+	}
+	entries, err := os.ReadDir(issuedDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	infos := make([]managedIssuedLeafInfo, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		certFile := filepath.Join(issuedDir, entry.Name(), "certificate.pem")
+		keyFile := filepath.Join(issuedDir, entry.Name(), "private-key.pem")
+		certPEM, err := os.ReadFile(certFile)
+		if err != nil {
+			continue
+		}
+		block, _ := pem.Decode(certPEM)
+		if block == nil {
+			continue
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			continue
+		}
+		infos = append(infos, managedIssuedLeafInfo{
+			subject:      cert.Subject.String(),
+			organization: firstManagedOrganization(cert.Subject.Organization),
+			serial:       cert.SerialNumber.String(),
+			notBefore:    cert.NotBefore,
+			notAfter:     cert.NotAfter,
+			domain:       firstManagedDomain(cert.DNSNames),
+			certFile:     certFile,
+			keyFile:      keyFile,
+		})
+	}
+	return infos, nil
 }
 
 func (s *Server) ensureManagedLeafCertificate() (*managedLeafCertificate, error) {

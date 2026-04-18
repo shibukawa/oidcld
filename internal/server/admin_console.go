@@ -88,6 +88,13 @@ type adminUserSummary struct {
 	ExtraValidScopes []string       `json:"extraValidScopes,omitempty"`
 }
 
+type adminCertificateIssueRequest struct {
+	Organization string `json:"organization"`
+	DomainLabel  string `json:"domainLabel"`
+	TTL          string `json:"ttl"`
+	NotBefore    string `json:"notBefore"`
+}
+
 func ConsoleURL(bindAddress, port string) string {
 	host := strings.TrimSpace(bindAddress)
 	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
@@ -104,6 +111,7 @@ func (s *Server) AdminHandler() http.Handler {
 	consoleMux.HandleFunc("/console/api/status", s.handleAdminStatus)
 	consoleMux.HandleFunc("/console/api/openid-connect/users", s.handleAdminUsers)
 	consoleMux.HandleFunc("/console/api/certificates", s.handleAdminCertificates)
+	consoleMux.HandleFunc("/console/api/certificates/issue", s.handleAdminIssueCertificate)
 	consoleMux.HandleFunc("/console/api/downloads/certificate-installer.zip", s.handleAdminCertificateInstallerDownload)
 	consoleMux.HandleFunc("/console/api/downloads/root-ca.pem", s.handleAdminRootCADownload)
 	consoleMux.HandleFunc("/console/api/downloads/install.sh", s.handleAdminUnixInstallScript)
@@ -282,6 +290,81 @@ func (s *Server) handleAdminCertificates(w http.ResponseWriter, _ *http.Request)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) handleAdminIssueCertificate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	if s.config == nil || s.config.CertificateAuthority == nil {
+		http.Error(w, ErrCertificateAuthorityConfigMissing.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, ok := firstManagedWildcardDomain(s.config.CertificateAuthority.Domains); !ok {
+		http.Error(w, "managed wildcard domain is not configured", http.StatusBadRequest)
+		return
+	}
+
+	var payload adminCertificateIssueRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil {
+		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	ttl, err := time.ParseDuration(strings.TrimSpace(payload.TTL))
+	if err != nil || ttl <= 0 {
+		http.Error(w, "ttl must be a valid positive duration", http.StatusBadRequest)
+		return
+	}
+	notBefore, err := time.Parse(time.RFC3339, strings.TrimSpace(payload.NotBefore))
+	if err != nil {
+		http.Error(w, "notBefore must be RFC3339", http.StatusBadRequest)
+		return
+	}
+	host, err := managedWildcardHost(s.config.CertificateAuthority.Domains, payload.DomainLabel)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	bundle, err := ensureManagedSelfSignedTLSAssets(s.config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	caCert, caKey, caCertPEM, err := loadManagedCA(bundle)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	leaf, err := generateManagedLeafCertificateFromRequest(managedLeafCertificateRequest{
+		Domain:       host,
+		Organization: payload.Organization,
+		NotBefore:    notBefore.UTC(),
+		TTL:          ttl,
+	}, caCert, caKey, caCertPEM)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := persistManagedLeafCertificate(s.config, leaf); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	archive, err := buildManagedLeafCertificateZip(leaf, leaf.certificate.NotBefore)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	filename := strings.NewReplacer("*", "", "/", "-", "\\", "-", ":", "-").Replace(host)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "certificate-"+filename+".zip"))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(archive)))
+	_, _ = w.Write(archive)
 }
 
 func (s *Server) handleAdminRootCADownload(w http.ResponseWriter, _ *http.Request) {
@@ -888,6 +971,26 @@ func buildCertificateInstallerZip(caPEM []byte, modifiedAt time.Time) ([]byte, e
 		{name: "uninstall.ps1", content: []byte(generateWindowsUninstallScript()), mode: 0644},
 	}
 
+	return buildZipArchive(files, modifiedAt)
+}
+
+func buildManagedLeafCertificateZip(leaf *managedLeafCertificate, modifiedAt time.Time) ([]byte, error) {
+	files := []struct {
+		name    string
+		content []byte
+		mode    fs.FileMode
+	}{
+		{name: "certificate.pem", content: leaf.certPEM, mode: 0644},
+		{name: "private-key.pem", content: leaf.keyPEM, mode: 0600},
+	}
+	return buildZipArchive(files, modifiedAt)
+}
+
+func buildZipArchive(files []struct {
+	name    string
+	content []byte
+	mode    fs.FileMode
+}, modifiedAt time.Time) ([]byte, error) {
 	var buffer bytes.Buffer
 	archive := zip.NewWriter(&buffer)
 	for _, file := range files {

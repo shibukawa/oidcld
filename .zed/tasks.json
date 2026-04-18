@@ -1,0 +1,52 @@
+[
+  {
+    "label": "build",
+    "command": "npm --prefix web/admin ci && npm --prefix web/admin run build && mkdir -p internal/server/adminassets/generated && find internal/server/adminassets/generated -mindepth 1 ! -name placeholder.txt -exec rm -rf {} + && cp -R web/admin/dist/. internal/server/adminassets/generated/ && GOFLAGS=-mod=mod go build -trimpath -ldflags=\"-s\" .",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "shell": "system",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "build: admin assets",
+    "command": "npm --prefix web/admin ci && npm --prefix web/admin run build && mkdir -p internal/server/adminassets/generated && find internal/server/adminassets/generated -mindepth 1 ! -name placeholder.txt -exec rm -rf {} + && cp -R web/admin/dist/. internal/server/adminassets/generated/",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "shell": "system",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "build: backend",
+    "command": "GOFLAGS=-mod=mod go build -trimpath -ldflags=\"-s\" .",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "shell": "system",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "dev: backend",
+    "command": "GOFLAGS=-mod=mod go run . serve -c .vscode/oidcld.dev.yaml",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "shell": "system",
+    "show_summary": true,
+    "show_command": true
+  },
+  {
+    "label": "dev: admin",
+    "command": "npm run dev -- --host 127.0.0.1 --strictPort --open /console/",
+    "cwd": "$ZED_WORKTREE_ROOT/web/admin",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "shell": "system",
+    "show_summary": true,
+    "show_command": true
+  }
+]
