@@ -14,15 +14,15 @@ import (
 var (
 	ErrAutocertConflictProvidedFiles = fmt.Errorf("autocert is configured and automatic autocert start is available; do not provide TLS cert/key files when using autocert")
 	ErrAutocertNoCertsUnavailable    = fmt.Errorf("autocert configured but no cert/key provided and automatic autocert start is unavailable")
+	ErrAdminConsolePortConflict      = fmt.Errorf("admin console port conflicts with an existing listener")
+	ErrManualTLSFilesIncomplete      = fmt.Errorf("both TLS certificate and key files are required for manual TLS")
 )
-
-const defaultHTTPSReadOnlyPort = "18888"
 
 // ServeCmd represents the command to start the OpenID Connect server
 type ServeCmd struct {
 	Config           string `short:"c" help:"Configuration file path" default:"oidcld.yaml"`
 	Port             string `short:"p" help:"Port to listen on (default: 18888 for HTTP, 18443 for HTTPS)" default:""`
-	HTTPReadOnlyPort string `name:"http-readonly-port" help:"Restricted HTTP metadata port in HTTPS mode (default: 18888, or off/disabled/0 to disable)" default:""`
+	HTTPReadOnlyPort string `name:"http-readonly-port" help:"Deprecated. HTTP metadata companion now shares the Developer Console listener." default:""`
 	Watch            bool   `short:"w" help:"Watch configuration file for changes and reload automatically"`
 	CertFile         string `help:"Path to TLS certificate file (for HTTPS)"`
 	KeyFile          string `help:"Path to TLS private key file (for HTTPS)"`
@@ -42,24 +42,15 @@ func (cmd *ServeCmd) Run() error {
 	effectivePort := resolveServePort(cmd.Port, shouldUseHTTPSByDefault(cfg, cmd.CertFile, cmd.KeyFile))
 
 	// Let config package prepare serve-time defaults (autocert may force HTTPS)
-	useHTTPS, msg := cfg.PrepareForServe(&config.ServeOptions{Port: effectivePort, Verbose: cmd.Verbose})
-	if msg != "" {
-		color.Cyan(msg)
-	}
+	useHTTPS, _ := cfg.PrepareForServe(&config.ServeOptions{Port: effectivePort, Verbose: cmd.Verbose})
 
 	// Auto-enable HTTPS if explicit cert files provided (both) and not already enabled via autocert
 	if !useHTTPS && cmd.CertFile != "" && cmd.KeyFile != "" {
 		useHTTPS = true
-		color.Cyan("🔧 Auto-enabling HTTPS mode due to provided certificate files")
 		// Ensure issuer uses https if previously synthesized
-		if cfg.OIDCLD.Issuer == fmt.Sprintf("http://localhost:%s", effectivePort) {
-			cfg.OIDCLD.Issuer = fmt.Sprintf("https://localhost:%s", effectivePort)
+		if cfg.OIDC.Issuer == fmt.Sprintf("http://localhost:%s", effectivePort) {
+			cfg.OIDC.Issuer = fmt.Sprintf("https://localhost:%s", effectivePort)
 		}
-	}
-
-	// If autocert is enabled, log the renewal threshold days for operator visibility
-	if cfg.Autocert != nil && cfg.Autocert.Enabled {
-		color.Cyan("🔁 Autocert renewal threshold: %d days", cfg.Autocert.RenewalThreshold)
 	}
 
 	// Create server
@@ -68,9 +59,16 @@ func (cmd *ServeCmd) Run() error {
 		return fmt.Errorf("failed to create server: %w", err)
 	}
 
+	adminEnabled := cfg.Console != nil
+	adminPort := ""
+	adminBindAddress := ""
+	if adminEnabled {
+		adminPort = cfg.Console.Port
+		adminBindAddress = cfg.Console.BindAddress
+	}
+
 	// If watch mode is enabled, set up file watching
 	if cmd.Watch {
-		color.Cyan("🔄 Watch mode enabled - configuration will be reloaded automatically on changes")
 		if err := cmd.setupConfigWatcher(srv); err != nil {
 			return fmt.Errorf("failed to setup config watcher: %w", err)
 		}
@@ -78,44 +76,79 @@ func (cmd *ServeCmd) Run() error {
 
 	// Start server with HTTPS options
 	if useHTTPS {
-		httpReadOnlyPort := resolveHTTPReadOnlyPort(cmd.HTTPReadOnlyPort, effectivePort, useHTTPS)
-		if httpReadOnlyPort != "" {
-			color.Cyan("🔎 HTTP metadata companion listener enabled on port %s (discovery/JWKS/health only)", httpReadOnlyPort)
-		} else if strings.TrimSpace(cmd.HTTPReadOnlyPort) != "" {
-			color.Cyan("🔎 HTTP metadata companion listener disabled")
+		manualCertFile := firstNonEmpty(strings.TrimSpace(cmd.CertFile), strings.TrimSpace(cfg.OIDC.TLSCertFile))
+		manualKeyFile := firstNonEmpty(strings.TrimSpace(cmd.KeyFile), strings.TrimSpace(cfg.OIDC.TLSKeyFile))
+		if (manualCertFile == "") != (manualKeyFile == "") {
+			return ErrManualTLSFilesIncomplete
+		}
+
+		if adminEnabled && adminPort != "" && adminPort == effectivePort {
+			return ErrAdminConsolePortConflict
 		}
 
 		// If autocert is configured but server package doesn't provide an autocert starter,
 		// attempt to start with provided cert/key. If none provided, return helpful error.
+		var mainRunner func() error
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			// If server supports autocert, prefer it — but error if user also provided cert/key.
 			if srv.SupportsAutocert() {
-				if cmd.CertFile != "" || cmd.KeyFile != "" {
+				if manualCertFile != "" || manualKeyFile != "" {
 					return ErrAutocertConflictProvidedFiles
 				}
-				color.Cyan("🔄 Autocert is configured and available - starting HTTPS with autocert...")
-				return srv.StartTLSWithHTTPReadOnly(effectivePort, httpReadOnlyPort, "", "")
+				mainRunner = func() error {
+					return srv.StartTLS(effectivePort, "", "")
+				}
+			} else {
+				// Fallback: try using provided cert/key files if available when autocert is configured
+				// but not available in this build.
+				if manualCertFile != "" && manualKeyFile != "" {
+					if err := server.ValidateIssuerMatchesCertificate(cfg.OIDC.Issuer, manualCertFile); err != nil {
+						return err
+					}
+					mainRunner = func() error {
+						return srv.StartTLS(effectivePort, manualCertFile, manualKeyFile)
+					}
+				} else {
+					return ErrAutocertNoCertsUnavailable
+				}
 			}
-
-			// Fallback: try using provided cert/key files if available when autocert is configured
-			// but not available in this build.
-			color.Cyan("🔄 Autocert is configured, but automatic autocert start is not available in this build. Trying TLS certificates if provided...")
-			if cmd.CertFile != "" && cmd.KeyFile != "" {
-				return srv.StartTLSWithHTTPReadOnly(effectivePort, httpReadOnlyPort, cmd.CertFile, cmd.KeyFile)
+		} else {
+			if manualCertFile != "" {
+				if err := server.ValidateIssuerMatchesCertificate(cfg.OIDC.Issuer, manualCertFile); err != nil {
+					return err
+				}
 			}
-			return ErrAutocertNoCertsUnavailable
+			mainRunner = func() error {
+				return srv.StartTLS(effectivePort, manualCertFile, manualKeyFile)
+			}
 		}
 
-		color.Cyan("🔄 Starting server with TLS certificates...")
-		return srv.StartTLSWithHTTPReadOnly(effectivePort, httpReadOnlyPort, cmd.CertFile, cmd.KeyFile)
+		return runServeListeners(mainRunner, adminEnabled, func() error {
+			return srv.StartAdmin(adminBindAddress, adminPort)
+		})
 	}
-	color.Cyan("🔄 Starting server with HTTP...")
-	return srv.Start(effectivePort)
+	if adminEnabled && adminPort != "" && adminPort == effectivePort {
+		return ErrAdminConsolePortConflict
+	}
+	return runServeListeners(func() error {
+		return srv.Start(effectivePort)
+	}, adminEnabled, func() error {
+		return srv.StartAdmin(adminBindAddress, adminPort)
+	})
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func shouldUseHTTPSByDefault(cfg *config.Config, certFile, keyFile string) bool {
 	if cfg != nil {
-		if strings.HasPrefix(cfg.OIDCLD.Issuer, "https://") {
+		if strings.HasPrefix(cfg.OIDC.Issuer, "https://") {
 			return true
 		}
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
@@ -125,39 +158,27 @@ func shouldUseHTTPSByDefault(cfg *config.Config, certFile, keyFile string) bool 
 	return certFile != "" && keyFile != ""
 }
 
+func runServeListeners(mainRunner func() error, adminEnabled bool, adminRunner func() error) error {
+	if !adminEnabled {
+		return mainRunner()
+	}
+
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- adminRunner()
+	}()
+	go func() {
+		errCh <- mainRunner()
+	}()
+
+	return <-errCh
+}
+
 func resolveServePort(cliPort string, useHTTPS bool) string {
 	if strings.TrimSpace(cliPort) != "" {
 		return strings.TrimSpace(cliPort)
 	}
 	return config.DefaultServePort(useHTTPS)
-}
-
-func normalizeCLIHTTPReadOnlyPort(port string) string {
-	switch strings.ToLower(strings.TrimSpace(port)) {
-	case "", "auto":
-		return ""
-	case "0", "off", "disabled", "none":
-		return "disabled"
-	default:
-		return strings.TrimSpace(port)
-	}
-}
-
-func resolveHTTPReadOnlyPort(cliPort, primaryPort string, useHTTPS bool) string {
-	if !useHTTPS {
-		return ""
-	}
-	switch normalized := normalizeCLIHTTPReadOnlyPort(cliPort); normalized {
-	case "disabled":
-		return ""
-	case "":
-		if primaryPort == defaultHTTPSReadOnlyPort {
-			return ""
-		}
-		return defaultHTTPSReadOnlyPort
-	default:
-		return normalized
-	}
 }
 
 // setupConfigWatcher sets up file system watching for configuration changes
@@ -236,9 +257,9 @@ func (cmd *ServeCmd) reloadConfig(srv *server.Server) {
 	// Success message with configuration details
 	color.Green("✅ Configuration reloaded successfully!")
 	color.Cyan("📋 Updated configuration:")
-	color.Cyan("   Issuer: %s", newCfg.OIDCLD.Issuer)
+	color.Cyan("   Issuer: %s", newCfg.OIDC.Issuer)
 	color.Cyan("   Users: %d", len(newCfg.Users))
-	color.Cyan("   Valid Scopes: %v", newCfg.OIDCLD.ValidScopes)
+	color.Cyan("   Valid Scopes: %v", newCfg.OIDC.ValidScopes)
 	if newCfg.Autocert != nil && newCfg.Autocert.Enabled {
 		color.Cyan("   Autocert: enabled (%v)", newCfg.Autocert.Domains)
 	}

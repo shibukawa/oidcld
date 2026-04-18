@@ -188,8 +188,8 @@ func TestMCPServer_InitTool(t *testing.T) {
 		t.Fatalf("Failed to load created config: %v", err)
 	}
 
-	if cfg.OIDCLD.Issuer != "http://localhost:18888" {
-		t.Errorf("Expected issuer http://localhost:18888, got: %s", cfg.OIDCLD.Issuer)
+	if cfg.OIDC.Issuer != "http://localhost:18888" {
+		t.Errorf("Expected issuer http://localhost:18888, got: %s", cfg.OIDC.Issuer)
 	}
 }
 

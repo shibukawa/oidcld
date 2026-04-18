@@ -21,10 +21,10 @@ Authoritative reference for all runtime and initialization settings. The root RE
 
 ### Core Configuration Sections
 
-#### 1. OIDC Identity Provider Settings (`oidcld`)
+#### 1. OIDC Identity Provider Settings (`oidc`)
 
 ```yaml
-oidcld:
+oidc:
   iss: "http://localhost:18888"               # Issuer URL (default varies by mode)
   pkce_required: false                        # Require PKCE (default: false)
   nonce_required: false                       # Require nonce (default: false)
@@ -51,6 +51,26 @@ oidcld:
   tls_key_file: ""                          # TLS key file path (optional)
 ```
 
+#### 2. Developer Console (`console`)
+
+```yaml
+console:
+  port: "18889"                            # Always started
+  bind_address: "127.0.0.1"               # Loopback by default
+```
+
+#### 3. Managed Development CA (`certificate_authority`)
+
+```yaml
+certificate_authority:
+  ca_dir: "./tls"
+  domains:
+    - "localhost"
+    - "*.dev.localhost"
+  ca_cert_ttl: "87600h"
+  leaf_cert_ttl: "720h"
+```
+
 **Notes:**
 - Standard OIDC scopes (`openid`, `profile`, `email`, `offline_access`, `address`, `phone`) are automatically included
 - For EntraID modes, `address` and `phone` scopes are excluded
@@ -63,7 +83,7 @@ oidcld:
 - `login_ui.accent_color` accepts only `#RRGGBB`. If omitted and `env_title` is set, oidcld generates a stable high-visibility color from the title.
 - `login_ui.info_markdown_file` is resolved relative to the config file location. Markdown is re-read on each `/login` request, so edits show up without restarting.
 
-#### 2. EntraID/AzureAD Compatibility (`entraid`)
+#### 4. EntraID/AzureAD Compatibility (`entraid`)
 
 ```yaml
 entraid:
@@ -75,7 +95,7 @@ entraid:
 - **EntraID v1**: `tenant_id: "common"`, `version: "v1"`
 - **EntraID v2**: `tenant_id: "12345678-1234-1234-1234-123456789abc"`, `version: "v2"`
 
-#### 3. CORS Settings (`cors`)
+#### 5. CORS Settings (`cors`)
 
 ```yaml
 cors:
@@ -93,7 +113,7 @@ cors:
     - "Accept"
 ```
 
-#### 4. Automatic HTTPS Certificates (`autocert`)
+#### 6. Automatic HTTPS Certificates (`autocert`)
 
 The internal YAML field names match the generated template. (Note: the field is `acme_server`, not `acme_directory_url`). Only a subset is exposed via the init wizard; advanced fields can be added manually.
 

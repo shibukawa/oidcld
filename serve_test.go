@@ -13,24 +13,26 @@ func TestResolveServePort(t *testing.T) {
 	assert.Equal(t, config.DefaultHTTPSPort, resolveServePort("", true))
 }
 
-func TestResolveHTTPReadOnlyPort(t *testing.T) {
-	t.Run("disabled without HTTPS", func(t *testing.T) {
-		assert.Equal(t, "", resolveHTTPReadOnlyPort("19080", config.DefaultHTTPPort, false))
+func TestShouldUseHTTPSByDefault(t *testing.T) {
+	t.Run("http issuer stays http", func(t *testing.T) {
+		cfg := &config.Config{OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"}}
+		assert.False(t, shouldUseHTTPSByDefault(cfg, "", ""))
 	})
 
-	t.Run("uses CLI override", func(t *testing.T) {
-		assert.Equal(t, "19080", resolveHTTPReadOnlyPort("19080", config.DefaultHTTPSPort, true))
+	t.Run("https issuer enables https", func(t *testing.T) {
+		cfg := &config.Config{OIDC: config.OIDCConfig{Issuer: "https://localhost:18443"}}
+		assert.True(t, shouldUseHTTPSByDefault(cfg, "", ""))
 	})
 
-	t.Run("accepts disabled sentinel", func(t *testing.T) {
-		assert.Equal(t, "", resolveHTTPReadOnlyPort("off", config.DefaultHTTPSPort, true))
+	t.Run("autocert enables https", func(t *testing.T) {
+		cfg := &config.Config{
+			OIDC:     config.OIDCConfig{Issuer: "http://localhost:18888"},
+			Autocert: &config.AutocertConfig{Enabled: true},
+		}
+		assert.True(t, shouldUseHTTPSByDefault(cfg, "", ""))
 	})
 
-	t.Run("uses default companion port in HTTPS mode", func(t *testing.T) {
-		assert.Equal(t, defaultHTTPSReadOnlyPort, resolveHTTPReadOnlyPort("", config.DefaultHTTPSPort, true))
-	})
-
-	t.Run("suppresses default companion when ports collide", func(t *testing.T) {
-		assert.Equal(t, "", resolveHTTPReadOnlyPort("", defaultHTTPSReadOnlyPort, true))
+	t.Run("explicit certs enable https", func(t *testing.T) {
+		assert.True(t, shouldUseHTTPSByDefault(nil, "cert.pem", "key.pem"))
 	})
 }

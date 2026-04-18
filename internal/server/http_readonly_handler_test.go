@@ -12,7 +12,7 @@ import (
 
 func newHTTPReadOnlyTestConfig() *config.Config {
 	return &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:      "https://localhost:8443",
 			ExpiredIn:   3600,
 			ValidScopes: []string{"openid", "profile", "email"},

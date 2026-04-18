@@ -16,7 +16,7 @@ import (
 
 func TestOIDCServer_SessionEnderInterface(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 		},
 	}
@@ -46,7 +46,7 @@ func TestOIDCServer_SessionEnderInterface(t *testing.T) {
 
 func TestStorageAdapter_SessionManagement(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			ValidScopes: []string{"read", "write"},
 		},
 	}
@@ -114,7 +114,7 @@ func TestStorageAdapter_TerminateSessionFromRequest(t *testing.T) {
 
 func TestOIDCServer_ValidatePostLogoutRedirectURI(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 		},
 	}
@@ -177,7 +177,7 @@ func TestOIDCServer_ValidatePostLogoutRedirectURI(t *testing.T) {
 
 func TestOIDCServer_ShowLogoutSuccessPage_WithPostLogoutRedirectURI(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 		},
 	}
@@ -203,7 +203,7 @@ func TestOIDCServer_ShowLogoutSuccessPage_WithPostLogoutRedirectURI(t *testing.T
 
 func TestOIDCServer_ShowLogoutSuccessPage_WithoutPostLogoutRedirectURI(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 		},
 	}
@@ -229,7 +229,7 @@ func TestOIDCServer_ShowLogoutSuccessPage_WithoutPostLogoutRedirectURI(t *testin
 
 func TestOIDCServer_ShowLogoutSuccessPage_UsesRedirectCookie(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer: "http://localhost:18888",
 		},
 	}

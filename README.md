@@ -52,7 +52,7 @@ The term "fake" accurately describes this tool's role in testing scenarios - it'
 You can also mark each environment on `/login` with a title, a color, and a Markdown note:
 
 ```yaml
-oidcld:
+oidc:
   login_ui:
     env_title: "Staging"
     info_markdown_file: "./docs/login-links.staging.md"
@@ -103,6 +103,10 @@ open http://localhost:18888/.well-known/openid-configuration
 ```
 
 Add HTTPS later by generating certs (mkcert) and starting with `--cert-file/--key-file`.
+
+For the managed local-development path, configure `certificate_authority` and `console` in [oidcld.yaml](oidcld.yaml). OIDCLD exposes the Developer Console on `http://127.0.0.1:18889/console/`, issues a local root CA under the configured `ca_dir`, and provides download endpoints for the root certificate plus install / uninstall scripts.
+
+For local frontend work, use the VS Code `dev` task. It starts the backend with the usual `serve` flow and runs the Vite dev server with `/console/api/*` proxied to the Developer Console listener, so Vue changes are reflected immediately. For release-style builds, use the `build` task to build `web/admin`, sync the generated files into the backend embed directory, and then compile the Go binary.
 
 **Option 1: Go install (Go 1.24+)**
 ```bash
@@ -306,60 +310,31 @@ mkcert localhost 127.0.0.1 ::1
 
 When HTTPS is active, oidcld also keeps discovery, JWKS, and health reachable on a restricted HTTP companion listener. The default HTTPS port is `18443`, and the companion HTTP port defaults to `18888`. Set `--http-readonly-port off` to disable it. The same `oidcld.access_filter` rules apply to both the HTTPS listener and the HTTP metadata companion.
 
-**Option 2: Use ACME protocol server**
+**Option 2: Use managed self-signed TLS in Docker Compose**
 
-OIDCLD also supports the ACME protocol to obtain certificates automatically. The following sample uses a local ACME server.
+The following sample uses OIDCLD's managed development CA and persists it in a Docker volume so the same root CA and key material are reused across restarts until the volume is removed.
 
 ```yaml:compose.yaml
 services:
-  # myencrypt - Local ACME server for development
-  myencrypt.localhost:
-    image: ghcr.io/shibukawa/myencrypt:latest
-    ports:
-      - "14000:80"  # ACME server port
-    environment:
-      - MYENCRYPT_EXPOSE_PORT=14000  # Required: Host-accessible port
-      - MYENCRYPT_PROJECT_NAME=oidcld  # Required: Project name for Docker mode
-      - MYENCRYPT_HOSTNAME=myencrypt.localhost  # Required: Hostname for ACME directory URLs
-      - MYENCRYPT_INDIVIDUAL_CERT_TTL=168h  # 7 days (7 * 24h)
-      - MYENCRYPT_CA_CERT_TTL=19200h
-      - MYENCRYPT_ALLOWED_DOMAINS=localhost,*.localhost
-      - MYENCRYPT_CERT_STORE_PATH=/data
-      - MYENCRYPT_DATABASE_PATH=/data/myencrypt.db
-      - MYENCRYPT_LOG_LEVEL=info  # Enable debug logging
-    volumes:
-      - myencrypt-data:/data
-    restart: unless-stopped
-  # OIDCLD with myencrypt autocert (TLS-ALPN challenge)
   oidc.localhost:
     # image: oidcld:local
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "18888:18888"  # HTTP metadata companion listener (discovery/JWKS/health)
       - "8443:443"     # HTTPS OIDC server port
+      - "18889:18889"  # Developer Console + HTTP metadata companion
     volumes:
-      - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
+      - ./examples/autocert/config:/app/config:ro
+      - oidcld-managed-ca:/app/tls
     environment:
-      - OIDCLD_CONFIG=/app/config.yaml
-      # Minimal autocert environment variables (TLS-ALPN challenge)
-      - OIDCLD_ACME_DOMAIN=oidc.localhost
-      - OIDCLD_ACME_DIRECTORY_URL=http://myencrypt.localhost/acme/directory
-      - OIDCLD_ACME_CACHE_DIR=/tmp/autocert-cache  # Temporary cache directory (no persistence)
-      - OIDCLD_ACME_EMAIL=dev@localhost
-      - OIDCLD_ACME_AGREE_TOS=true
-      - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
-      - OIDCLD_ACME_RENEWAL_THRESHOLD=1
-    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--http-readonly-port", "18888"]
+      - OIDCLD_CONFIG=/app/config/oidcld.yaml
+    command: ["serve", "--config", "/app/config/oidcld.yaml", "--port", "443"]
     healthcheck:
-      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"]
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18889"]
       interval: 30s
       timeout: 10s
       start_period: 5s
       retries: 3
-    depends_on:
-      myencrypt.localhost:
-        condition: service_healthy
     restart: unless-stopped
 
   app.localhost:
@@ -378,9 +353,12 @@ services:
       oidc.localhost:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  oidcld-managed-ca:
 ```
 
-With this sample, logging out from the React app returns to `http://app.localhost:3000/`. If the provider lands on the logout success page first, oidcld now shows a short success message and automatically redirects back after a few seconds.
+With this sample, logging out from the React app returns to `http://app.localhost:3000/`. If the provider lands on the logout success page first, oidcld now shows a short success message and automatically redirects back after a few seconds. The root CA can be downloaded from `http://localhost:18889/console/` and remains stable while the `oidcld-managed-ca` volume exists.
 
 
 #### MSAL Configuration for OIDCLD

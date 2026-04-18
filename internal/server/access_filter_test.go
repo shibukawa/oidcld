@@ -13,9 +13,9 @@ func newAccessFilterTestServer(t *testing.T, accessFilter *config.AccessFilterCo
 	t.Helper()
 
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
-			Issuer:       "http://localhost:18888",
-			AccessFilter: accessFilter,
+		AccessFilter: accessFilter,
+		OIDC: config.OIDCConfig{
+			Issuer: "http://localhost:18888",
 		},
 		Users: map[string]config.User{
 			"admin": {DisplayName: "Administrator"},
@@ -112,6 +112,10 @@ func TestAccessFilterRejectsForwardedHeadersBeyondConfiguredHopLimit(t *testing.
 	server.Handler().ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusForbidden, res.Code)
+	assert.Contains(t, res.Body.String(), "OIDCLD access_filter denied this request because the forwarded hop count exceeded the configured limit.")
+	assert.Contains(t, res.Body.String(), "Configured max_forwarded_hops: 1")
+	assert.Contains(t, res.Body.String(), "Observed effective hops: 2")
+	assert.Contains(t, res.Body.String(), "X-Forwarded-For hops: 2")
 }
 
 func TestAccessFilterUsesMaxHopCountAcrossForwardHeaders(t *testing.T) {

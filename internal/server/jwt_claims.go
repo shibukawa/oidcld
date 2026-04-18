@@ -12,7 +12,7 @@ import (
 
 func (s *Server) newDeviceFlowBaseClaims(clientID, userID string, issuedAt, expiresAt time.Time) jwt.MapClaims {
 	return jwt.MapClaims{
-		"iss": s.config.OIDCLD.Issuer,
+		"iss": s.config.OIDC.Issuer,
 		"sub": userID,
 		"aud": jwt.ClaimStrings{clientID},
 		"exp": expiresAt.Unix(),

@@ -21,9 +21,9 @@
 
 ### セクション概要
 
-#### 1. OIDC 基本設定 (`oidcld`)
+#### 1. OIDC 基本設定 (`oidc`)
 ```yaml
-oidcld:
+oidc:
   iss: "http://localhost:18888"          # モードとHTTPS有無で初期値変化
   pkce_required: false
   nonce_required: false
@@ -49,10 +49,28 @@ oidcld:
   tls_cert_file: ""                       # 手動証明書利用時のみ
   tls_key_file: ""
 ```
+
+#### 2. Developer Console (`console`)
+```yaml
+console:
+  port: "18889"
+  bind_address: "127.0.0.1"
+```
+
+#### 3. 開発用 CA (`certificate_authority`)
+```yaml
+certificate_authority:
+  ca_dir: "./tls"
+  domains:
+    - localhost
+    - "*.dev.localhost"
+  ca_cert_ttl: "87600h"
+  leaf_cert_ttl: "720h"
+```
 標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。`access_filter.enabled` は `serve` listener で既定 `true` です。`Forwarded` / `X-Forwarded-For` が無い場合は loopback / ローカル私設アドレス (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`) のみ許可します。`extra_allowed_ips` は単一 IP と CIDR の両方を受け付け、単一 IP は内部で `/32` または `/128` に正規化されます。`max_forwarded_hops` は既定 `0` なので、forward 系ヘッダー付きリクエストは明示設定がない限り拒否されます。
 `login_ui.env_title` と `login_ui.info_markdown_file` は `/login` のみへ適用され、device や logout の画面は変更しません。`login_ui.accent_color` は `#RRGGBB` のみ受け付けます。未指定で `env_title` がある場合は、視認性を意識した色をタイトルから決定的に自動生成します。`info_markdown_file` は設定ファイルの位置基準で解決され、`/login` へのアクセスごとに再読み込みされます。
 
-#### 2. EntraID 互換設定 (`entraid`)
+#### 4. EntraID 互換設定 (`entraid`)
 ```yaml
 entraid:
   tenant_id: "12345678-1234-1234-1234-123456789abc"
@@ -60,14 +78,14 @@ entraid:
 ```
 テンプレート既定: v1: tenant_id=common, v2: 固定 UUID。
 
-#### 3. CORS (`cors`)
+#### 5. CORS (`cors`)
 ```yaml
 cors:
   enabled: true
   # allowed_* を省略すると開発向け寛容デフォルト (全許可) 振る舞い
 ```
 
-#### 4. 自動証明書 (`autocert`)
+#### 6. 自動証明書 (`autocert`)
 ```yaml
 autocert:
   enabled: true
@@ -105,9 +123,9 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | OIDCLD_VERBOSE | `serve` の詳細ログを有効化 | `serve` コマンドの env binding で実装済み |
 | OIDCLD_CONFIG | コンテナ / health 系で使う設定ファイルパス | 実行時の慣例と health 自動判定で利用 |
 | PORT | ポート上書き | 現在の Go エントリポイントでは直接読んでいない。確実に制御したい場合は `oidcld serve --port ...` を使う |
-| OIDCLD_ENV_TITLE | `oidcld.login_ui.env_title` を上書き | `/login` に環境バナーを表示 |
-| OIDCLD_ENV_COLOR | `oidcld.login_ui.accent_color` を上書き | `#RRGGBB` のみ。未設定なら env_title から自動色生成可 |
-| OIDCLD_ENV_MARKDOWN_FILE | `oidcld.login_ui.info_markdown_file` を上書き | 相対パスは設定ファイル基準で解決 |
+| OIDCLD_ENV_TITLE | `oidc.login_ui.env_title` を上書き | `/login` に環境バナーを表示 |
+| OIDCLD_ENV_COLOR | `oidc.login_ui.accent_color` を上書き | `#RRGGBB` のみ。未設定なら env_title から自動色生成可 |
+| OIDCLD_ENV_MARKDOWN_FILE | `oidc.login_ui.info_markdown_file` を上書き | 相対パスは設定ファイル基準で解決 |
 
 ### ACME / autocert 上書き
 設定ファイルより優先され、存在すると `enabled: true` に強制。

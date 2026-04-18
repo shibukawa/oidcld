@@ -1,0 +1,1 @@
+This directory is populated by the VS Code build task before Go build embeds the admin console assets.

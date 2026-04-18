@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-    "html"
+	"html"
 	"log/slog"
 	"net/http"
 	"net/url"
-    "strings"
+	"strings"
 	"time"
 
 	zhttp "github.com/zitadel/oidc/v3/pkg/http"
@@ -22,8 +22,8 @@ var (
 )
 
 const (
-    postLogoutRedirectCookieName  = "oidcld_post_logout_redirect_uri"
-    logoutSuccessRedirectDelaySec = 3
+	postLogoutRedirectCookieName  = "oidcld_post_logout_redirect_uri"
+	logoutSuccessRedirectDelaySec = 3
 )
 
 // Decoder implements SessionEnder for the OIDC server.
@@ -54,7 +54,7 @@ func (s *Server) IDTokenHintVerifier(ctx context.Context) *op.IDTokenHintVerifie
 
 func (s *Server) DefaultLogoutRedirectURI() string {
 	// Return default logout success page URL
-	return s.config.OIDCLD.Issuer + "/logout/success"
+	return s.config.OIDC.Issuer + "/logout/success"
 }
 
 func (s *Server) Logger() *slog.Logger {
@@ -190,18 +190,18 @@ func (s *Server) handleLogoutSuccess(w http.ResponseWriter, r *http.Request) {
 
 // showLogoutSuccessPage displays an enhanced logout success page
 func (s *Server) showLogoutSuccessPage(w http.ResponseWriter, r *http.Request) {
-    redirectTarget := s.postLogoutRedirectURIFromRequest(r)
-    if redirectTarget != "" {
-        s.clearPostLogoutRedirectCookie(w, r)
-    }
+	redirectTarget := s.postLogoutRedirectURIFromRequest(r)
+	if redirectTarget != "" {
+		s.clearPostLogoutRedirectCookie(w, r)
+	}
 
-    metaRefresh := ""
-    redirectMessage := "<p>You can now close this window or navigate to your application.</p>"
-    if redirectTarget != "" {
-        escapedTarget := html.EscapeString(redirectTarget)
-        metaRefresh = fmt.Sprintf("\n    <meta http-equiv=\"refresh\" content=\"%d;url=%s\">", logoutSuccessRedirectDelaySec, escapedTarget)
-        redirectMessage = fmt.Sprintf(`<p>You will be redirected back to your application in a few seconds. If nothing happens, <a href="%s">return now</a>.</p>`, escapedTarget)
-    }
+	metaRefresh := ""
+	redirectMessage := "<p>You can now close this window or navigate to your application.</p>"
+	if redirectTarget != "" {
+		escapedTarget := html.EscapeString(redirectTarget)
+		metaRefresh = fmt.Sprintf("\n    <meta http-equiv=\"refresh\" content=\"%d;url=%s\">", logoutSuccessRedirectDelaySec, escapedTarget)
+		redirectMessage = fmt.Sprintf(`<p>You will be redirected back to your application in a few seconds. If nothing happens, <a href="%s">return now</a>.</p>`, escapedTarget)
+	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -245,76 +245,76 @@ func (s *Server) showLogoutSuccessPage(w http.ResponseWriter, r *http.Request) {
 	html = strings.ReplaceAll(html, "__REDIRECT_MESSAGE__", redirectMessage)
 
 	w.Write([]byte(html))
-    if redirectTarget != "" {
-        s.logger.Info("Logout success page displayed", "post_logout_redirect_uri", redirectTarget)
-        return
-    }
-    s.logger.Info("Logout success page displayed")
+	if redirectTarget != "" {
+		s.logger.Info("Logout success page displayed", "post_logout_redirect_uri", redirectTarget)
+		return
+	}
+	s.logger.Info("Logout success page displayed")
 }
 
 func (s *Server) postLogoutRedirectURIFromRequest(r *http.Request) string {
-    if r == nil {
-        return ""
-    }
+	if r == nil {
+		return ""
+	}
 
-    if redirectURI := r.URL.Query().Get("post_logout_redirect_uri"); redirectURI != "" {
-        return redirectURI
-    }
+	if redirectURI := r.URL.Query().Get("post_logout_redirect_uri"); redirectURI != "" {
+		return redirectURI
+	}
 
-    cookie, err := r.Cookie(postLogoutRedirectCookieName)
-    if err != nil || cookie.Value == "" {
-        return ""
-    }
+	cookie, err := r.Cookie(postLogoutRedirectCookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
 
-    redirectURI, err := url.QueryUnescape(cookie.Value)
-    if err != nil {
-        return ""
-    }
-    return redirectURI
+	redirectURI, err := url.QueryUnescape(cookie.Value)
+	if err != nil {
+		return ""
+	}
+	return redirectURI
 }
 
 func (s *Server) rememberPostLogoutRedirectCookie(w http.ResponseWriter, r *http.Request) {
-    if w == nil || r == nil {
-        return
-    }
+	if w == nil || r == nil {
+		return
+	}
 
-    redirectURI := requestParameter(r, "post_logout_redirect_uri")
-    if redirectURI == "" {
-        return
-    }
-    if err := s.validatePostLogoutRedirectURI(redirectURI); err != nil {
-        return
-    }
+	redirectURI := requestParameter(r, "post_logout_redirect_uri")
+	if redirectURI == "" {
+		return
+	}
+	if err := s.validatePostLogoutRedirectURI(redirectURI); err != nil {
+		return
+	}
 
-    http.SetCookie(w, &http.Cookie{
-        Name:     postLogoutRedirectCookieName,
-        Value:    url.QueryEscape(redirectURI),
-        Path:     "/",
-        MaxAge:   300,
-        HttpOnly: true,
-        SameSite: http.SameSiteLaxMode,
-        Secure:   r.TLS != nil,
-    })
+	http.SetCookie(w, &http.Cookie{
+		Name:     postLogoutRedirectCookieName,
+		Value:    url.QueryEscape(redirectURI),
+		Path:     "/",
+		MaxAge:   300,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
 }
 
 func (s *Server) clearPostLogoutRedirectCookie(w http.ResponseWriter, r *http.Request) {
-    if w == nil || r == nil {
-        return
-    }
+	if w == nil || r == nil {
+		return
+	}
 
-    if _, err := r.Cookie(postLogoutRedirectCookieName); err != nil {
-        return
-    }
+	if _, err := r.Cookie(postLogoutRedirectCookieName); err != nil {
+		return
+	}
 
-    http.SetCookie(w, &http.Cookie{
-        Name:     postLogoutRedirectCookieName,
-        Value:    "",
-        Path:     "/",
-        MaxAge:   -1,
-        HttpOnly: true,
-        SameSite: http.SameSiteLaxMode,
-        Secure:   r.TLS != nil,
-    })
+	http.SetCookie(w, &http.Cookie{
+		Name:     postLogoutRedirectCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
 }
 
 // validatePostLogoutRedirectURI validates the post logout redirect URI

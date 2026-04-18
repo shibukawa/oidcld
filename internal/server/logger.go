@@ -9,6 +9,27 @@ import (
 	"github.com/shibukawa/oidcld/internal/config"
 )
 
+type startupSummary struct {
+	DeveloperConsoleURL string
+	OIDC                startupOIDCSummary
+	MetadataCompanion   *startupMetadataSummary
+}
+
+type startupOIDCSummary struct {
+	Mode         string
+	TLSEnabled   bool
+	TLSSource    string
+	AccessFilter string
+	Endpoints    entraIDStartupDisplay
+	Tenants      []string
+}
+
+type startupMetadataSummary struct {
+	Discovery string
+	JWKS      string
+	Tenants   []string
+}
+
 // Logger provides colorful, pretty logging for the OIDC server
 type Logger struct {
 	// Color functions
@@ -41,64 +62,54 @@ func NewLogger() *Logger {
 }
 
 // ServerStarting logs server startup with beautiful formatting
-func (l *Logger) ServerStarting(addr, issuer string, https bool, entraid *config.EntraIDConfig, httpMetadataAddr string, accessFilter accessFilterStartupInfo) {
+func (l *Logger) ServerStarting(summary startupSummary) {
 	fmt.Println()
 	l.printBanner()
 	fmt.Println()
 
-	if https {
-		l.success.Print("🔒 HTTPS Server Starting")
+	l.info.Println("🛠 Developer Console")
+	if summary.DeveloperConsoleURL != "" {
+		l.printEndpoint("URL", summary.DeveloperConsoleURL)
 	} else {
-		l.info.Print("🚀 HTTP Server Starting")
+		l.printKeyValue("URL", "not configured")
 	}
-	fmt.Println()
-
-	l.printKeyValue("📍 Address", addr)
-	l.printKeyValue("🌐 Issuer", issuer)
-	if accessFilter.Enabled {
-		l.printKeyValue("🛡 Access Filter", fmt.Sprintf("enabled (extra allowlist: %d, max forwarded hops: %d)", accessFilter.ExtraAllowedIPs, accessFilter.MaxForwardedHops))
-	} else {
-		l.printKeyValue("🛡 Access Filter", "disabled")
-	}
-	l.printKeyValue("⏰ Started", time.Now().Format("2006-01-02 15:04:05"))
-	endpoints, tenants := startupEndpointsForIssuer(issuer, entraid)
 
 	fmt.Println()
-	l.info.Println("📋 Available Endpoints:")
-	l.printEndpoint("Discovery", endpoints.Discovery)
-	l.printEndpoint("Authorization", endpoints.Authorize)
-	l.printEndpoint("Token", endpoints.Token)
-	l.printEndpoint("UserInfo", endpoints.UserInfo)
-	l.printEndpoint("JWKS", endpoints.JWKS)
-	l.printEndpoint("Device Flow", endpoints.DeviceAuthorization)
-	l.printEndpoint("Introspection", endpoints.Introspection)
-	l.printEndpoint("Revocation", endpoints.Revocation)
-	l.printEndpoint("End Session", endpoints.Logout)
-	l.printEndpoint("Health Check", endpoints.HealthCheck)
-	if len(tenants) > 0 {
-		l.printKeyValue("Tenant", strings.Join(tenants, ", ")+" (or omitted)")
+	l.info.Println("🔑 OpenID Connect")
+	l.printKeyValue("Mode", summary.OIDC.Mode)
+	if summary.OIDC.TLSEnabled {
+		l.printKeyValue("TLS", fmt.Sprintf("on (%s)", summary.OIDC.TLSSource))
+	} else {
+		l.printKeyValue("TLS", "off")
+	}
+	l.printKeyValue("Access Filter", summary.OIDC.AccessFilter)
+
+	fmt.Println()
+	l.info.Println("📋 Available Endpoints")
+	l.printEndpoint("Discovery", summary.OIDC.Endpoints.Discovery)
+	l.printEndpoint("Authorization", summary.OIDC.Endpoints.Authorize)
+	l.printEndpoint("Token", summary.OIDC.Endpoints.Token)
+	l.printEndpoint("UserInfo", summary.OIDC.Endpoints.UserInfo)
+	l.printEndpoint("JWKS", summary.OIDC.Endpoints.JWKS)
+	l.printEndpoint("Device Flow", summary.OIDC.Endpoints.DeviceAuthorization)
+	l.printEndpoint("Introspection", summary.OIDC.Endpoints.Introspection)
+	l.printEndpoint("Revocation", summary.OIDC.Endpoints.Revocation)
+	l.printEndpoint("End Session", summary.OIDC.Endpoints.Logout)
+	l.printEndpoint("Health Check", summary.OIDC.Endpoints.HealthCheck)
+	if len(summary.OIDC.Tenants) > 0 {
+		l.printKeyValue("Tenant", strings.Join(summary.OIDC.Tenants, ", ")+" (or omitted)")
 	}
 
-	if httpMetadataAddr != "" {
-		if metadataIssuer := config.HTTPMetadataIssuer(issuer, httpMetadataAddr); metadataIssuer != "" {
-			httpEndpoints, metadataTenants := startupEndpointsForIssuer(metadataIssuer, entraid)
-
-			fmt.Println()
-			l.info.Println("🔎 HTTP Metadata Companion:")
-			l.printKeyValue("📍 Address", httpMetadataAddr)
-			l.printKeyValue("🌐 Base URL", metadataIssuer)
-			l.printKeyValue("🔒 Scope", "Discovery, JWKS, Health Check only")
-			l.printEndpoint("Discovery", httpEndpoints.Discovery)
-			l.printEndpoint("JWKS", httpEndpoints.JWKS)
-			l.printEndpoint("Health Check", httpEndpoints.HealthCheck)
-			if len(metadataTenants) > 0 {
-				l.printKeyValue("Tenant", strings.Join(metadataTenants, ", ")+" (or omitted)")
-			}
+	if summary.MetadataCompanion != nil {
+		fmt.Println()
+		l.info.Println("🔎 HTTP Metadata Companion (for Discovery, JWKS)")
+		l.printEndpoint("Discovery", summary.MetadataCompanion.Discovery)
+		l.printEndpoint("JWKS", summary.MetadataCompanion.JWKS)
+		if len(summary.MetadataCompanion.Tenants) > 0 {
+			l.printKeyValue("Tenant", strings.Join(summary.MetadataCompanion.Tenants, ", ")+" (or omitted)")
 		}
 	}
 
-	fmt.Println()
-	l.success.Println("✅ Server ready to accept connections!")
 	l.printSeparator()
 }
 

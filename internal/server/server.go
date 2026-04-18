@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"errors"
 
 	// "log" was removed (diagnostic logs cleaned up)
@@ -35,7 +36,7 @@ var (
 	ErrIssuerURLCannotBeChanged           = fmt.Errorf("issuer URL cannot be changed at runtime")
 	ErrAutocertConflictTLSProvided        = fmt.Errorf("autocert is configured AND TLS certificate/key were provided; choose one (remove autocert settings or provide no cert/key)")
 	ErrTLSMissingWithoutAutocert          = fmt.Errorf("no autocert configured and TLS certificate/key not provided")
-	ErrHTTPReadOnlyPortConflict           = fmt.Errorf("HTTP read-only port must be different from the HTTPS port")
+	ErrManualTLSCertificateKeyRequired    = errors.New("both TLS certificate and key files are required for manual TLS")
 	ErrEntraIDTenantRequiresConfiguration = errors.New("tenant is not allowed without EntraID configuration")
 	ErrEntraIDTenantIDMismatch            = errors.New("tenant does not match configured tenant_id")
 	ErrEntraIDTenantNotAllowed            = errors.New("tenant is not allowed")
@@ -48,13 +49,15 @@ func configureJWTAudienceClaimFormat(format string) {
 
 // Server represents the new zitadel/oidc-based server implementation
 type Server struct {
-	config     *config.Config
-	storage    *StorageAdapter
-	provider   op.OpenIDProvider
-	privateKey *rsa.PrivateKey
-	logger     *slog.Logger
-	prettyLog  *Logger // Add colorful logger
-	access     *compiledAccessFilter
+	config        *config.Config
+	storage       *StorageAdapter
+	provider      op.OpenIDProvider
+	privateKey    *rsa.PrivateKey
+	logger        *slog.Logger
+	prettyLog     *Logger // Add colorful logger
+	access        *compiledAccessFilter
+	managedLeaf   *managedLeafCertificate
+	managedLeafMu sync.Mutex
 
 	// Autocert manager (optional)
 	autocertManager *AutocertManager
@@ -92,7 +95,7 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 	}
 
 	jwtAudienceClaimFormatMu.Lock()
-	configureJWTAudienceClaimFormat(cfg.OIDCLD.NormalizedAudienceClaimFormat())
+	configureJWTAudienceClaimFormat(cfg.OIDC.NormalizedAudienceClaimFormat())
 	jwtAudienceClaimFormatMu.Unlock()
 
 	// Create storage adapter
@@ -108,7 +111,7 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 	}
 
 	var err error
-	server.access, err = newCompiledAccessFilter(cfg.OIDCLD.AccessFilter)
+	server.access, err = newCompiledAccessFilter(cfg.AccessFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build access filter: %w", err)
 	}
@@ -140,7 +143,7 @@ func NewServer(cfg *config.Config, privateKey *rsa.PrivateKey, logger *slog.Logg
 // createProvider creates the zitadel OpenID Provider with proper configuration
 func (s *Server) createProvider() (op.OpenIDProvider, error) {
 	// Create encryption key for tokens (32 bytes required)
-	key := sha256.Sum256([]byte("oidcld-encryption-key-" + s.config.OIDCLD.Issuer))
+	key := sha256.Sum256([]byte("oidcld-encryption-key-" + s.config.OIDC.Issuer))
 
 	// Configure the OpenID Provider
 	config := &op.Config{
@@ -150,7 +153,7 @@ func (s *Server) createProvider() (op.OpenIDProvider, error) {
 		DefaultLogoutRedirectURI: "/logged-out",
 
 		// Enable PKCE with S256
-		CodeMethodS256: s.config.OIDCLD.PKCERequired,
+		CodeMethodS256: s.config.OIDC.PKCERequired,
 
 		// Enable form post authentication (in addition to HTTP Basic Auth)
 		AuthMethodPost: true,
@@ -159,7 +162,7 @@ func (s *Server) createProvider() (op.OpenIDProvider, error) {
 		AuthMethodPrivateKeyJWT: true,
 
 		// Enable refresh token grant
-		GrantTypeRefreshToken: s.config.OIDCLD.RefreshTokenEnabled,
+		GrantTypeRefreshToken: s.config.OIDC.RefreshTokenEnabled,
 
 		// Enable request object parameter
 		RequestObjectSupported: true,
@@ -177,7 +180,7 @@ func (s *Server) createProvider() (op.OpenIDProvider, error) {
 	}
 
 	// Determine issuer URL
-	issuer := s.config.OIDCLD.Issuer
+	issuer := s.config.OIDC.Issuer
 	if issuer == "" {
 		issuer = "http://localhost:18888" // Default for development
 	}
@@ -272,7 +275,7 @@ func (s *Server) Handler() http.Handler {
 	handler = s.loggingMiddleware(handler)
 	handler = createCORSMiddleware(s.config.CORS)(handler)
 
-	prefix := config.IssuerPathPrefix(s.config.OIDCLD.Issuer)
+	prefix := config.IssuerPathPrefix(s.config.OIDC.Issuer)
 	if prefix == "" {
 		return handler
 	}
@@ -350,7 +353,7 @@ func (s *Server) isAllowedReadOnlyHTTPPath(path string) bool {
 }
 
 func (s *Server) readOnlyHTTPCanonicalPath(path string) (string, bool) {
-	prefix := config.IssuerPathPrefix(s.config.OIDCLD.Issuer)
+	prefix := config.IssuerPathPrefix(s.config.OIDC.Issuer)
 	if prefix != "" {
 		switch {
 		case path == prefix:
@@ -431,7 +434,7 @@ func (s *Server) renderLoginForm(w http.ResponseWriter, authRequestID string, au
 		ClientID:      authReq.GetClientID(),
 		Scopes:        append([]string(nil), authReq.GetScopes()...),
 	}
-	if loginUI := s.config.OIDCLD.LoginUI; loginUI != nil {
+	if loginUI := s.config.OIDC.LoginUI; loginUI != nil {
 		loginPageConfig.EnvironmentTitle = loginUI.EnvTitle
 		loginPageConfig.AccentColor = loginUI.EffectiveAccentColor()
 		loginPageConfig.HeaderTextColor = loginUI.EffectiveTextColor()
@@ -661,32 +664,16 @@ func (s *Server) Start(port string) error {
 		Handler: s.Handler(),
 	}
 
-	// Use colorful logging for server startup
-	s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, false, s.config.EntraID, "", s.access.startupInfo())
-	return server.ListenAndServe()
-}
-
-func (s *Server) StartHTTPReadOnly(port string) error {
-	addr := fmt.Sprintf(":%s", port)
-	handler := s.ReadOnlyHTTPHandler()
-	if s.autocertManager != nil {
-		handler = s.autocertManager.HTTPHandler(handler)
-	}
-
-	server := &http.Server{
-		Addr:    addr,
-		Handler: handler,
-	}
-
+	s.prettyLog.ServerStarting(s.startupSummary(false, "none"))
 	return server.ListenAndServe()
 }
 
 // StartTLS starts the OIDC server with TLS
 func (s *Server) StartTLS(port, certFile, keyFile string) error {
-	return s.startTLS(port, "", certFile, keyFile, true)
+	return s.startTLS(port, certFile, keyFile, true)
 }
 
-func (s *Server) startTLS(port, httpReadOnlyPort, certFile, keyFile string, logStartup bool) error {
+func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error {
 	addr := fmt.Sprintf(":%s", port)
 
 	server := &http.Server{
@@ -694,15 +681,15 @@ func (s *Server) startTLS(port, httpReadOnlyPort, certFile, keyFile string, logS
 		Handler: s.Handler(),
 	}
 
-	if logStartup {
-		s.prettyLog.ServerStarting(addr, s.config.OIDCLD.Issuer, true, s.config.EntraID, httpReadOnlyPort, s.access.startupInfo())
-	}
-
 	// If autocert manager is configured, prefer it when no cert/key provided.
 	if s.autocertManager != nil {
 		// If both autocert and explicit cert/key are provided, that's ambiguous — error out.
 		if certFile != "" || keyFile != "" {
 			return ErrAutocertConflictTLSProvided
+		}
+
+		if logStartup {
+			s.prettyLog.ServerStarting(s.startupSummary(true, "acme"))
 		}
 
 		// Use autocert TLSConfig and let the standard library's ListenAndServeTLS
@@ -717,32 +704,77 @@ func (s *Server) startTLS(port, httpReadOnlyPort, certFile, keyFile string, logS
 		return server.ListenAndServeTLS("", "")
 	}
 
-	// No autocert manager configured: require certFile and keyFile.
-	if certFile == "" || keyFile == "" {
-		return ErrTLSMissingWithoutAutocert
+	if (certFile == "") != (keyFile == "") {
+		return ErrManualTLSCertificateKeyRequired
+	}
+
+	if certFile == "" && keyFile == "" {
+		leaf, err := s.ensureManagedLeafCertificate()
+		if err != nil {
+			return err
+		}
+		server.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{leaf.tlsCertificate},
+		}
+		if logStartup {
+			s.prettyLog.ServerStarting(s.startupSummary(true, "self-signed"))
+		}
+		return server.ListenAndServeTLS("", "")
+	}
+
+	if logStartup {
+		s.prettyLog.ServerStarting(s.startupSummary(true, "manual"))
 	}
 
 	return server.ListenAndServeTLS(certFile, keyFile)
 }
 
-func (s *Server) StartTLSWithHTTPReadOnly(tlsPort, httpReadOnlyPort, certFile, keyFile string) error {
-	if strings.TrimSpace(httpReadOnlyPort) == "" {
-		return s.StartTLS(tlsPort, certFile, keyFile)
+func (s *Server) startupSummary(tlsEnabled bool, tlsSource string) startupSummary {
+	endpoints, tenants := startupEndpointsForIssuer(s.config.OIDC.Issuer, s.config.EntraID)
+	summary := startupSummary{
+		OIDC: startupOIDCSummary{
+			Mode:         startupModeLabel(s.config.EntraID),
+			TLSEnabled:   tlsEnabled,
+			TLSSource:    tlsSource,
+			AccessFilter: formatAccessFilterStartupInfo(s.access.startupInfo()),
+			Endpoints:    endpoints,
+			Tenants:      tenants,
+		},
 	}
-	if tlsPort == httpReadOnlyPort {
-		return ErrHTTPReadOnlyPortConflict
+
+	if s.config.Console != nil {
+		summary.DeveloperConsoleURL = ConsoleURL(s.config.Console.BindAddress, s.config.Console.Port)
+		if tlsEnabled {
+			httpMetadataAddr := fmt.Sprintf(":%s", strings.TrimSpace(s.config.Console.Port))
+			if metadataIssuer := config.HTTPMetadataIssuer(s.config.OIDC.Issuer, httpMetadataAddr); metadataIssuer != "" {
+				metadataEndpoints, metadataTenants := startupEndpointsForIssuer(metadataIssuer, s.config.EntraID)
+				summary.MetadataCompanion = &startupMetadataSummary{
+					Discovery: metadataEndpoints.Discovery,
+					JWKS:      metadataEndpoints.JWKS,
+					Tenants:   metadataTenants,
+				}
+			}
+		}
 	}
-	s.prettyLog.ServerStarting(fmt.Sprintf(":%s", tlsPort), s.config.OIDCLD.Issuer, true, s.config.EntraID, fmt.Sprintf(":%s", httpReadOnlyPort), s.access.startupInfo())
 
-	errCh := make(chan error, 2)
-	go func() {
-		errCh <- s.StartHTTPReadOnly(httpReadOnlyPort)
-	}()
-	go func() {
-		errCh <- s.startTLS(tlsPort, httpReadOnlyPort, certFile, keyFile, false)
-	}()
+	return summary
+}
 
-	return <-errCh
+func startupModeLabel(entraid *config.EntraIDConfig) string {
+	if entraid == nil {
+		return "oidc"
+	}
+	if strings.EqualFold(entraid.Version, "v1") {
+		return "entraid v1"
+	}
+	return "entraid v2"
+}
+
+func formatAccessFilterStartupInfo(info accessFilterStartupInfo) string {
+	if !info.Enabled {
+		return "disabled"
+	}
+	return fmt.Sprintf("enabled (extra allowlist: %d, max forwarded hops: %d)", info.ExtraAllowedIPs, info.MaxForwardedHops)
 }
 
 // UpdateConfig updates the server configuration at runtime
@@ -756,9 +788,9 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 	}
 
 	// Validate issuer hasn't changed (would require server restart)
-	if s.config.OIDCLD.Issuer != newConfig.OIDCLD.Issuer {
+	if s.config.OIDC.Issuer != newConfig.OIDC.Issuer {
 		return fmt.Errorf("%w: old=%s, new=%s",
-			ErrIssuerURLCannotBeChanged, s.config.OIDCLD.Issuer, newConfig.OIDCLD.Issuer)
+			ErrIssuerURLCannotBeChanged, s.config.OIDC.Issuer, newConfig.OIDC.Issuer)
 	}
 
 	// Track changes for colorful logging
@@ -770,30 +802,30 @@ func (s *Server) UpdateConfig(newConfig *config.Config) error {
 	}
 
 	// Check for scope changes
-	if len(s.config.OIDCLD.ValidScopes) != len(newConfig.OIDCLD.ValidScopes) {
-		changes = append(changes, fmt.Sprintf("Valid Scopes: %d → %d", len(s.config.OIDCLD.ValidScopes), len(newConfig.OIDCLD.ValidScopes)))
+	if len(s.config.OIDC.ValidScopes) != len(newConfig.OIDC.ValidScopes) {
+		changes = append(changes, fmt.Sprintf("Valid Scopes: %d → %d", len(s.config.OIDC.ValidScopes), len(newConfig.OIDC.ValidScopes)))
 	}
 
 	// Check token expiration changes
-	if s.config.OIDCLD.ExpiredIn != newConfig.OIDCLD.ExpiredIn {
-		changes = append(changes, fmt.Sprintf("Token Expiry: %ds → %ds", s.config.OIDCLD.ExpiredIn, newConfig.OIDCLD.ExpiredIn))
+	if s.config.OIDC.ExpiredIn != newConfig.OIDC.ExpiredIn {
+		changes = append(changes, fmt.Sprintf("Token Expiry: %ds → %ds", s.config.OIDC.ExpiredIn, newConfig.OIDC.ExpiredIn))
 	}
 
 	// Check refresh token settings
-	if s.config.OIDCLD.RefreshTokenEnabled != newConfig.OIDCLD.RefreshTokenEnabled {
-		changes = append(changes, fmt.Sprintf("Refresh Tokens: %v → %v", s.config.OIDCLD.RefreshTokenEnabled, newConfig.OIDCLD.RefreshTokenEnabled))
+	if s.config.OIDC.RefreshTokenEnabled != newConfig.OIDC.RefreshTokenEnabled {
+		changes = append(changes, fmt.Sprintf("Refresh Tokens: %v → %v", s.config.OIDC.RefreshTokenEnabled, newConfig.OIDC.RefreshTokenEnabled))
 	}
-	if s.config.OIDCLD.AccessFilter.Enabled != newConfig.OIDCLD.AccessFilter.Enabled {
-		changes = append(changes, fmt.Sprintf("Access Filter Enabled: %v → %v", s.config.OIDCLD.AccessFilter.Enabled, newConfig.OIDCLD.AccessFilter.Enabled))
+	if s.config.AccessFilter.Enabled != newConfig.AccessFilter.Enabled {
+		changes = append(changes, fmt.Sprintf("Access Filter Enabled: %v → %v", s.config.AccessFilter.Enabled, newConfig.AccessFilter.Enabled))
 	}
-	if s.config.OIDCLD.AccessFilter.MaxForwardedHops != newConfig.OIDCLD.AccessFilter.MaxForwardedHops {
-		changes = append(changes, fmt.Sprintf("Access Filter Max Forwarded Hops: %d → %d", s.config.OIDCLD.AccessFilter.MaxForwardedHops, newConfig.OIDCLD.AccessFilter.MaxForwardedHops))
+	if s.config.AccessFilter.MaxForwardedHops != newConfig.AccessFilter.MaxForwardedHops {
+		changes = append(changes, fmt.Sprintf("Access Filter Max Forwarded Hops: %d → %d", s.config.AccessFilter.MaxForwardedHops, newConfig.AccessFilter.MaxForwardedHops))
 	}
-	if !slices.Equal(s.config.OIDCLD.AccessFilter.ExtraAllowedIPs, newConfig.OIDCLD.AccessFilter.ExtraAllowedIPs) {
-		changes = append(changes, fmt.Sprintf("Access Filter Extra Allowed IPs: %d → %d", len(s.config.OIDCLD.AccessFilter.ExtraAllowedIPs), len(newConfig.OIDCLD.AccessFilter.ExtraAllowedIPs)))
+	if !slices.Equal(s.config.AccessFilter.ExtraAllowedIPs, newConfig.AccessFilter.ExtraAllowedIPs) {
+		changes = append(changes, fmt.Sprintf("Access Filter Extra Allowed IPs: %d → %d", len(s.config.AccessFilter.ExtraAllowedIPs), len(newConfig.AccessFilter.ExtraAllowedIPs)))
 	}
 
-	compiledAccess, err := newCompiledAccessFilter(newConfig.OIDCLD.AccessFilter)
+	compiledAccess, err := newCompiledAccessFilter(newConfig.AccessFilter)
 	if err != nil {
 		return err
 	}
@@ -898,9 +930,9 @@ func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add conditional endpoints based on configuration
-	if s.config.OIDCLD.EndSessionEnabled && s.config.OIDCLD.EndSessionEndpointVisible {
+	if s.config.OIDC.EndSessionEnabled && s.config.OIDC.EndSessionEndpointVisible {
 		// end_session_endpoint is already included above
-	} else if !s.config.OIDCLD.EndSessionEnabled {
+	} else if !s.config.OIDC.EndSessionEnabled {
 		delete(discovery, "end_session_endpoint")
 	}
 
@@ -1077,7 +1109,7 @@ func (s *Server) processDeviceVerification(w http.ResponseWriter, r *http.Reques
 // signJWT signs a JWT token with the server's private key
 func (s *Server) signJWT(claims jwt.MapClaims) (string, error) {
 	jwtAudienceClaimFormatMu.Lock()
-	configureJWTAudienceClaimFormat(s.config.OIDCLD.NormalizedAudienceClaimFormat())
+	configureJWTAudienceClaimFormat(s.config.OIDC.NormalizedAudienceClaimFormat())
 	defer jwtAudienceClaimFormatMu.Unlock()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
@@ -1128,7 +1160,7 @@ func (s *Server) rewriteJWTTokenAudience(token string) (string, error) {
 		return "", fmt.Errorf("failed to parse JWT: %w", err)
 	}
 
-	normalizedAudience, changed := normalizeAudienceClaimValue(claims["aud"], s.config.OIDCLD.NormalizedAudienceClaimFormat())
+	normalizedAudience, changed := normalizeAudienceClaimValue(claims["aud"], s.config.OIDC.NormalizedAudienceClaimFormat())
 	if !changed {
 		return token, nil
 	}
@@ -1247,7 +1279,7 @@ func (s *Server) writeTokenError(w http.ResponseWriter, errorCode, description s
 }
 func (s *Server) generateDeviceFlowTokens(clientID, userID string, user config.User, scopes []string) (accessToken, idToken, refreshToken string, err error) {
 	now := time.Now()
-	expiry := now.Add(time.Duration(s.config.OIDCLD.ExpiredIn) * time.Second)
+	expiry := now.Add(time.Duration(s.config.OIDC.ExpiredIn) * time.Second)
 
 	accessTokenClaims := s.buildDeviceFlowAccessTokenClaims(clientID, userID, user, scopes, now, expiry)
 	accessToken, err = s.signJWT(accessTokenClaims)
@@ -1263,8 +1295,8 @@ func (s *Server) generateDeviceFlowTokens(clientID, userID string, user config.U
 		}
 	}
 
-	if s.config.OIDCLD.RefreshTokenEnabled {
-		refreshExpiry := now.Add(time.Duration(s.config.OIDCLD.RefreshTokenExpiry) * time.Second)
+	if s.config.OIDC.RefreshTokenEnabled {
+		refreshExpiry := now.Add(time.Duration(s.config.OIDC.RefreshTokenExpiry) * time.Second)
 		refreshTokenClaims := s.buildDeviceFlowRefreshTokenClaims(clientID, userID, scopes, now, refreshExpiry)
 		refreshToken, err = s.signJWT(refreshTokenClaims)
 		if err != nil {
@@ -1349,13 +1381,13 @@ func (s *Server) handleDeviceFlowTokenRequest(w http.ResponseWriter, r *http.Req
 	tokenResponse := map[string]any{
 		"access_token": accessToken,
 		"token_type":   "Bearer",
-		"expires_in":   s.config.OIDCLD.ExpiredIn,
+		"expires_in":   s.config.OIDC.ExpiredIn,
 		"id_token":     idToken,
 		"scope":        strings.Join(deviceAuth.Scopes, " "),
 	}
 
 	// Add refresh token if enabled
-	if s.config.OIDCLD.RefreshTokenEnabled && refreshToken != "" {
+	if s.config.OIDC.RefreshTokenEnabled && refreshToken != "" {
 		tokenResponse["refresh_token"] = refreshToken
 	}
 
@@ -1380,7 +1412,7 @@ func (s *Server) handleTokenRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jwtAudienceClaimFormatMu.Lock()
-	configureJWTAudienceClaimFormat(s.config.OIDCLD.NormalizedAudienceClaimFormat())
+	configureJWTAudienceClaimFormat(s.config.OIDC.NormalizedAudienceClaimFormat())
 	jwtAudienceClaimFormatMu.Unlock()
 	// If the token request includes a redirect_uri (authorization_code flow),
 	// inject it into the request context so storage.GetClientByClientID can

@@ -116,10 +116,10 @@ This example uses the OpenID Foundation certified OIDC client library (`github.c
 
 ## Default Configuration Compatibility
 
-This example works out-of-the-box with the default oidcld configuration:
+This example works out-of-the-box with the default oidcld configuration file:
 
 ```yaml
-oidcld:
+oidc:
   valid_scopes:
     - "read"
     - "write"

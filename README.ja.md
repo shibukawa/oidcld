@@ -50,7 +50,7 @@ English: see [README.md](README.md)
 `/login` には環境名、色、Markdownメモも出せます。
 
 ```yaml
-oidcld:
+oidc:
   login_ui:
     env_title: "Staging"
     info_markdown_file: "./docs/login-links.staging.md"
@@ -101,6 +101,10 @@ open http://localhost:18888/.well-known/openid-configuration
 ```
 
 HTTPS は後から mkcert で証明書を作成し、`--cert-file/--key-file` で指定して有効化できます。
+
+ローカル開発向けの managed モードを使う場合は、[oidcld.yaml](oidcld.yaml) の `certificate_authority` と `console` を設定します。OIDCLD は `http://127.0.0.1:18889/console/` に Developer Console を出し、設定された `ca_dir` 配下にローカル root CA を作成し、root 証明書と install / uninstall script のダウンロードを提供します。
+
+frontend をローカルで触るときは VS Code の `dev` タスクを使います。通常の `serve` フローで backend を起動しつつ、Vite dev server が `/console/api/*` を Developer Console listener に proxy するため、Vue の変更がすぐ反映されます。配布向けに近い build を行うときは `build` タスクを使い、`web/admin` をビルドして backend の embed 用ディレクトリへ同期し、その後で Go バイナリをビルドします。
 
 インストール (Option 1: Go install; Go 1.24+):
 ```bash
@@ -303,60 +307,31 @@ mkcert localhost 127.0.0.1 ::1
 
 HTTPS が有効な場合でも、oidcld は discovery、JWKS、health だけを公開する制限付き HTTP companion listener を併設します。既定の HTTPS port は `18443`、companion HTTP port は `18888` です。無効化したい場合は `--http-readonly-port off` を指定してください。この companion listener にも `oidcld.access_filter` がそのまま適用されます。
 
-**Option 2: ACME プロトコルサーバーを使用**
+**Option 2: Docker Compose で managed self-signed TLS を使う**
 
-ACME プロトコルにより証明書を自動取得できます。以下はローカル ACME サーバーの例です。
+以下のサンプルは OIDCLD の開発用 CA を使い、その保存先を Docker volume に置くことで、volume を消すまで同じ root CA と鍵素材を再利用します。
 
 ```yaml:compose.yaml
 services:
-  # myencrypt - Local ACME server for development
-  myencrypt.localhost:
-    image: ghcr.io/shibukawa/myencrypt:latest
-    ports:
-      - "14000:80"  # ACME server port
-    environment:
-      - MYENCRYPT_EXPOSE_PORT=14000  # Required: Host-accessible port
-      - MYENCRYPT_PROJECT_NAME=oidcld  # Required: Project name for Docker mode
-      - MYENCRYPT_HOSTNAME=myencrypt.localhost  # Required: Hostname for ACME directory URLs
-      - MYENCRYPT_INDIVIDUAL_CERT_TTL=168h  # 7 days (7 * 24h)
-      - MYENCRYPT_CA_CERT_TTL=19200h
-      - MYENCRYPT_ALLOWED_DOMAINS=localhost,*.localhost
-      - MYENCRYPT_CERT_STORE_PATH=/data
-      - MYENCRYPT_DATABASE_PATH=/data/myencrypt.db
-      - MYENCRYPT_LOG_LEVEL=info  # Enable debug logging
-    volumes:
-      - myencrypt-data:/data
-    restart: unless-stopped
-  # OIDCLD with myencrypt autocert (TLS-ALPN challenge)
   oidc.localhost:
     # image: oidcld:local
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "18888:18888"  # HTTP metadata companion listener (discovery/JWKS/health)
       - "8443:443"     # HTTPS OIDC server port
+      - "18889:18889"  # Developer Console + HTTP metadata companion
     volumes:
-      - ./examples/autocert/config/oidcld.yaml:/app/config.yaml:ro
+      - ./examples/autocert/config:/app/config:ro
+      - oidcld-managed-ca:/app/tls
     environment:
-      - OIDCLD_CONFIG=/app/config.yaml
-      # Minimal autocert environment variables (TLS-ALPN challenge)
-      - OIDCLD_ACME_DOMAIN=oidc.localhost
-      - OIDCLD_ACME_DIRECTORY_URL=http://myencrypt.localhost/acme/directory
-      - OIDCLD_ACME_CACHE_DIR=/tmp/autocert-cache  # Temporary cache directory (no persistence)
-      - OIDCLD_ACME_EMAIL=dev@localhost
-      - OIDCLD_ACME_AGREE_TOS=true
-      - OIDCLD_ACME_INSECURE_SKIP_VERIFY=true
-      - OIDCLD_ACME_RENEWAL_THRESHOLD=1
-    command: ["serve", "--config", "/app/config.yaml", "--port", "443", "--http-readonly-port", "18888"]
+      - OIDCLD_CONFIG=/app/config/oidcld.yaml
+    command: ["serve", "--config", "/app/config/oidcld.yaml", "--port", "443"]
     healthcheck:
-      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18888"]
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18889"]
       interval: 30s
       timeout: 10s
       start_period: 5s
       retries: 3
-    depends_on:
-      myencrypt.localhost:
-        condition: service_healthy
     restart: unless-stopped
 
   app.localhost:
@@ -375,9 +350,12 @@ services:
       oidc.localhost:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  oidcld-managed-ca:
 ```
 
-このサンプルでは、React アプリから logout すると `http://app.localhost:3000/` へ戻る想定です。途中で provider のログアウト成功ページを経由した場合でも、oidcld が数秒だけ成功メッセージを表示したあと自動的にアプリへ戻します。
+このサンプルでは、React アプリから logout すると `http://app.localhost:3000/` へ戻る想定です。途中で provider のログアウト成功ページを経由した場合でも、oidcld が数秒だけ成功メッセージを表示したあと自動的にアプリへ戻します。root CA は `http://localhost:18889/console/` からダウンロードでき、`oidcld-managed-ca` volume が残っている限り同じ CA が使われます。
 
 #### OIDCLD 向けの MSAL 設定例
 

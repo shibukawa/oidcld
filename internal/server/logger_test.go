@@ -90,38 +90,63 @@ func TestServerStartingUsesTenantPlaceholderForEntraIDModes(t *testing.T) {
 
 func TestServerStartingShowsHTTPMetadataCompanionEndpoints(t *testing.T) {
 	logger := NewLogger()
+	endpoints, _ := startupEndpointsForIssuer("https://oidc.localhost:18443", nil)
+	metadataEndpoints, _ := startupEndpointsForIssuer("http://oidc.localhost:18889", nil)
 	output := captureStdout(t, func() {
-		logger.ServerStarting(":18443", "https://oidc.localhost:18443", true, nil, ":18888", accessFilterStartupInfo{
-			Enabled:          true,
-			ExtraAllowedIPs:  2,
-			MaxForwardedHops: 1,
+		logger.ServerStarting(startupSummary{
+			DeveloperConsoleURL: "http://127.0.0.1:18889/console/",
+			OIDC: startupOIDCSummary{
+				Mode:         "oidc",
+				TLSEnabled:   true,
+				TLSSource:    "self-signed",
+				AccessFilter: "enabled (extra allowlist: 2, max forwarded hops: 1)",
+				Endpoints:    endpoints,
+			},
+			MetadataCompanion: &startupMetadataSummary{
+				Discovery: metadataEndpoints.Discovery,
+				JWKS:      metadataEndpoints.JWKS,
+			},
 		})
 	})
 
+	assert.True(t, strings.Contains(output, "Developer Console"))
+	assert.True(t, strings.Contains(output, "http://127.0.0.1:18889/console/"))
+	assert.True(t, strings.Contains(output, "OpenID Connect"))
+	assert.True(t, strings.Contains(output, "self-signed"))
 	assert.True(t, strings.Contains(output, "HTTP Metadata Companion"))
-	assert.True(t, strings.Contains(output, ":18888"))
-	assert.True(t, strings.Contains(output, "Discovery, JWKS, Health Check only"))
 	assert.True(t, strings.Contains(output, "enabled (extra allowlist: 2, max forwarded hops: 1)"))
-	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/.well-known/openid-configuration"))
-	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/keys"))
-	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/health"))
+	assert.True(t, strings.Contains(output, "http://oidc.localhost:18889/.well-known/openid-configuration"))
+	assert.True(t, strings.Contains(output, "http://oidc.localhost:18889/keys"))
+	assert.False(t, strings.Contains(output, "Server ready to accept connections"))
+	assert.False(t, strings.Contains(output, "📍 Address"))
 }
 
 func TestServerStartingShowsHTTPMetadataCompanionEndpointsForEntraID(t *testing.T) {
 	logger := NewLogger()
+	endpoints, tenants := startupEndpointsForIssuer("https://oidc.localhost:18443/12345678-1234-1234-1234-123456789abc/v2.0", &config.EntraIDConfig{TenantID: "12345678-1234-1234-1234-123456789abc", Version: "v2"})
+	metadataEndpoints, metadataTenants := startupEndpointsForIssuer("http://oidc.localhost:18889/12345678-1234-1234-1234-123456789abc/v2.0", &config.EntraIDConfig{TenantID: "12345678-1234-1234-1234-123456789abc", Version: "v2"})
 	output := captureStdout(t, func() {
-		logger.ServerStarting(
-			":18443",
-			"https://oidc.localhost:18443/12345678-1234-1234-1234-123456789abc/v2.0",
-			true,
-			&config.EntraIDConfig{TenantID: "12345678-1234-1234-1234-123456789abc", Version: "v2"},
-			":18888",
-			accessFilterStartupInfo{Enabled: true},
-		)
+		logger.ServerStarting(startupSummary{
+			DeveloperConsoleURL: "http://127.0.0.1:18889/console/",
+			OIDC: startupOIDCSummary{
+				Mode:         "entraid v2",
+				TLSEnabled:   true,
+				TLSSource:    "acme",
+				AccessFilter: "enabled (extra allowlist: 0, max forwarded hops: 0)",
+				Endpoints:    endpoints,
+				Tenants:      tenants,
+			},
+			MetadataCompanion: &startupMetadataSummary{
+				Discovery: metadataEndpoints.Discovery,
+				JWKS:      metadataEndpoints.JWKS,
+				Tenants:   metadataTenants,
+			},
+		})
 	})
 
-	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/{tenant}/v2.0/.well-known/openid-configuration"))
-	assert.True(t, strings.Contains(output, "http://oidc.localhost:18888/{tenant}/discovery/v2.0/keys"))
+	assert.True(t, strings.Contains(output, "entraid v2"))
+	assert.True(t, strings.Contains(output, "http://oidc.localhost:18889/{tenant}/v2.0/.well-known/openid-configuration"))
+	assert.True(t, strings.Contains(output, "http://oidc.localhost:18889/{tenant}/discovery/v2.0/keys"))
 }
 
 func TestEntraIDRouteMiddlewareWarnsOnTenantlessRequest(t *testing.T) {
@@ -150,7 +175,7 @@ func TestEntraIDRouteMiddlewareWarnsOnTenantlessRequest(t *testing.T) {
 func TestLoggingMiddlewareSkipsHealthRequests(t *testing.T) {
 	server := &Server{
 		config: &config.Config{
-			OIDCLD: config.OIDCLDConfig{VerboseLogging: true},
+			OIDC: config.OIDCConfig{VerboseLogging: true},
 		},
 		prettyLog: NewLogger(),
 	}

@@ -129,7 +129,7 @@ func validateClientCredentials(clientID, clientSecret string) error {
 #### 3.2.1 Global Scopes
 Configured in `oidcld.yaml`:
 ```yaml
-oidcld:
+oidc:
   valid_scopes:
     - "read"
     - "write"
@@ -211,7 +211,7 @@ func (c *ClientCredentialsClient) ValidateScope(scopes []string) error {
 ### 4.1 YAML Configuration
 ```yaml
 # OpenID Connect IdP settings
-oidcld:
+oidc:
   valid_scopes:
     - "read"
     - "write"
@@ -442,10 +442,10 @@ The client credentials flow has been migrated from a custom implementation to us
 - None - backward compatibility maintained
 
 ### 10.2 Configuration Migration
-Existing configurations continue to work without changes:
+Current configuration examples use the top-level `oidc` key:
 ```yaml
-# No changes required to existing oidcld.yaml files
-oidcld:
+# oidcld.yaml with current schema
+oidc:
   valid_scopes:
     - "read"
     - "write"

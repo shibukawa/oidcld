@@ -68,7 +68,10 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "# OpenID Connect IdP settings"), "Should contain main comment")
 	assert.True(t, strings.Contains(yamlContent, "# Standard scopes (openid, profile, email) are always included"), "Should contain scope comment")
 	assert.True(t, strings.Contains(yamlContent, "aud_claim_format: string"), "Should contain default audience claim format")
+	assert.True(t, strings.Contains(yamlContent, "# Access filtering for OIDC and console listeners"), "Should contain access filter comment")
 	assert.True(t, strings.Contains(yamlContent, "access_filter:"), "Should contain access filter section")
+	assert.True(t, strings.Contains(yamlContent, "console:"), "Should contain console section")
+	assert.True(t, strings.Contains(yamlContent, "certificate_authority:"), "Should contain certificate authority section")
 	assert.True(t, strings.Contains(yamlContent, "enabled: true"), "Should contain default access filter enabled state")
 	assert.True(t, strings.Contains(yamlContent, "max_forwarded_hops: 0"), "Should contain default forwarded hops")
 
@@ -83,21 +86,75 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "analyst:"), "Should contain analyst")
 	assert.True(t, strings.Contains(yamlContent, "guest:"), "Should contain guest")
 	assert.True(t, strings.Contains(yamlContent, "# login_ui:"), "Should contain login_ui sample")
+	assert.True(t, strings.Contains(yamlContent, "domains:"), "Should contain certificate authority domains")
 }
 
 func TestCreateDefaultConfig_DefaultAudienceClaimFormat(t *testing.T) {
 	config := createDefaultConfig(ModeStandard)
-	assert.Equal(t, AudienceClaimFormatString, config.OIDCLD.NormalizedAudienceClaimFormat())
-	assert.True(t, config.OIDCLD.AccessFilter.Enabled)
-	assert.Equal(t, 0, config.OIDCLD.AccessFilter.MaxForwardedHops)
-	assert.Equal(t, 0, len(config.OIDCLD.AccessFilter.ExtraAllowedIPs))
+	assert.Equal(t, AudienceClaimFormatString, config.OIDC.NormalizedAudienceClaimFormat())
+	assert.True(t, config.AccessFilter.Enabled)
+	assert.True(t, config.Console != nil)
+	assert.Equal(t, "18889", config.Console.Port)
+	assert.True(t, config.CertificateAuthority != nil)
+	assert.Equal(t, []string{"localhost", "*.dev.localhost"}, config.CertificateAuthority.Domains)
+	assert.Equal(t, 0, config.AccessFilter.MaxForwardedHops)
+	assert.Equal(t, 0, len(config.AccessFilter.ExtraAllowedIPs))
+}
+
+func TestNormalizeAllowsCertificateAuthorityWithAutocert(t *testing.T) {
+	cfg := &Config{
+		OIDC: OIDCConfig{
+			Issuer: "https://localhost:18443",
+		},
+		CertificateAuthority: &CertificateAuthorityConfig{Domains: []string{"localhost", "*.dev.localhost"}},
+		Autocert:             &AutocertConfig{Enabled: true},
+		Users: map[string]User{
+			"admin": {DisplayName: "Administrator"},
+		},
+	}
+
+	err := cfg.Normalize()
+	assert.NoError(t, err)
+}
+
+func TestLoadConfig_RejectsLegacyCertificateAuthorityKeys(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "https://localhost:18443"
+certificate_authority:
+  domain_suffix: "dev.localhost"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.True(t, strings.Contains(err.Error(), "certificate_authority.domain_suffix"))
+}
+
+func TestApplyInitServerOptionsEnablesAdminConsoleForSelfSignedTLS(t *testing.T) {
+	cfg := createDefaultConfig(ModeStandard)
+	cfg.Console = nil
+	cfg.CertificateAuthority = nil
+
+	cfg.ApplyInitServerOptions(ModeStandard, &InitServerOptions{
+		HTTPS:         true,
+		SelfSignedTLS: true,
+	})
+
+	assert.True(t, cfg.CertificateAuthority != nil)
+	assert.True(t, cfg.Console != nil)
 }
 
 func TestLoadConfig_NormalizesMissingAccessFilter(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte(`oidcld:
+	err := os.WriteFile(configPath, []byte(`oidc:
   iss: "http://localhost:18888"
 users:
   admin:
@@ -107,23 +164,23 @@ users:
 
 	cfg, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
-	assert.True(t, cfg.OIDCLD.AccessFilter.Enabled)
-	assert.Equal(t, 0, cfg.OIDCLD.AccessFilter.MaxForwardedHops)
-	assert.Equal(t, []string{}, cfg.OIDCLD.AccessFilter.ExtraAllowedIPs)
+	assert.True(t, cfg.AccessFilter.Enabled)
+	assert.Equal(t, 0, cfg.AccessFilter.MaxForwardedHops)
+	assert.Equal(t, []string{}, cfg.AccessFilter.ExtraAllowedIPs)
 }
 
 func TestLoadConfig_NormalizesExtraAllowedIPs(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte(`oidcld:
+	err := os.WriteFile(configPath, []byte(`access_filter:
+  enabled: true
+  extra_allowed_ips:
+    - "203.0.113.10"
+    - "198.51.100.0/24"
+  max_forwarded_hops: 1
+oidc:
   iss: "http://localhost:18888"
-  access_filter:
-    enabled: true
-    extra_allowed_ips:
-      - "203.0.113.10"
-      - "198.51.100.0/24"
-    max_forwarded_hops: 1
 users:
   admin:
     display_name: "Administrator"
@@ -132,19 +189,19 @@ users:
 
 	cfg, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
-	assert.Equal(t, []string{"203.0.113.10/32", "198.51.100.0/24"}, cfg.OIDCLD.AccessFilter.ExtraAllowedIPs)
-	assert.Equal(t, 1, cfg.OIDCLD.AccessFilter.MaxForwardedHops)
+	assert.Equal(t, []string{"203.0.113.10/32", "198.51.100.0/24"}, cfg.AccessFilter.ExtraAllowedIPs)
+	assert.Equal(t, 1, cfg.AccessFilter.MaxForwardedHops)
 }
 
 func TestLoadConfig_RejectsInvalidExtraAllowedIPs(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte(`oidcld:
+	err := os.WriteFile(configPath, []byte(`access_filter:
+  extra_allowed_ips:
+    - "not-an-ip"
+oidc:
   iss: "http://localhost:18888"
-  access_filter:
-    extra_allowed_ips:
-      - "not-an-ip"
 users:
   admin:
     display_name: "Administrator"
@@ -184,8 +241,8 @@ func TestLoadAndSaveConfig(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify loaded config matches original
-	assert.Equal(t, originalConfig.OIDCLD.PKCERequired, loadedConfig.OIDCLD.PKCERequired)
-	assert.Equal(t, originalConfig.OIDCLD.RefreshTokenEnabled, loadedConfig.OIDCLD.RefreshTokenEnabled)
+	assert.Equal(t, originalConfig.OIDC.PKCERequired, loadedConfig.OIDC.PKCERequired)
+	assert.Equal(t, originalConfig.OIDC.RefreshTokenEnabled, loadedConfig.OIDC.RefreshTokenEnabled)
 	assert.Equal(t, len(originalConfig.Users), len(loadedConfig.Users))
 }
 
@@ -193,7 +250,7 @@ func TestLoadConfig_LoginUIEnvOverridePriority(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte(`oidcld:
+	err := os.WriteFile(configPath, []byte(`oidc:
   iss: "http://localhost:18888"
   login_ui:
     env_title: "Local"
@@ -211,16 +268,16 @@ users:
 
 	cfg, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
-	assert.Equal(t, "Staging", cfg.OIDCLD.LoginUI.EnvTitle)
-	assert.Equal(t, "#ABCDEF", cfg.OIDCLD.LoginUI.AccentColor)
-	assert.Equal(t, "./docs/staging.md", cfg.OIDCLD.LoginUI.InfoMarkdownFile)
-	assert.Equal(t, filepath.Join(tempDir, "docs", "staging.md"), cfg.OIDCLD.LoginUI.resolvedInfoMarkdownFile)
-	assert.Equal(t, "#111111", cfg.OIDCLD.LoginUI.EffectiveTextColor())
+	assert.Equal(t, "Staging", cfg.OIDC.LoginUI.EnvTitle)
+	assert.Equal(t, "#ABCDEF", cfg.OIDC.LoginUI.AccentColor)
+	assert.Equal(t, "./docs/staging.md", cfg.OIDC.LoginUI.InfoMarkdownFile)
+	assert.Equal(t, filepath.Join(tempDir, "docs", "staging.md"), cfg.OIDC.LoginUI.resolvedInfoMarkdownFile)
+	assert.Equal(t, "#111111", cfg.OIDC.LoginUI.EffectiveTextColor())
 }
 
 func TestNormalizeLoginUIGeneratesDeterministicAccentColor(t *testing.T) {
 	cfg := &Config{
-		OIDCLD: OIDCLDConfig{
+		OIDC: OIDCConfig{
 			Issuer: "http://localhost:18888",
 			LoginUI: &LoginUIConfig{
 				EnvTitle: "Staging",
@@ -233,11 +290,11 @@ func TestNormalizeLoginUIGeneratesDeterministicAccentColor(t *testing.T) {
 
 	err := cfg.Normalize()
 	assert.NoError(t, err)
-	assert.NotEqual(t, "", cfg.OIDCLD.LoginUI.EffectiveAccentColor())
-	assert.Equal(t, generateAccentColorFromTitle("Staging"), cfg.OIDCLD.LoginUI.EffectiveAccentColor())
+	assert.NotEqual(t, "", cfg.OIDC.LoginUI.EffectiveAccentColor())
+	assert.Equal(t, generateAccentColorFromTitle("Staging"), cfg.OIDC.LoginUI.EffectiveAccentColor())
 
 	secondCfg := &Config{
-		OIDCLD: OIDCLDConfig{
+		OIDC: OIDCConfig{
 			Issuer: "http://localhost:18888",
 			LoginUI: &LoginUIConfig{
 				EnvTitle: "Staging",
@@ -249,12 +306,12 @@ func TestNormalizeLoginUIGeneratesDeterministicAccentColor(t *testing.T) {
 	}
 	err = secondCfg.Normalize()
 	assert.NoError(t, err)
-	assert.Equal(t, cfg.OIDCLD.LoginUI.EffectiveAccentColor(), secondCfg.OIDCLD.LoginUI.EffectiveAccentColor())
+	assert.Equal(t, cfg.OIDC.LoginUI.EffectiveAccentColor(), secondCfg.OIDC.LoginUI.EffectiveAccentColor())
 }
 
 func TestNormalizeLoginUIKeepsExplicitAccentColor(t *testing.T) {
 	cfg := &Config{
-		OIDCLD: OIDCLDConfig{
+		OIDC: OIDCConfig{
 			Issuer: "http://localhost:18888",
 			LoginUI: &LoginUIConfig{
 				EnvTitle:    "Staging",
@@ -268,15 +325,15 @@ func TestNormalizeLoginUIKeepsExplicitAccentColor(t *testing.T) {
 
 	err := cfg.Normalize()
 	assert.NoError(t, err)
-	assert.Equal(t, "#D97A00", cfg.OIDCLD.LoginUI.AccentColor)
-	assert.Equal(t, "#D97A00", cfg.OIDCLD.LoginUI.EffectiveAccentColor())
+	assert.Equal(t, "#D97A00", cfg.OIDC.LoginUI.AccentColor)
+	assert.Equal(t, "#D97A00", cfg.OIDC.LoginUI.EffectiveAccentColor())
 }
 
 func TestLoadConfig_LoginUIResolvesMarkdownPathRelativeToConfig(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
-	err := os.WriteFile(configPath, []byte(`oidcld:
+	err := os.WriteFile(configPath, []byte(`oidc:
   iss: "http://localhost:18888"
   login_ui:
     env_title: "Docs"
@@ -289,8 +346,8 @@ users:
 
 	cfg, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
-	assert.Equal(t, "./notes/login.md", cfg.OIDCLD.LoginUI.InfoMarkdownFile)
-	assert.Equal(t, filepath.Join(tempDir, "notes", "login.md"), cfg.OIDCLD.LoginUI.EffectiveInfoMarkdownFile())
+	assert.Equal(t, "./notes/login.md", cfg.OIDC.LoginUI.InfoMarkdownFile)
+	assert.Equal(t, filepath.Join(tempDir, "notes", "login.md"), cfg.OIDC.LoginUI.EffectiveInfoMarkdownFile())
 }
 
 func TestAddUser(t *testing.T) {
@@ -366,11 +423,11 @@ func TestModifyConfig(t *testing.T) {
 	// Verify changes
 	config, err := LoadConfig(configPath, false)
 	assert.NoError(t, err)
-	assert.False(t, config.OIDCLD.PKCERequired)
-	assert.True(t, config.OIDCLD.NonceRequired)
-	assert.Equal(t, 7200, config.OIDCLD.ExpiredIn)
-	assert.Equal(t, AudienceClaimFormatArray, config.OIDCLD.NormalizedAudienceClaimFormat())
-	assert.False(t, config.OIDCLD.RefreshTokenEnabled)
+	assert.False(t, config.OIDC.PKCERequired)
+	assert.True(t, config.OIDC.NonceRequired)
+	assert.Equal(t, 7200, config.OIDC.ExpiredIn)
+	assert.Equal(t, AudienceClaimFormatArray, config.OIDC.NormalizedAudienceClaimFormat())
+	assert.False(t, config.OIDC.RefreshTokenEnabled)
 }
 
 func TestDefaultServePort(t *testing.T) {
@@ -414,7 +471,7 @@ func TestConfigModes(t *testing.T) {
 		t.Run(string(tt.mode), func(t *testing.T) {
 			config := createDefaultConfig(tt.mode)
 
-			assert.Equal(t, tt.expectedIssuer, config.OIDCLD.Issuer)
+			assert.Equal(t, tt.expectedIssuer, config.OIDC.Issuer)
 
 			if tt.expectEntraID {
 				assert.True(t, config.EntraID != nil, "EntraID config should not be nil")
@@ -436,24 +493,24 @@ func TestPrepareForServeSyncsLocalhostIssuerPort(t *testing.T) {
 
 	assert.False(t, useHTTPS)
 	assert.Equal(t, "", msg)
-	assert.Equal(t, "http://localhost:19000", cfg.OIDCLD.Issuer)
+	assert.Equal(t, "http://localhost:19000", cfg.OIDC.Issuer)
 }
 
 func TestPrepareForServeKeepsNonLocalhostIssuer(t *testing.T) {
 	cfg := createDefaultConfig(ModeEntraIDv2)
-	originalIssuer := cfg.OIDCLD.Issuer
+	originalIssuer := cfg.OIDC.Issuer
 
 	useHTTPS, _ := cfg.PrepareForServe(&ServeOptions{
 		Port: "19000",
 	})
 
 	assert.True(t, useHTTPS)
-	assert.Equal(t, originalIssuer, cfg.OIDCLD.Issuer)
+	assert.Equal(t, originalIssuer, cfg.OIDC.Issuer)
 }
 
 func TestPrepareForServeSyncsLocalhostHTTPSIssuerPort(t *testing.T) {
 	cfg := createDefaultConfig(ModeStandard)
-	cfg.OIDCLD.Issuer = "https://localhost:8443"
+	cfg.OIDC.Issuer = "https://localhost:8443"
 
 	useHTTPS, msg := cfg.PrepareForServe(&ServeOptions{
 		Port: "19000",
@@ -461,24 +518,24 @@ func TestPrepareForServeSyncsLocalhostHTTPSIssuerPort(t *testing.T) {
 
 	assert.True(t, useHTTPS)
 	assert.Equal(t, "", msg)
-	assert.Equal(t, "https://localhost:19000", cfg.OIDCLD.Issuer)
+	assert.Equal(t, "https://localhost:19000", cfg.OIDC.Issuer)
 }
 
 func TestPrepareForServeSyncsLoopbackIPv4IssuerPort(t *testing.T) {
 	cfg := createDefaultConfig(ModeStandard)
-	cfg.OIDCLD.Issuer = "http://127.0.0.1:18888"
+	cfg.OIDC.Issuer = "http://127.0.0.1:18888"
 
 	useHTTPS, _ := cfg.PrepareForServe(&ServeOptions{
 		Port: "19000",
 	})
 
 	assert.False(t, useHTTPS)
-	assert.Equal(t, "http://127.0.0.1:19000", cfg.OIDCLD.Issuer)
+	assert.Equal(t, "http://127.0.0.1:19000", cfg.OIDC.Issuer)
 }
 
 func TestPrepareForServeNormalizesEntraIDv2IssuerPath(t *testing.T) {
 	cfg := createDefaultConfig(ModeEntraIDv2)
-	cfg.OIDCLD.Issuer = "https://oidc.localhost:8443"
+	cfg.OIDC.Issuer = "https://oidc.localhost:8443"
 
 	useHTTPS, msg := cfg.PrepareForServe(&ServeOptions{
 		Port: "8443",
@@ -486,5 +543,5 @@ func TestPrepareForServeNormalizesEntraIDv2IssuerPath(t *testing.T) {
 
 	assert.True(t, useHTTPS)
 	assert.Equal(t, "", msg)
-	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/v2.0", cfg.OIDCLD.Issuer)
+	assert.Equal(t, "https://oidc.localhost:8443/12345678-1234-1234-1234-123456789abc/v2.0", cfg.OIDC.Issuer)
 }

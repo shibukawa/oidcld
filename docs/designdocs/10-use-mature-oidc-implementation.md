@@ -280,11 +280,11 @@ $ go test ./internal/server -run TestOIDCServerOperationalVerification
 ## Configuration Migration ✅
 
 ### Backward Compatibility
-Existing configurations continue to work without changes:
+Current configuration examples use the top-level `oidc` key:
 
 ```yaml
-# Existing oidcld.yaml files work unchanged
-oidcld:
+# Current oidcld.yaml example
+oidc:
   valid_scopes:
     - "read"
     - "write"
@@ -302,7 +302,7 @@ users:
 ### New Features Available
 ```yaml
 # New features enabled by zitadel/oidc
-oidcld:
+oidc:
   refresh_token_enabled: true
   refresh_token_expiry: 86400
   end_session_enabled: true

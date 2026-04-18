@@ -75,7 +75,7 @@ func signAudienceClaimTestJWT(t *testing.T, privateKey *rsa.PrivateKey, audience
 
 func TestSignJWT_SingleAudienceDefaultsToString(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
 			AudienceClaimFormat: config.AudienceClaimFormatString,
 		},
@@ -98,7 +98,7 @@ func TestSignJWT_SingleAudienceDefaultsToString(t *testing.T) {
 
 func TestSignJWT_SingleAudienceCanBeForcedToArray(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
 			AudienceClaimFormat: config.AudienceClaimFormatArray,
 		},
@@ -120,7 +120,7 @@ func TestSignJWT_SingleAudienceCanBeForcedToArray(t *testing.T) {
 
 func TestSignJWT_MultipleAudiencesRemainArray(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
 			AudienceClaimFormat: config.AudienceClaimFormatString,
 		},
@@ -141,7 +141,7 @@ func TestSignJWT_MultipleAudiencesRemainArray(t *testing.T) {
 
 func TestGenerateDeviceFlowTokens_UsesConfiguredAudienceClaimFormat(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
 			ExpiredIn:           3600,
 			RefreshTokenEnabled: true,
@@ -171,7 +171,7 @@ func TestGenerateDeviceFlowTokens_UsesConfiguredAudienceClaimFormat(t *testing.T
 
 func TestRewriteJWTTokenAudience_SingleAudienceArrayToString(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
 			AudienceClaimFormat: config.AudienceClaimFormatString,
 		},
@@ -187,7 +187,7 @@ func TestRewriteJWTTokenAudience_SingleAudienceArrayToString(t *testing.T) {
 
 func TestNormalizeTokenResponsePayload_RewritesProviderIssuedJWTs(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
 			AudienceClaimFormat: config.AudienceClaimFormatString,
 		},

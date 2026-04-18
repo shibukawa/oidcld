@@ -1,5 +1,5 @@
 # OpenID Connect IdP settings for Vue.js Demo
-oidcld:
+oidc:
   iss: "http://localhost:18888"
   pkce_required: false
   nonce_required: false

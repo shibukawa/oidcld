@@ -181,7 +181,7 @@ Works with EntraID v2.0 compatible configuration:
 
 ```yaml
 # EntraID v2.0 compatible mode
-oidcld:
+oidc:
   iss: "https://localhost:18888"
   pkce_required: true
   nonce_required: true

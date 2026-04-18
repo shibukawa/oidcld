@@ -60,3 +60,37 @@ func TestInitCmdRun_ReturnsErrorWhenConfigExistsWithoutOverwrite(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestInitCmdRun_GeneratesSelfSignedManagedConfig(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "oidcld.yaml")
+
+	cmd := InitCmd{
+		Config:        configPath,
+		Template:      "standard",
+		HTTPS:         true,
+		SelfSignedTLS: true,
+	}
+
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Run() returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("failed to read generated config: %v", err)
+	}
+
+	text := string(content)
+	if !strings.Contains(text, "certificate_authority:") {
+		t.Fatalf("generated config does not contain certificate_authority section")
+	}
+	if !strings.Contains(text, "console:") {
+		t.Fatalf("generated config does not contain console section")
+	}
+	if !strings.Contains(text, "domains:") {
+		t.Fatalf("generated config should contain default managed certificate authority settings")
+	}
+}

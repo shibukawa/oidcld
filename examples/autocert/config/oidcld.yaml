@@ -1,8 +1,8 @@
-# OIDCLD Configuration for Docker with myencrypt ACME
-# This configuration enables Azure MSAL compatibility with automatic HTTPS certificates
+# OIDCLD Configuration for Docker with managed self-signed TLS
+# This configuration enables Azure MSAL compatibility with persistent local certificates
 
 # OpenID Connect IdP settings (Azure AD v2 compatible)
-oidcld:
+oidc:
   iss: "https://oidc.localhost:8443"  # Use actual server URL for CORS testing
   pkce_required: true
   nonce_required: true
@@ -27,6 +27,20 @@ oidcld:
 entraid:
   tenant_id: "12345678-1234-1234-1234-123456789abc"
   version: "v2" # v1 or v2
+
+# Developer Console and metadata companion
+console:
+  port: "18889"
+  bind_address: "0.0.0.0"
+
+# Managed development CA persisted in the Docker volume mounted at /app/tls
+certificate_authority:
+  ca_dir: "/app/tls"
+  domains:
+    - "localhost"
+    - "oidc.localhost"
+  ca_cert_ttl: "87600h"
+  leaf_cert_ttl: "720h"
 
 # CORS for React development - using defaults
 cors:

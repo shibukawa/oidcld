@@ -18,7 +18,7 @@ import (
 func TestCertifiedClientIntegration(t *testing.T) {
 	// Setup test server
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:      "http://localhost:18888",
 			ExpiredIn:   3600,
 			ValidScopes: []string{"read", "write", "admin"},
@@ -32,7 +32,7 @@ func TestCertifiedClientIntegration(t *testing.T) {
 	defer httpServer.Close()
 
 	// Update issuer to match test server before creating the server
-	cfg.OIDCLD.Issuer = httpServer.URL
+	cfg.OIDC.Issuer = httpServer.URL
 
 	// Use proper constructor to initialize all fields including Manager
 	server, err := New(cfg)
@@ -193,7 +193,7 @@ func TestCertifiedClientIntegration(t *testing.T) {
 // TestCertifiedClientBenefitsDemo demonstrates the improvement over manual testing
 func TestCertifiedClientBenefitsDemo(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:      "http://localhost:18888",
 			ExpiredIn:   3600,
 			ValidScopes: []string{"read", "write"},
@@ -208,7 +208,7 @@ func TestCertifiedClientBenefitsDemo(t *testing.T) {
 	defer httpServer.Close()
 
 	// Update issuer to match test server before creating the server
-	cfg.OIDCLD.Issuer = httpServer.URL
+	cfg.OIDC.Issuer = httpServer.URL
 
 	server, err := New(cfg)
 	assert.NoError(t, err, "Failed to create server")
@@ -268,7 +268,7 @@ func TestCertifiedClientBenefitsDemo(t *testing.T) {
 // TestCertifiedClientStandardsCompliance validates OpenID Connect standards compliance
 func TestCertifiedClientStandardsCompliance(t *testing.T) {
 	cfg := &config.Config{
-		OIDCLD: config.OIDCLDConfig{
+		OIDC: config.OIDCConfig{
 			Issuer:              "http://localhost:18888",
 			ExpiredIn:           3600,
 			RefreshTokenEnabled: true,
@@ -284,7 +284,7 @@ func TestCertifiedClientStandardsCompliance(t *testing.T) {
 	defer httpServer.Close()
 
 	// Update issuer to match test server before creating the server
-	cfg.OIDCLD.Issuer = httpServer.URL
+	cfg.OIDC.Issuer = httpServer.URL
 
 	server, err := New(cfg)
 	if err != nil {
