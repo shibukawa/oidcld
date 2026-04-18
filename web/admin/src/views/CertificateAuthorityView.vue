@@ -251,8 +251,7 @@ onBeforeUnmount(() => {
       <article class="section-card panel-sheen certificate-panel">
         <div class="section-heading">
           <div>
-            <p class="page-eyebrow">Root certificate</p>
-            <h3>Root certification installer</h3>
+            <h3>Local Root certificate Authority</h3>
           </div>
           <span class="status-pill" :class="{ 'status-pill-muted': !certificates?.rootCA.available }">
             {{ certificates?.rootCA.available ? 'Available' : 'Pending' }}
@@ -289,7 +288,6 @@ onBeforeUnmount(() => {
       <article class="section-card panel-sheen certificate-panel">
         <div class="section-heading">
           <div>
-            <p class="page-eyebrow">Issued certificates</p>
             <h3>Issued certificate list</h3>
           </div>
         </div>
@@ -310,10 +308,8 @@ onBeforeUnmount(() => {
       <article class="section-card panel-sheen certificate-panel">
         <div class="section-heading">
           <div>
-            <p class="page-eyebrow">Issued certificates</p>
-            <h3>Host-specific leaf issuance</h3>
+            <h3>Certification Generator</h3>
           </div>
-          <span class="status-pill status-pill-muted">Managed</span>
         </div>
 
         <div v-if="wildcardDomain" class="certificate-issuance">
