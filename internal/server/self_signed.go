@@ -261,7 +261,7 @@ func validateManagedIssuerDomains(cfg *config.Config) error {
 		return ErrCertificateAuthorityConfigMissing
 	}
 	if scheme, host, _, ok := config.IssuerURLParts(cfg.OIDC.Issuer); ok && strings.EqualFold(scheme, "https") && !config.HostMatchesCertificateDomains(host, cfg.CertificateAuthority.Domains) {
-		return fmt.Errorf("%w: %q", ErrIssuerHostNotCoveredByCADomains, host)
+		return &issuerHostCoverageError{host: host, scope: "certificate_authority.domains", inner: ErrIssuerHostNotCoveredByCADomains}
 	}
 	return nil
 }

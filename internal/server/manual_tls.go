@@ -17,6 +17,20 @@ var (
 	ErrIssuerHostNotCoveredByTLSCertSAN = errors.New("oidc.iss host is not covered by the TLS certificate SAN")
 )
 
+type issuerHostCoverageError struct {
+	host   string
+	scope  string
+	inner  error
+}
+
+func (e *issuerHostCoverageError) Error() string {
+	return fmt.Sprintf("oidc.iss host %q is not covered by %s", e.host, e.scope)
+}
+
+func (e *issuerHostCoverageError) Unwrap() error {
+	return e.inner
+}
+
 func ValidateIssuerMatchesCertificate(issuer, certFile string) error {
 	scheme, host, _, ok := config.IssuerURLParts(issuer)
 	if !ok || !strings.EqualFold(scheme, "https") {
@@ -47,11 +61,11 @@ func ValidateIssuerMatchesCertificate(issuer, certFile string) error {
 		if cert.Subject.CommonName != "" && config.HostMatchesCertificateDomain(host, cert.Subject.CommonName) {
 			return nil
 		}
-		return fmt.Errorf("%w: %q", ErrIssuerHostNotCoveredByTLSCertCN, host)
+		return &issuerHostCoverageError{host: host, scope: "the TLS certificate SAN or CN", inner: ErrIssuerHostNotCoveredByTLSCertCN}
 	}
 
 	if !config.HostMatchesCertificateDomains(host, domains) {
-		return fmt.Errorf("%w: %q", ErrIssuerHostNotCoveredByTLSCertSAN, host)
+		return &issuerHostCoverageError{host: host, scope: "the TLS certificate SAN", inner: ErrIssuerHostNotCoveredByTLSCertSAN}
 	}
 
 	return nil

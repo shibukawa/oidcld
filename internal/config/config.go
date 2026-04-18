@@ -33,6 +33,18 @@ var (
 	ErrLoginUIInvalidAccentColor              = errors.New("oidc.login_ui.accent_color must be a hex color like #RRGGBB")
 )
 
+type autocertIssuerHostCoverageError struct {
+	host string
+}
+
+func (e *autocertIssuerHostCoverageError) Error() string {
+	return fmt.Sprintf("oidc.iss host %q is not covered by autocert.domains", e.host)
+}
+
+func (e *autocertIssuerHostCoverageError) Unwrap() error {
+	return ErrAutocertIssuerHostNotCovered
+}
+
 // Static errors for better error handling.
 var (
 	ErrNoUsersConfigured = errors.New("no users configured")
@@ -1372,7 +1384,7 @@ func (c *Config) ValidateAutocertConfig() error {
 		return ErrAutocertConflict
 	}
 	if scheme, host, _, ok := IssuerURLParts(c.OIDC.Issuer); ok && strings.EqualFold(scheme, "https") && !HostMatchesCertificateDomains(host, c.Autocert.Domains) {
-		return fmt.Errorf("%w: %q", ErrAutocertIssuerHostNotCovered, host)
+		return &autocertIssuerHostCoverageError{host: host}
 	}
 	return nil
 }
