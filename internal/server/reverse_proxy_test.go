@@ -289,8 +289,8 @@ func TestAdminHandler_ReverseProxyLogsStreamSendsBacklogAndSync(t *testing.T) {
 		},
 	})
 
-	makeStaticRequest(t, server, "http://spa.localhost/dashboard", "spa.localhost")
-	makeStaticRequest(t, server, "http://spa.localhost/settings", "spa.localhost")
+	makeStaticRequest(t, server, "http://spa.localhost/dashboard")
+	makeStaticRequest(t, server, "http://spa.localhost/settings")
 
 	adminServer := httptest.NewServer(server.AdminHandler())
 	defer adminServer.Close()
@@ -347,8 +347,8 @@ func TestAdminHandler_ReverseProxyLogsStreamRespectsLastEventIDAndDisconnectClea
 		},
 	})
 
-	makeStaticRequest(t, server, "http://spa.localhost/dashboard", "spa.localhost")
-	makeStaticRequest(t, server, "http://spa.localhost/settings", "spa.localhost")
+	makeStaticRequest(t, server, "http://spa.localhost/dashboard")
+	makeStaticRequest(t, server, "http://spa.localhost/settings")
 
 	adminServer := httptest.NewServer(server.AdminHandler())
 	defer adminServer.Close()
@@ -371,7 +371,7 @@ func TestAdminHandler_ReverseProxyLogsStreamRespectsLastEventIDAndDisconnectClea
 	assert.True(t, syncEvent.SyncComplete)
 	assert.True(t, heartbeat.IsHeartbeat)
 
-	makeStaticRequest(t, server, "http://spa.localhost/profile", "spa.localhost")
+	makeStaticRequest(t, server, "http://spa.localhost/profile")
 	live := readSSEEvent(t, reader)
 	assert.Equal(t, int64(3), live.ID)
 	assert.Equal(t, "/profile", live.Entry.Path)
@@ -392,10 +392,10 @@ func TestAdminHandler_ReverseProxyLogsStreamRespectsLastEventIDAndDisconnectClea
 	t.Fatal("expected SSE subscriber cleanup after stream disconnect")
 }
 
-func makeStaticRequest(t *testing.T, server *Server, url, host string) {
+func makeStaticRequest(t *testing.T, server *Server, url string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, url, nil)
-	req.Host = host
+	req.Host = "spa.localhost"
 	req.RemoteAddr = "127.0.0.1:41234"
 	res := httptest.NewRecorder()
 	server.Handler().ServeHTTP(res, req)
