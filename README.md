@@ -324,7 +324,7 @@ services:
       - "8443:443"     # HTTPS listener for oidc.localhost and app.localhost
       - "18889:18889"  # Developer Console + HTTP metadata companion
     volumes:
-      - ./examples/autocert/config:/app/config:ro
+      - ./examples/reverseproxy/config:/app/config:ro
       - oidcld-managed-ca:/app/tls
     environment:
       - OIDCLD_CONFIG=/app/config/oidcld.yaml

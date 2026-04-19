@@ -1,4 +1,4 @@
-# OIDCLD + Managed Self-Signed TLS
+# OIDCLD + Reverse Proxy Compose Sample
 
 This sample uses the repository root [`compose.yaml`](/Users/shibukawayoshiki/develop/oidcld/compose.yaml) to run:
 
@@ -29,9 +29,9 @@ The browser-facing HTTPS listener is shared: OIDCLD terminates TLS for both `oid
 
 ## Login Screen Customization
 
-The Compose sample mounts [`examples/autocert/config`](/Users/shibukawayoshiki/develop/oidcld/examples/autocert/config) into the OIDCLD container.
+The Compose sample mounts [`examples/reverseproxy/config`](/Users/shibukawayoshiki/develop/oidcld/examples/reverseproxy/config) into the OIDCLD container.
 
-- [`oidcld.yaml`](/Users/shibukawayoshiki/develop/oidcld/examples/autocert/config/oidcld.yaml) sets a blue environment banner for `/login`
-- [`login-info.md`](/Users/shibukawayoshiki/develop/oidcld/examples/autocert/config/login-info.md) is rendered on the login page
+- [`oidcld.yaml`](/Users/shibukawayoshiki/develop/oidcld/examples/reverseproxy/config/oidcld.yaml) sets a blue environment banner for `/login`
+- [`login-info.md`](/Users/shibukawayoshiki/develop/oidcld/examples/reverseproxy/config/login-info.md) is rendered on the login page
 
 Edit those files if you want different warnings, links, or environment labels.

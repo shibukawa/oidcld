@@ -38,7 +38,7 @@ func TestReverseProxy_ProxiesMatchedHostAndPath(t *testing.T) {
 				{
 					Host: "http://app.localhost",
 					Routes: []config.ReverseProxyRoute{
-						{Path: "/api", TargetURL: upstream.URL, RewritePathPrefix: "/"},
+						{Path: "/api", Label: "api", TargetURL: upstream.URL, RewritePathPrefix: "/"},
 					},
 				},
 			},
@@ -54,6 +54,43 @@ func TestReverseProxy_ProxiesMatchedHostAndPath(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, res.Code)
 	assert.Equal(t, "/health", upstreamPath)
 	assert.Equal(t, "proxied", res.Body.String())
+}
+
+func TestReverseProxy_DefaultVirtualHostMatchesUnconfiguredHostname(t *testing.T) {
+	var upstreamHost string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamHost = r.Host
+		_, _ = w.Write([]byte("default"))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://oidc.localhost:8443",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			Domains: []string{"localhost", "app.localhost"},
+		},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{
+				{
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/", Label: "default-app", TargetURL: upstream.URL},
+					},
+				},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "https://app.localhost:8443/", nil)
+	req.Host = "app.localhost:8443"
+	req.TLS = &tls.ConnectionState{}
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, upstream.Listener.Addr().String(), upstreamHost)
 }
 
 func TestReverseProxy_ServesStaticFilesWithSPAFallback(t *testing.T) {
@@ -165,6 +202,7 @@ func TestAdminHandler_ReverseProxyEndpointsExposeConfigAndLogs(t *testing.T) {
 	assert.NoError(t, json.Unmarshal(configRes.Body.Bytes(), &configPayload))
 	assert.Equal(t, 1, len(configPayload.Hosts))
 	assert.Equal(t, "http://spa.localhost", configPayload.Hosts[0].Host)
+	assert.Equal(t, filepath.Base(tempDir), configPayload.Hosts[0].Routes[0].Label)
 
 	logReq := httptest.NewRequest(http.MethodGet, "/console/api/reverse-proxy/logs", nil)
 	logReq.RemoteAddr = "127.0.0.1:41234"
@@ -177,6 +215,7 @@ func TestAdminHandler_ReverseProxyEndpointsExposeConfigAndLogs(t *testing.T) {
 	assert.Equal(t, 1, len(logsPayload.Entries))
 	assert.Equal(t, "static", logsPayload.Entries[0].RouteType)
 	assert.Equal(t, "http://spa.localhost", logsPayload.Entries[0].RouteHost)
+	assert.Equal(t, filepath.Base(tempDir), logsPayload.Entries[0].RouteLabel)
 }
 
 func TestReverseProxy_MatchesExplicitPortBeforePortlessFallback(t *testing.T) {
@@ -261,6 +300,7 @@ func TestAdminHandler_TrafficLogsIncludeOIDCRequests(t *testing.T) {
 	assert.Equal(t, "oidc", logsPayload.Entries[0].RouteType)
 	assert.Equal(t, "oidc.localhost", logsPayload.Entries[0].RouteHost)
 	assert.Equal(t, "/.well-known/openid-configuration", logsPayload.Entries[0].RoutePath)
+	assert.Equal(t, "oidc", logsPayload.Entries[0].RouteLabel)
 	assert.Equal(t, "https://oidc.localhost:18443", logsPayload.Entries[0].Target)
 }
 

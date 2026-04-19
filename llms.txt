@@ -87,18 +87,17 @@ entraid:
   tenant_id: "12345678-1234-1234-1234-123456789abc"
   version: "v2"
 
-cors:
-  enabled: true
-  allowed_origins:
-    - "http://localhost:3000"
-  allowed_methods:
-    - "GET"
-    - "POST"
-    - "OPTIONS"
-  allowed_headers:
-    - "Content-Type"
-    - "Authorization"
-    - "Accept"
+  cors:
+    origins:
+      - "http://localhost:3000"
+    methods:
+      - "GET"
+      - "POST"
+      - "OPTIONS"
+    headers:
+      - "Content-Type"
+      - "Authorization"
+      - "Accept"
 
 autocert:
   enabled: false
@@ -140,7 +139,7 @@ The repository root `compose.yaml` defines three services:
 
 - `oidc.localhost`
   - Builds OIDCLD from the current repository.
-  - Binds `./examples/autocert/config` into the container read-only.
+  - Binds `./examples/reverseproxy/config` into the container read-only.
   - Exposes `18889:18889` for the Developer Console and HTTP metadata companion listener.
   - Exposes `8443:443` for the shared HTTPS listener used by `oidc.localhost` and `app.localhost`.
   - Starts with:

@@ -274,16 +274,16 @@ func (s *Server) Handler() http.Handler {
 	// - /end_session (now with enhanced session termination)
 	// Note: /.well-known/openid-configuration is handled by our custom handler above
 	mux.Handle("/", s.provider)
-	var baseHandler http.Handler = mux
+	var oidcHandler http.Handler = mux
 	if s.config.EntraID != nil {
-		baseHandler = s.entraIDRouteMiddleware(baseHandler)
+		oidcHandler = s.entraIDRouteMiddleware(oidcHandler)
 	}
-	baseHandler = s.reverseProxyMiddleware(baseHandler)
+	oidcHandler = createCORSMiddleware(s.config.OIDC.CORS)(oidcHandler)
+	baseHandler := s.reverseProxyMiddleware(oidcHandler)
 
 	// Apply middleware in correct order so denied requests are still logged and get CORS headers.
 	handler := s.accessFilterMiddleware(baseHandler)
 	handler = s.loggingMiddleware(handler)
-	handler = createCORSMiddleware(s.config.CORS)(handler)
 
 	prefix := config.IssuerPathPrefix(s.config.OIDC.Issuer)
 	if prefix == "" {
@@ -919,6 +919,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 				RouteType:  logMeta.RouteType,
 				RouteHost:  logMeta.RouteHost,
 				RoutePath:  logMeta.RoutePath,
+				RouteLabel: logMeta.RouteLabel,
 				Target:     logMeta.Target,
 				RemoteAddr: r.RemoteAddr,
 			})

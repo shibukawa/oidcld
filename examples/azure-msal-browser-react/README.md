@@ -12,6 +12,7 @@ A comprehensive React TypeScript example demonstrating OpenID Connect authentica
 - **MSAL Browser v5 redirect bridge** for COOP-compatible redirect handling
 - **Silent token acquisition** with fallback to interactive redirect
 - **UserInfo endpoint** integration
+- **Reverse-proxied demo API** integration for GET/POST/DELETE logging
 - **Logout functionality** with redirect
 - **Responsive design** with Tailwind CSS utilities
 - **TypeScript** for type safety
@@ -118,7 +119,8 @@ MSAL Browser v5 requires a dedicated redirect bridge page for COOP-compatible re
 1. **Sign In**: Click "Sign In" to redirect to the authentication page
 2. **User Selection**: Choose a user from the oidcld user selection page
 3. **Profile Display**: View user information and claims after redirect back
-4. **Sign Out**: Use redirect logout to clear session
+4. **API Demo**: Switch to the API tab to exercise `/api/health` and `/api/items`
+5. **Sign Out**: Use redirect logout to clear session
 
 ### Components
 

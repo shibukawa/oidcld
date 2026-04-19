@@ -27,11 +27,12 @@ var (
 	ErrLegacyOIDCLDConfig                     = errors.New("legacy top-level key 'oidcld' is no longer supported; use 'oidc', 'console', and 'certificate_authority'")
 	ErrLegacyCertificateAuthorityDomainSuffix = errors.New("legacy key 'certificate_authority.domain_suffix' is no longer supported; use 'certificate_authority.domains'")
 	ErrLegacyCertificateAuthorityServerNames  = errors.New("legacy key 'certificate_authority.server_names' is no longer supported; use 'certificate_authority.domains'")
+	ErrLegacyTopLevelCORS                     = errors.New("legacy top-level key 'cors' is no longer supported; use 'oidc.cors' or 'reverse_proxy.hosts[].cors'")
 	ErrAccessFilterNegativeMaxForwardedHops   = errors.New("access_filter.max_forwarded_hops must be >= 0")
 	ErrAccessFilterEmptyAllowedIPEntry        = errors.New("access_filter.extra_allowed_ips contains an empty entry")
 	ErrAccessFilterInvalidAllowedIPEntry      = errors.New("invalid access_filter.extra_allowed_ips entry")
 	ErrLoginUIInvalidAccentColor              = errors.New("oidc.login_ui.accent_color must be a hex color like #RRGGBB")
-	ErrReverseProxyHostRequired               = errors.New("reverse_proxy.hosts[].host is required")
+	ErrReverseProxyMultipleDefaultHosts       = errors.New("reverse_proxy.hosts[] may contain at most one hostless default virtual host")
 	ErrReverseProxyRouteRequired              = errors.New("reverse_proxy.hosts[].routes must not be empty")
 	ErrReverseProxyRoutePathInvalid           = errors.New("reverse_proxy.hosts[].routes[].path must start with /")
 	ErrReverseProxyRouteTargetRequired        = errors.New("reverse_proxy.hosts[].routes[] must define exactly one of target_url or static_dir")
@@ -72,7 +73,6 @@ type Config struct {
 	Console              *ConsoleConfig              `yaml:"console,omitempty"`
 	CertificateAuthority *CertificateAuthorityConfig `yaml:"certificate_authority,omitempty"`
 	EntraID              *EntraIDConfig              `yaml:"entraid,omitempty"`
-	CORS                 *CORSConfig                 `yaml:"cors,omitempty"`
 	Autocert             *AutocertConfig             `yaml:"autocert,omitempty"`
 	ReverseProxy         *ReverseProxyConfig         `yaml:"reverse_proxy,omitempty"`
 	Users                map[string]User             `yaml:"users"`
@@ -90,13 +90,14 @@ type OIDCConfig struct {
 	ValidScopes         []string       `yaml:"valid_scopes,omitempty"`
 	LoginUI             *LoginUIConfig `yaml:"login_ui,omitempty"`
 	// TLS certificate file paths for serving HTTPS when not using autocert.
-	TLSCertFile               string `yaml:"tls_cert_file,omitempty"`
-	TLSKeyFile                string `yaml:"tls_key_file,omitempty"`
-	RefreshTokenEnabled       bool   `yaml:"refresh_token_enabled,omitempty"`
-	RefreshTokenExpiry        int    `yaml:"refresh_token_expiry,omitempty"`
-	EndSessionEnabled         bool   `yaml:"end_session_enabled,omitempty"`
-	EndSessionEndpointVisible bool   `yaml:"end_session_endpoint_visible,omitempty"`
-	VerboseLogging            bool   `yaml:"verbose_logging,omitempty"`
+	TLSCertFile               string      `yaml:"tls_cert_file,omitempty"`
+	TLSKeyFile                string      `yaml:"tls_key_file,omitempty"`
+	RefreshTokenEnabled       bool        `yaml:"refresh_token_enabled,omitempty"`
+	RefreshTokenExpiry        int         `yaml:"refresh_token_expiry,omitempty"`
+	EndSessionEnabled         bool        `yaml:"end_session_enabled,omitempty"`
+	EndSessionEndpointVisible bool        `yaml:"end_session_endpoint_visible,omitempty"`
+	VerboseLogging            bool        `yaml:"verbose_logging,omitempty"`
+	CORS                      *CORSConfig `yaml:"cors,omitempty"`
 }
 
 const (
@@ -173,10 +174,42 @@ type EntraIDConfig struct {
 
 // CORSConfig represents Cross-Origin Resource Sharing configuration.
 type CORSConfig struct {
-	Enabled        bool     `yaml:"enabled,omitempty"`
-	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
-	AllowedMethods []string `yaml:"allowed_methods,omitempty"`
-	AllowedHeaders []string `yaml:"allowed_headers,omitempty"`
+	Enabled bool     `yaml:"enabled,omitempty"`
+	Origins []string `yaml:"origins,omitempty"`
+	Methods []string `yaml:"methods,omitempty"`
+	Headers []string `yaml:"headers,omitempty"`
+}
+
+func (c *CORSConfig) UnmarshalYAML(b []byte) error {
+	if c == nil {
+		return nil
+	}
+
+	var enabled bool
+	if err := yaml.Unmarshal(b, &enabled); err == nil {
+		c.Enabled = enabled
+		c.Origins = nil
+		c.Methods = nil
+		c.Headers = nil
+		return nil
+	}
+
+	type rawCORSConfig struct {
+		Origins []string `yaml:"origins,omitempty"`
+		Methods []string `yaml:"methods,omitempty"`
+		Headers []string `yaml:"headers,omitempty"`
+	}
+
+	var raw rawCORSConfig
+	if err := yaml.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	c.Enabled = true
+	c.Origins = append([]string{}, raw.Origins...)
+	c.Methods = append([]string{}, raw.Methods...)
+	c.Headers = append([]string{}, raw.Headers...)
+	return nil
 }
 
 // AccessFilterConfig represents local-only filtering for serve listeners.
@@ -355,6 +388,9 @@ func detectLegacyConfigKeys(data []byte) error {
 				return ErrLegacyCertificateAuthorityServerNames
 			}
 		}
+	}
+	if _, exists := raw["cors"]; exists {
+		return ErrLegacyTopLevelCORS
 	}
 	return nil
 }
@@ -575,16 +611,13 @@ func createDefaultConfig(mode Mode) *Config {
 			RefreshTokenExpiry:        86400,
 			EndSessionEnabled:         true,
 			EndSessionEndpointVisible: true,
+			CORS: &CORSConfig{
+				Enabled: true,
+			},
 		},
 		Console:              DefaultConsoleConfig(),
 		CertificateAuthority: DefaultCertificateAuthorityConfig(),
-		// Add CORS configuration for SPA development - enabled by default for development ease
-		CORS: &CORSConfig{
-			Enabled: true,
-			// Leave origins, methods, and headers empty to use permissive defaults
-			// This allows all origins (*), all common HTTP methods, and all common headers
-		},
-		Users: users,
+		Users:                users,
 	}
 
 	switch mode {
@@ -766,6 +799,11 @@ func (c *Config) Normalize() error {
 	isEntra := c.EntraID != nil
 	ensureDefaultScopes(&c.OIDC, isEntra)
 	c.OIDC.AudienceClaimFormat = normalizeAudienceClaimFormat(c.OIDC.AudienceClaimFormat)
+	oidcCORS, err := normalizeCORSConfig(c.OIDC.CORS)
+	if err != nil {
+		return err
+	}
+	c.OIDC.CORS = oidcCORS
 
 	accessFilter, err := normalizeAccessFilterConfig(c.AccessFilter)
 	if err != nil {
@@ -854,6 +892,44 @@ func normalizeCertificateDomains(domains []string) []string {
 		}
 		seen[key] = struct{}{}
 		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func normalizeCORSConfig(cfg *CORSConfig) (*CORSConfig, error) {
+	if cfg == nil || !cfg.Enabled {
+		return nil, nil
+	}
+
+	return &CORSConfig{
+		Enabled: true,
+		Origins: normalizeStringList(cfg.Origins),
+		Methods: normalizeStringList(cfg.Methods),
+		Headers: normalizeStringList(cfg.Headers),
+	}, nil
+}
+
+func normalizeStringList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return nil
 	}
 	return normalized
 }
@@ -1126,7 +1202,14 @@ oidc:{{if .OIDC.Issuer}}
   refresh_token_enabled: {{.OIDC.RefreshTokenEnabled}}             # Enable refresh token support
   refresh_token_expiry: {{.OIDC.RefreshTokenExpiry}}             # Refresh token expiry in seconds (24 hours)
   end_session_enabled: {{.OIDC.EndSessionEnabled}}               # Enable logout/end session functionality
-  end_session_endpoint_visible: {{.OIDC.EndSessionEndpointVisible}}      # Show end_session_endpoint in discovery (optional)
+  end_session_endpoint_visible: {{.OIDC.EndSessionEndpointVisible}}      # Show end_session_endpoint in discovery (optional){{if .OIDC.CORS}}
+  cors:{{if and .OIDC.CORS.Enabled (eq (len .OIDC.CORS.Origins) 0) (eq (len .OIDC.CORS.Methods) 0) (eq (len .OIDC.CORS.Headers) 0)}} true{{else}}
+    origins:{{range .OIDC.CORS.Origins}}
+      - "{{.}}"{{end}}
+    methods:{{range .OIDC.CORS.Methods}}
+      - "{{.}}"{{end}}
+    headers:{{range .OIDC.CORS.Headers}}
+      - "{{.}}"{{end}}{{end}}{{end}}
 
 {{if .Console}}# Developer Console listener
 console:
@@ -1180,27 +1263,25 @@ autocert:
     max_attempts: {{.Autocert.Retry.MaxAttempts}}{{if .Autocert.Retry.InitialDelay}}
     initial_delay: "{{.Autocert.Retry.InitialDelay}}"{{end}}{{if .Autocert.Retry.MaxDelay}}
     max_delay: "{{.Autocert.Retry.MaxDelay}}"{{end}}{{end}}
-{{end}}{{if .CORS}}
-# CORS (Cross-Origin Resource Sharing) settings for SPA development
-cors:
-  enabled: {{.CORS.Enabled}}{{if .CORS.AllowedOrigins}}
-  allowed_origins:{{range .CORS.AllowedOrigins}}
-    - "{{.}}"{{end}}{{end}}{{if .CORS.AllowedMethods}}
-  allowed_methods:{{range .CORS.AllowedMethods}}
-    - "{{.}}"{{end}}{{end}}{{if .CORS.AllowedHeaders}}
-  allowed_headers:{{range .CORS.AllowedHeaders}}
-    - "{{.}}"{{end}}{{end}}
 {{end}}
 
 {{if .ReverseProxy}}# Reverse proxy and static hosting rules
 reverse_proxy:
   log_retention: {{.ReverseProxy.LogRetention}}
   hosts:{{range .ReverseProxy.Hosts}}
-    - host: "{{.Host}}"
+    -{{if .Host}} host: "{{.Host}}"{{end}}{{if .CORS}}
+      cors:{{if and .CORS.Enabled (eq (len .CORS.Origins) 0) (eq (len .CORS.Methods) 0) (eq (len .CORS.Headers) 0)}} true{{else}}
+        origins:{{range .CORS.Origins}}
+          - "{{.}}"{{end}}
+        methods:{{range .CORS.Methods}}
+          - "{{.}}"{{end}}
+        headers:{{range .CORS.Headers}}
+          - "{{.}}"{{end}}{{end}}{{end}}
 {{if .TLSCertFile}}      tls_cert_file: "{{.TLSCertFile}}"
       tls_key_file: "{{.TLSKeyFile}}"{{end}}
       routes:{{range .Routes}}
-        - path: "{{.Path}}"{{if .TargetURL}}
+        - path: "{{.Path}}"{{if .Label}}
+          label: "{{.Label}}"{{end}}{{if .TargetURL}}
           target_url: "{{.TargetURL}}"{{end}}{{if .StaticDir}}
           static_dir: "{{.StaticDir}}"{{end}}
           spa_fallback: {{.SPAFallback}}{{if .RewritePathPrefix}}
@@ -1211,11 +1292,13 @@ reverse_proxy:
 #     - host: "https://app.dev.localhost"
 #       routes:
 #         - path: "/api"
+#           label: "api"
 #           target_url: "http://127.0.0.1:3000"
 #         - path: "/"
+#           label: "frontend"
 #           static_dir: "./web/dist"
 #           spa_fallback: true
-#     - host: "http://app-ui.dev.localhost"
+#     -
 #       routes:
 #         - path: "/"
 #           target_url: "http://127.0.0.1:5173"

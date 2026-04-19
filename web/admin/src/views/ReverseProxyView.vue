@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 type ReverseProxyRoute = {
   path: string
+  label: string
   routeType: string
   target: string
   spaFallback: boolean
@@ -12,6 +13,7 @@ type ReverseProxyRoute = {
 
 type ReverseProxyHost = {
   host: string
+  defaultVirtualHost: boolean
   tlsSource: string
   routes: ReverseProxyRoute[]
 }
@@ -87,7 +89,7 @@ onMounted(() => {
             <div class="proxy-route-list">
               <article v-for="route in host.routes" :key="`${host.host}-${route.path}-${route.target}`" class="proxy-route-row">
                 <div class="proxy-route-copy">
-                  <p class="proxy-route-path">{{ route.path }}</p>
+                  <p class="proxy-route-path">{{ route.label }} · {{ route.path }}</p>
                   <p class="proxy-route-meta">
                     {{ routeTypeLabel(route.routeType) }}
                     <span v-if="route.spaFallback"> / {{ t('reverseProxy.spaFallback') }}</span>
