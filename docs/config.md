@@ -49,6 +49,7 @@ oidc:
   verbose_logging: false                    # Verbose logging (default: false)
   tls_cert_file: ""                         # TLS certificate file path (optional)
   tls_key_file: ""                          # TLS key file path (optional)
+  cors: true                                # Or object with origins/methods/headers
 ```
 
 #### 2. Developer Console (`console`)
@@ -95,23 +96,25 @@ entraid:
 - **EntraID v1**: `tenant_id: "common"`, `version: "v1"`
 - **EntraID v2**: `tenant_id: "12345678-1234-1234-1234-123456789abc"`, `version: "v2"`
 
-#### 5. CORS Settings (`cors`)
+#### 5. OIDC CORS Settings (`oidc.cors`)
 
 ```yaml
-cors:
-  enabled: true                           # Enable CORS (default: true)
-  allowed_origins:                        # Allowed origins (default: permissive *)
-    - "http://localhost:3000"
-    - "http://localhost:5173"
-  allowed_methods:                        # HTTP methods (default: [GET, POST, OPTIONS])
-    - "GET"
-    - "POST"
-    - "OPTIONS"
-  allowed_headers:                        # Headers (default: [Content-Type, Authorization, Accept])
-    - "Content-Type"
-    - "Authorization"
-    - "Accept"
+oidc:
+  cors:
+    origins:
+      - "http://localhost:3000"
+      - "http://localhost:5173"
+    methods:
+      - "GET"
+      - "POST"
+      - "OPTIONS"
+    headers:
+      - "Content-Type"
+      - "Authorization"
+      - "Accept"
 ```
+
+`cors: true` is shorthand for permissive browser-friendly defaults. The detailed object form supports `origins`, `methods`, and `headers`.
 
 #### 6. Automatic HTTPS Certificates (`autocert`)
 
@@ -350,7 +353,7 @@ flowchart TD
 | Symptom | Possible Cause | Solution |
 |---------|---------------|----------|
 | 401 after authentication | Redirect URI mismatch or invalid scope | Check redirect URI and requested scopes |
-| CORS blocked | Origin not in allowed list | Add origin to `cors.allowed_origins` |
+| CORS blocked | Origin not in allowed list | Add origin to `oidc.cors.origins` or `reverse_proxy.hosts[].cors.origins` |
 | MSAL rejects connection | HTTPS required or untrusted certificate | Use HTTPS with trusted certificate |
 | No refresh_token returned | Missing scope or disabled | Add `offline_access` scope and enable refresh tokens |
 | Certificate errors | Invalid or expired certificates | Regenerate certificates or check file paths |

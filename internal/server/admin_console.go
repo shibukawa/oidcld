@@ -90,13 +90,15 @@ type adminReverseProxyResponse struct {
 }
 
 type adminReverseProxyHost struct {
-	Host      string                   `json:"host"`
-	TLSSource string                   `json:"tlsSource"`
-	Routes    []adminReverseProxyRoute `json:"routes"`
+	Host               string                   `json:"host"`
+	DefaultVirtualHost bool                     `json:"defaultVirtualHost"`
+	TLSSource          string                   `json:"tlsSource"`
+	Routes             []adminReverseProxyRoute `json:"routes"`
 }
 
 type adminReverseProxyRoute struct {
 	Path              string `json:"path"`
+	Label             string `json:"label"`
 	RouteType         string `json:"routeType"`
 	Target            string `json:"target"`
 	SPAFallback       bool   `json:"spaFallback"`
@@ -276,8 +278,9 @@ func (s *Server) handleAdminReverseProxy(w http.ResponseWriter, _ *http.Request)
 		response.LogRetention = s.config.ReverseProxy.LogRetention
 		for _, host := range s.config.ReverseProxy.Hosts {
 			item := adminReverseProxyHost{
-				Host:      host.NormalizedHost(),
-				TLSSource: adminReverseProxyTLSSource(s.config, host),
+				Host:               host.DisplayHost(),
+				DefaultVirtualHost: host.IsDefaultVirtualHost(),
+				TLSSource:          adminReverseProxyTLSSource(s.config, host),
 			}
 			for _, route := range host.Routes {
 				target := route.TargetURL
@@ -288,6 +291,7 @@ func (s *Server) handleAdminReverseProxy(w http.ResponseWriter, _ *http.Request)
 				}
 				item.Routes = append(item.Routes, adminReverseProxyRoute{
 					Path:              route.Path,
+					Label:             route.ResolvedLabel(),
 					RouteType:         routeType,
 					Target:            target,
 					SPAFallback:       route.SPAFallback,
@@ -433,7 +437,7 @@ func adminTLSSource(cfg *config.Config) string {
 }
 
 func adminReverseProxyTLSSource(cfg *config.Config, host config.ReverseProxyHost) string {
-	if host.Scheme() != "https" {
+	if host.Scheme() != "https" && !host.IsDefaultVirtualHost() {
 		return "http"
 	}
 	if strings.TrimSpace(host.ResolvedTLSCertFile()) != "" {

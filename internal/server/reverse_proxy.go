@@ -23,7 +23,8 @@ var ErrReverseProxyHTTPSRequiresCertificateAuthority = errors.New("reverse proxy
 var ErrReverseProxyHostNotCoveredByCADomains = errors.New("reverse proxy host is not covered by certificate_authority.domains")
 
 type compiledReverseProxy struct {
-	hosts map[string][]*compiledReverseProxyHost
+	hosts       map[string][]*compiledReverseProxyHost
+	defaultHost *compiledReverseProxyHost
 }
 
 type compiledReverseProxyHost struct {
@@ -31,6 +32,9 @@ type compiledReverseProxyHost struct {
 	scheme        string
 	hostname      string
 	port          string
+	displayHost   string
+	cors          *config.CORSConfig
+	isDefaultHost bool
 	routes        []compiledReverseProxyRoute
 	manualTLSCert *tls.Certificate
 }
@@ -42,6 +46,7 @@ type compiledReverseProxyRoute struct {
 	spaFallback       bool
 	rewritePathPrefix string
 	targetLabel       string
+	label             string
 	routeType         string
 	proxy             *httputil.ReverseProxy
 }
@@ -69,15 +74,17 @@ type reverseProxyLogEntry struct {
 	RouteType  string    `json:"routeType"`
 	RouteHost  string    `json:"routeHost"`
 	RoutePath  string    `json:"routePath"`
+	RouteLabel string    `json:"routeLabel"`
 	Target     string    `json:"target"`
 	RemoteAddr string    `json:"remoteAddr"`
 }
 
 type reverseProxyLogMeta struct {
-	RouteType string
-	RouteHost string
-	RoutePath string
-	Target    string
+	RouteType  string
+	RouteHost  string
+	RoutePath  string
+	RouteLabel string
+	Target     string
 }
 
 type reverseProxyLogStore struct {
@@ -98,28 +105,33 @@ func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) 
 	compiled := &compiledReverseProxy{hosts: map[string][]*compiledReverseProxyHost{}}
 	for _, host := range cfg.ReverseProxy.Hosts {
 		item := &compiledReverseProxyHost{
-			host:     host.NormalizedHost(),
-			scheme:   host.Scheme(),
-			hostname: host.Hostname(),
-			port:     host.Port(),
-			routes:   make([]compiledReverseProxyRoute, 0, len(host.Routes)),
+			host:          host.NormalizedHost(),
+			scheme:        host.Scheme(),
+			hostname:      host.Hostname(),
+			port:          host.Port(),
+			displayHost:   host.DisplayHost(),
+			cors:          host.CORS,
+			isDefaultHost: host.IsDefaultVirtualHost(),
+			routes:        make([]compiledReverseProxyRoute, 0, len(host.Routes)),
 		}
 
 		if host.ResolvedTLSCertFile() != "" {
-			if err := validateHostMatchesCertificate(item.hostname, host.ResolvedTLSCertFile()); err != nil {
-				return nil, err
+			if item.hostname != "" {
+				if err := validateHostMatchesCertificate(item.hostname, host.ResolvedTLSCertFile()); err != nil {
+					return nil, err
+				}
 			}
 			cert, err := tls.LoadX509KeyPair(host.ResolvedTLSCertFile(), host.ResolvedTLSKeyFile())
 			if err != nil {
-				return nil, fmt.Errorf("failed to load reverse proxy certificate for host %q: %w", host.Host, err)
+				return nil, err
 			}
 			item.manualTLSCert = &cert
 		} else if host.Scheme() == "https" {
 			if cfg.CertificateAuthority == nil {
-				return nil, fmt.Errorf("%w: %s", ErrReverseProxyHTTPSRequiresCertificateAuthority, host.Host)
+				return nil, fmt.Errorf("%w: %s", ErrReverseProxyHTTPSRequiresCertificateAuthority, host.DisplayHost())
 			}
-			if !config.HostMatchesCertificateDomains(item.hostname, cfg.CertificateAuthority.Domains) {
-				return nil, fmt.Errorf("%w: %q", ErrReverseProxyHostNotCoveredByCADomains, host.Host)
+			if item.hostname != "" && !config.HostMatchesCertificateDomains(item.hostname, cfg.CertificateAuthority.Domains) {
+				return nil, fmt.Errorf("%w: %q", ErrReverseProxyHostNotCoveredByCADomains, host.DisplayHost())
 			}
 		}
 
@@ -129,6 +141,7 @@ func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) 
 				staticDir:         route.ResolvedStaticDir(),
 				spaFallback:       route.SPAFallback,
 				rewritePathPrefix: route.RewritePathPrefix,
+				label:             route.ResolvedLabel(),
 			}
 			if route.TargetURL != "" {
 				targetURL, err := neturl.Parse(route.TargetURL)
@@ -148,6 +161,10 @@ func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) 
 		slices.SortStableFunc(item.routes, func(a, b compiledReverseProxyRoute) int {
 			return len(b.path) - len(a.path)
 		})
+		if item.isDefaultHost {
+			compiled.defaultHost = item
+			continue
+		}
 		compiled.hosts[item.hostname] = append(compiled.hosts[item.hostname], item)
 	}
 
@@ -321,11 +338,15 @@ func (s *Server) reverseProxyMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		annotateReverseProxyLog(w, reverseProxyLogMeta{
-			RouteType: match.route.routeType,
-			RouteHost: match.host.host,
-			RoutePath: match.route.path,
-			Target:    match.route.targetLabel,
+			RouteType:  match.route.routeType,
+			RouteHost:  match.host.displayHost,
+			RoutePath:  match.route.path,
+			RouteLabel: match.route.label,
+			Target:     match.route.targetLabel,
 		})
+		if handleCORS(w, r, match.host.cors) {
+			return
+		}
 		if match.route.routeType == "proxy" {
 			match.route.proxy.ServeHTTP(w, r)
 			return
@@ -342,27 +363,32 @@ func (c *compiledReverseProxy) match(r *http.Request) (reverseProxyRouteMatch, b
 	if requestAuthority.hostname == "" || requestAuthority.scheme == "" {
 		return reverseProxyRouteMatch{}, false
 	}
-	candidates, ok := c.hosts[requestAuthority.hostname]
-	if !ok {
-		return reverseProxyRouteMatch{}, false
-	}
-	for _, host := range candidates {
-		if host.scheme != requestAuthority.scheme || host.port == "" || host.port != requestAuthority.port {
-			continue
+	if candidates, ok := c.hosts[requestAuthority.hostname]; ok {
+		for _, host := range candidates {
+			if host.scheme != requestAuthority.scheme || host.port == "" || host.port != requestAuthority.port {
+				continue
+			}
+			for _, route := range host.routes {
+				if pathMatchesReverseProxyRoute(r.URL.Path, route.path) {
+					return reverseProxyRouteMatch{host: host, route: route}, true
+				}
+			}
 		}
-		for _, route := range host.routes {
-			if pathMatchesReverseProxyRoute(r.URL.Path, route.path) {
-				return reverseProxyRouteMatch{host: host, route: route}, true
+		for _, host := range candidates {
+			if host.scheme != requestAuthority.scheme || host.port != "" {
+				continue
+			}
+			for _, route := range host.routes {
+				if pathMatchesReverseProxyRoute(r.URL.Path, route.path) {
+					return reverseProxyRouteMatch{host: host, route: route}, true
+				}
 			}
 		}
 	}
-	for _, host := range candidates {
-		if host.scheme != requestAuthority.scheme || host.port != "" {
-			continue
-		}
-		for _, route := range host.routes {
+	if c.defaultHost != nil {
+		for _, route := range c.defaultHost.routes {
 			if pathMatchesReverseProxyRoute(r.URL.Path, route.path) {
-				return reverseProxyRouteMatch{host: host, route: route}, true
+				return reverseProxyRouteMatch{host: c.defaultHost, route: route}, true
 			}
 		}
 	}
@@ -401,18 +427,23 @@ func (c *compiledReverseProxy) tlsHost(hostname string) (*compiledReverseProxyHo
 		return nil, false
 	}
 	candidates, ok := c.hosts[strings.ToLower(strings.TrimSpace(hostname))]
-	if !ok {
-		return nil, false
-	}
-	for _, host := range candidates {
-		if host.scheme == "https" && host.manualTLSCert != nil {
-			return host, true
+	if ok {
+		for _, host := range candidates {
+			if host.scheme == "https" && host.manualTLSCert != nil {
+				return host, true
+			}
+		}
+		for _, host := range candidates {
+			if host.scheme == "https" {
+				return host, true
+			}
 		}
 	}
-	for _, host := range candidates {
-		if host.scheme == "https" {
-			return host, true
+	if c.defaultHost != nil {
+		if c.defaultHost.manualTLSCert != nil {
+			return c.defaultHost, true
 		}
+		return c.defaultHost, true
 	}
 	return nil, false
 }
@@ -499,10 +530,11 @@ func (s *Server) oidcTrafficLogMeta(r *http.Request) *reverseProxyLogMeta {
 	}
 
 	return &reverseProxyLogMeta{
-		RouteType: "oidc",
-		RouteHost: strings.ToLower(strings.TrimSpace(config.IssuerHostname(s.config.OIDC.Issuer))),
-		RoutePath: canonicalPath,
-		Target:    s.config.OIDC.Issuer,
+		RouteType:  "oidc",
+		RouteHost:  strings.ToLower(strings.TrimSpace(config.IssuerHostname(s.config.OIDC.Issuer))),
+		RoutePath:  canonicalPath,
+		RouteLabel: "oidc",
+		Target:     s.config.OIDC.Issuer,
 	}
 }
 

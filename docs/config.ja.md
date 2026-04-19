@@ -78,11 +78,15 @@ entraid:
 ```
 テンプレート既定: v1: tenant_id=common, v2: 固定 UUID。
 
-#### 5. CORS (`cors`)
+#### 5. OIDC CORS (`oidc.cors`)
 ```yaml
-cors:
-  enabled: true
-  # allowed_* を省略すると開発向け寛容デフォルト (全許可) 振る舞い
+oidc:
+  cors: true
+  # または詳細指定:
+  # cors:
+  #   origins: ["https://app.localhost"]
+  #   methods: ["GET", "POST", "OPTIONS"]
+  #   headers: ["Content-Type", "Authorization"]
 ```
 
 #### 6. 自動証明書 (`autocert`)
@@ -176,7 +180,7 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | 症状 | 原因候補 | 対処 |
 |------|----------|------|
 | 401 | redirect_uri / scope 問題 | リクエスト再確認 |
-| CORS ブロック | origin 未許可 | cors.allowed_origins 追加 |
+| CORS ブロック | origin 未許可 | `oidc.cors.origins` または `reverse_proxy.hosts[].cors.origins` に追加 |
 | MSAL が拒否 | HTTPS / 証明書 | mkcert か ACME 利用 |
 | refresh_token 無 | scope / 設定無効 | offline_access + refresh 有効 |
 | 証明書エラー | 期限 / パス | 再発行 or パス修正 |

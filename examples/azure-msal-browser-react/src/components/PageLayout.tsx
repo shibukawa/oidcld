@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from "@azure/msal-react";
 import { SignInButton } from "./SignInButton";
 import { SignOutButton } from "./SignOutButton";
 import { ProfileData } from "./ProfileData";
+import { ApiDemoPanel } from "./ApiDemoPanel";
 import { msalConfig, loginRequest, parsedScopes } from "../authConfig";
 
 /**
@@ -10,6 +12,7 @@ import { msalConfig, loginRequest, parsedScopes } from "../authConfig";
  */
 export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
     const { accounts } = useMsal();
+    const [activeTab, setActiveTab] = useState<"user" | "api">("user");
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -39,7 +42,39 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
             
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 <AuthenticatedTemplate>
-                    <ProfileData />
+                    <div className="space-y-6">
+                        <div className="bg-white rounded-lg shadow-sm p-4">
+                            <div className="flex flex-wrap gap-3">
+                                <button
+                                    className={`px-4 py-2 rounded-md font-medium transition-colors duration-200 ${
+                                        activeTab === "user"
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                                    onClick={() => {
+                                        setActiveTab("user");
+                                    }}
+                                    type="button"
+                                >
+                                    Login User
+                                </button>
+                                <button
+                                    className={`px-4 py-2 rounded-md font-medium transition-colors duration-200 ${
+                                        activeTab === "api"
+                                            ? "bg-blue-600 text-white"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                                    onClick={() => {
+                                        setActiveTab("api");
+                                    }}
+                                    type="button"
+                                >
+                                    API Access
+                                </button>
+                            </div>
+                        </div>
+                        {activeTab === "user" ? <ProfileData /> : <ApiDemoPanel />}
+                    </div>
                 </AuthenticatedTemplate>
                 <UnauthenticatedTemplate>
                     <div className="bg-white rounded-lg shadow-sm p-8 mb-8">
@@ -52,6 +87,9 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                         </p>
                         <p className="text-gray-700 mb-8">
                             Please sign in to see your profile information with EntraID-compatible claims.
+                        </p>
+                        <p className="text-gray-700 mb-8">
+                            After sign-in, you can also switch to an API demo tab that exercises GET, POST, and DELETE requests through the reverse proxy.
                         </p>
                         
                         <div className="grid md:grid-cols-2 gap-8">

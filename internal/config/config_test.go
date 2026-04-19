@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -273,6 +274,76 @@ users:
 	_, err = LoadConfig(configPath, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "http:// or https://")
+}
+
+func TestLoadConfig_AcceptsSingleDefaultVirtualHost(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "https://oidc.localhost:8443"
+  cors: true
+reverse_proxy:
+  hosts:
+    - cors: true
+      routes:
+        - path: "/"
+          label: "frontend"
+          target_url: "http://127.0.0.1:3000"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.True(t, cfg.ReverseProxy.Hosts[0].IsDefaultVirtualHost())
+	assert.Equal(t, "frontend", cfg.ReverseProxy.Hosts[0].Routes[0].ResolvedLabel())
+	assert.True(t, cfg.OIDC.CORS.Enabled)
+}
+
+func TestLoadConfig_RejectsMultipleDefaultVirtualHosts(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "https://oidc.localhost:8443"
+reverse_proxy:
+  hosts:
+    - routes:
+        - path: "/"
+          target_url: "http://127.0.0.1:3000"
+    - routes:
+        - path: "/api"
+          target_url: "http://127.0.0.1:3001"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrReverseProxyMultipleDefaultHosts))
+}
+
+func TestLoadConfig_RejectsLegacyTopLevelCORS(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+cors: true
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrLegacyTopLevelCORS))
 }
 
 func TestLoadConfig_RejectsReverseProxyTLSFilesOnHTTPHost(t *testing.T) {
