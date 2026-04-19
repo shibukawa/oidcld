@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type StatusPayload = {
   issuer: string
@@ -53,6 +54,7 @@ type UsersPayload = {
   users: UserSummary[]
 }
 
+const { t } = useI18n()
 const status = ref<StatusPayload | null>(null)
 const users = ref<UserSummary[]>([])
 const selectedUserId = ref<string | null>(null)
@@ -77,45 +79,43 @@ const modeOptions = computed(() => {
 const tlsOptions = computed(() => {
   const currentTLS = (status.value?.oidc?.tlsSource ?? 'none').toLowerCase()
   return [
-    { key: 'none', label: 'None', selected: currentTLS === 'none' },
-    { key: 'manual', label: 'Manual', selected: currentTLS === 'manual' },
-    { key: 'acme', label: 'ACME', selected: currentTLS === 'acme' },
-    { key: 'self-signed', label: 'Self-Signed', selected: currentTLS === 'self-signed' },
+    { key: 'none', label: t('common.none'), selected: currentTLS === 'none' },
+    { key: 'manual', label: t('common.manual'), selected: currentTLS === 'manual' },
+    { key: 'acme', label: t('common.acme'), selected: currentTLS === 'acme' },
+    { key: 'self-signed', label: t('common.selfSigned'), selected: currentTLS === 'self-signed' },
   ]
 })
 
 const audienceOptions = computed(() => {
   const currentAudience = (status.value?.oidc?.audClaimFormat ?? 'string').toLowerCase()
   return [
-    { key: 'string', label: 'String', selected: currentAudience === 'string' },
-    { key: 'array', label: 'Array', selected: currentAudience === 'array' },
+    { key: 'string', label: t('common.string'), selected: currentAudience === 'string' },
+    { key: 'array', label: t('common.array'), selected: currentAudience === 'array' },
   ]
 })
 
-const endpointRows = computed(() => {
-  return [
-    {
-      key: 'https-discovery',
-      label: 'HTTPS Discovery',
-      value: 'https://localhost:18443/.well-known/openid-configuration',
-    },
-    {
-      key: 'https-jwks',
-      label: 'HTTPS JWKS',
-      value: 'https://localhost:18443/keys',
-    },
-    {
-      key: 'http-discovery',
-      label: 'HTTP Fallback Discovery',
-      value: 'http://localhost:18889/.well-known/openid-configuration',
-    },
-    {
-      key: 'http-jwks',
-      label: 'HTTP Fallback JWKS',
-      value: 'http://localhost:18889/keys',
-    },
-  ]
-})
+const endpointRows = computed(() => [
+  {
+    key: 'https-discovery',
+    label: t('openidConnect.httpsDiscovery'),
+    value: 'https://localhost:18443/.well-known/openid-configuration',
+  },
+  {
+    key: 'https-jwks',
+    label: t('openidConnect.httpsJwks'),
+    value: 'https://localhost:18443/keys',
+  },
+  {
+    key: 'http-discovery',
+    label: t('openidConnect.httpDiscovery'),
+    value: 'http://localhost:18889/.well-known/openid-configuration',
+  },
+  {
+    key: 'http-jwks',
+    label: t('openidConnect.httpJwks'),
+    value: 'http://localhost:18889/keys',
+  },
+])
 
 function copyStateKey(prefix: string, value: string) {
   return `${prefix}:${value}`
@@ -174,44 +174,44 @@ onBeforeUnmount(() => {
 <template>
   <section class="oidc-page">
     <div v-if="loading" class="oidc-loading">
-      <p>Loading OpenID Connect runtime summary...</p>
+      <p>{{ t('openidConnect.loading') }}</p>
     </div>
 
     <div v-else class="oidc-layout">
       <section class="oidc-panel oidc-panel-top">
         <div class="panel-header">
           <div>
-            <h2>OpenID Connect Identity Provider for Local Development</h2>
+            <h2>{{ t('openidConnect.title') }}</h2>
           </div>
         </div>
 
         <div class="detail-grid">
           <div class="detail-row detail-row-span-4">
-            <span class="detail-label">Issuer</span>
+            <span class="detail-label">{{ t('openidConnect.issuer') }}</span>
             <div class="detail-value-group">
-              <code class="detail-value">{{ status?.issuer ?? 'Unavailable' }}</code>
+              <code class="detail-value">{{ status?.issuer ?? t('common.unavailable') }}</code>
               <button
                 type="button"
                 class="copy-button"
-                @click="copyToClipboard(copyStateKey('issuer', status?.issuer ?? 'Unavailable'), status?.issuer ?? 'Unavailable')"
+                @click="copyToClipboard(copyStateKey('issuer', status?.issuer ?? t('common.unavailable')), status?.issuer ?? t('common.unavailable'))"
               >
-                {{ isCopied(copyStateKey('issuer', status?.issuer ?? 'Unavailable')) ? 'Copied' : 'Copy' }}
+                {{ isCopied(copyStateKey('issuer', status?.issuer ?? t('common.unavailable'))) ? t('common.copied') : t('common.copy') }}
               </button>
             </div>
           </div>
 
           <div class="detail-row detail-row-span-4">
-            <span class="detail-label">Valid Scopes</span>
-            <code class="detail-value">{{ status?.validScopes.join(', ') || 'No scopes configured' }}</code>
+            <span class="detail-label">{{ t('openidConnect.validScopes') }}</span>
+            <code class="detail-value">{{ status?.validScopes.join(', ') || t('openidConnect.noScopesConfigured') }}</code>
           </div>
 
           <div v-if="(status?.oidc?.tenants ?? []).length > 0" class="detail-row detail-row-span-4">
-            <span class="detail-label">Tenant Paths</span>
+            <span class="detail-label">{{ t('openidConnect.tenantPaths') }}</span>
             <code class="detail-value">{{ status?.oidc?.tenants?.join(', ') }}</code>
           </div>
 
           <div class="detail-row detail-row-span-2">
-            <span class="detail-label">Mode</span>
+            <span class="detail-label">{{ t('openidConnect.mode') }}</span>
             <div class="option-list">
               <span
                 v-for="option in modeOptions"
@@ -225,7 +225,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="detail-row detail-row-span-2">
-            <span class="detail-label">TLS</span>
+            <span class="detail-label">{{ t('openidConnect.tls') }}</span>
             <div class="option-list">
               <span
                 v-for="option in tlsOptions"
@@ -239,22 +239,22 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">PKCE</span>
+            <span class="detail-label">{{ t('openidConnect.pkce') }}</span>
             <code class="detail-value">{{ String(status?.oidc?.pkceRequired ?? false) }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">Nonce</span>
+            <span class="detail-label">{{ t('openidConnect.nonce') }}</span>
             <code class="detail-value">{{ String(status?.oidc?.nonceRequired ?? false) }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">Expired In</span>
+            <span class="detail-label">{{ t('openidConnect.expiredIn') }}</span>
             <code class="detail-value">{{ status?.oidc?.expiredIn ?? 0 }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">Audience</span>
+            <span class="detail-label">{{ t('openidConnect.audience') }}</span>
             <div class="option-list">
               <span
                 v-for="option in audienceOptions"
@@ -268,32 +268,31 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">Refresh Token</span>
+            <span class="detail-label">{{ t('openidConnect.refreshToken') }}</span>
             <code class="detail-value">{{ String(status?.oidc?.refreshTokenEnabled ?? false) }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">Refresh Expiry</span>
+            <span class="detail-label">{{ t('openidConnect.refreshExpiry') }}</span>
             <code class="detail-value">{{ status?.oidc?.refreshTokenExpiry ?? 0 }}</code>
           </div>
 
           <div class="detail-row">
-            <span class="detail-label">End Session</span>
+            <span class="detail-label">{{ t('openidConnect.endSession') }}</span>
             <code class="detail-value">{{ String(status?.oidc?.endSessionEnabled ?? false) }}</code>
           </div>
 
           <div class="detail-row detail-row-span-4">
-            <span class="detail-label">Access Filter</span>
-            <span class="detail-text">{{ status?.oidc?.accessFilter ?? 'disabled' }}</span>
+            <span class="detail-label">{{ t('openidConnect.accessFilter') }}</span>
+            <span class="detail-text">{{ status?.oidc?.accessFilter ?? t('openidConnect.accessFilterDisabled') }}</span>
           </div>
-
         </div>
       </section>
 
       <section class="oidc-panel oidc-panel-users">
         <div class="panel-header">
           <div>
-            <h3>Available Users</h3>
+            <h3>{{ t('openidConnect.usersTitle') }}</h3>
           </div>
         </div>
 
@@ -322,15 +321,15 @@ onBeforeUnmount(() => {
                 class="copy-button"
                 @click="copyToClipboard(copyStateKey('claims', selectedUser.id), selectedUserClaims)"
               >
-                {{ isCopied(copyStateKey('claims', selectedUser.id)) ? 'Copied' : 'Copy' }}
+                {{ isCopied(copyStateKey('claims', selectedUser.id)) ? t('common.copied') : t('common.copy') }}
               </button>
             </div>
 
             <p v-if="(selectedUser.extraValidScopes ?? []).length > 0" class="claims-scopes">
-              scopes: {{ selectedUser.extraValidScopes?.join(', ') }}
+              {{ t('openidConnect.claimsScopes', { scopes: selectedUser.extraValidScopes?.join(', ') }) }}
             </p>
 
-            <pre class="claims-json">{{ selectedUserClaims }}</pre>
+            <pre class="code-surface claims-json">{{ selectedUserClaims }}</pre>
           </div>
         </div>
       </section>
@@ -338,7 +337,7 @@ onBeforeUnmount(() => {
       <section class="oidc-panel oidc-panel-endpoints">
         <div class="panel-header">
           <div>
-            <h3>Published Endpoints</h3>
+            <h3>{{ t('openidConnect.endpointsTitle') }}</h3>
           </div>
         </div>
 
@@ -407,28 +406,6 @@ onBeforeUnmount(() => {
   color: #f5fbff;
   background: rgba(34, 138, 216, 0.2);
   border-color: rgba(140, 212, 255, 0.3);
-}
-
-.copy-button {
-  flex: 0 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #eff7ff;
-  font-size: 0.76rem;
-  font-weight: 700;
-  padding: 0.36rem 0.72rem;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    transform 140ms ease,
-    border-color 140ms ease;
-}
-
-.copy-button:hover {
-  transform: translateY(-1px);
-  background: rgba(43, 144, 220, 0.18);
-  border-color: rgba(140, 212, 255, 0.32);
 }
 
 .users-content {
@@ -515,17 +492,8 @@ onBeforeUnmount(() => {
 }
 
 .claims-json {
-  margin: 0;
   min-height: 16rem;
   max-height: 25rem;
-  overflow: auto;
-  padding: 0.9rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(6, 15, 28, 0.5);
-  color: #eef4ff;
-  font-size: 0.82rem;
-  line-height: 1.45;
 }
 
 .endpoint-list {
@@ -572,10 +540,7 @@ onBeforeUnmount(() => {
       "endpoints";
   }
 
-  .endpoint-definition-list {
-    grid-template-columns: 1fr;
-  }
-
+  .endpoint-definition-list,
   .users-content {
     grid-template-columns: 1fr;
   }

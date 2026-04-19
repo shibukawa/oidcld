@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type StatusPayload = {
   selfSignedTls?: {
@@ -37,6 +38,7 @@ type CertificatePayload = {
   }>
 }
 
+const { t } = useI18n()
 const status = ref<StatusPayload | null>(null)
 const certificates = ref<CertificatePayload | null>(null)
 const loading = ref(true)
@@ -92,6 +94,20 @@ const hasRequiredInputs = computed(() => {
   )
 })
 const canSubmit = computed(() => hasRequiredInputs.value)
+const rootDetails = computed(() => [
+  { key: 'san', label: t('certificateAuthority.san'), value: joinValues(status.value?.selfSignedTls?.domains) },
+  {
+    key: 'subject',
+    label: t('certificateAuthority.subject'),
+    value: certificates.value?.rootCA.info?.subject ?? t('certificateAuthority.notCreatedYet'),
+  },
+  {
+    key: 'validity',
+    label: t('certificateAuthority.validity'),
+    value: formatValidity(certificates.value?.rootCA.info?.notBefore, certificates.value?.rootCA.info?.notAfter),
+  },
+  { key: 'domains', label: t('certificateAuthority.domains'), value: joinValues(status.value?.selfSignedTls?.domains) },
+])
 
 function defaultStartDateTimeLocal() {
   const now = new Date()
@@ -106,7 +122,7 @@ function shellSingleQuote(value: string) {
   return `'${value.replace(/'/g, `'\"'\"'`)}'`
 }
 
-function joinValues(values?: string[], fallback = 'Not configured') {
+function joinValues(values?: string[], fallback = t('common.notConfigured')) {
   if (!values || values.length === 0) {
     return fallback
   }
@@ -115,24 +131,24 @@ function joinValues(values?: string[], fallback = 'Not configured') {
 
 function formatDate(value?: string) {
   if (!value) {
-    return 'unknown'
+    return t('common.unknown')
   }
   return value.split('T')[0] ?? value
 }
 
 function formatValidity(from?: string, to?: string) {
   if (!from && !to) {
-    return 'Unknown'
+    return t('common.unknown')
   }
-  return `${formatDate(from)} to ${formatDate(to)}`
+  return t('certificateAuthority.validityRange', { from: formatDate(from), to: formatDate(to) })
 }
 
 function issuedDomain(item: CertificatePayload['leafCertificates'][number]) {
-  return item.domain ?? 'Unknown domain'
+  return item.domain ?? t('certificateAuthority.unknownDomain')
 }
 
 function issuedOrganization(item: CertificatePayload['leafCertificates'][number]) {
-  return item.organization ?? 'Unknown organization'
+  return item.organization ?? t('certificateAuthority.unknownOrganization')
 }
 
 function copyStateKey(prefix: string, value: string) {
@@ -212,7 +228,7 @@ async function issueCertificate() {
     window.URL.revokeObjectURL(downloadUrl)
     await loadPage()
   } catch (error) {
-    issueError.value = error instanceof Error ? error.message : 'Certificate issuance failed.'
+    issueError.value = error instanceof Error ? error.message : t('certificateAuthority.issueFailed')
   } finally {
     issueSubmitting.value = false
   }
@@ -242,89 +258,87 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="page page-certificates">
-    <div v-if="loading" class="section-card loading-card">
-      <p class="list-copy">Loading certificate authority details...</p>
+  <section class="oidc-page page-certificates">
+    <div v-if="loading" class="oidc-loading">
+      <p>{{ t('certificateAuthority.loading') }}</p>
     </div>
 
     <template v-else>
-      <article class="section-card panel-sheen certificate-panel">
-        <div class="section-heading">
+      <article class="oidc-panel certificate-panel">
+        <div class="panel-header">
           <div>
-            <h3>Local Root certificate Authority</h3>
+            <h2>{{ t('certificateAuthority.title') }}</h2>
           </div>
           <span class="status-pill" :class="{ 'status-pill-muted': !certificates?.rootCA.available }">
-            {{ certificates?.rootCA.available ? 'Available' : 'Pending' }}
+            {{ certificates?.rootCA.available ? t('certificateAuthority.issuerStatusAvailable') : t('certificateAuthority.issuerStatusPending') }}
           </span>
         </div>
 
         <div class="certificate-split">
-          <div class="certificate-kv-grid">
-            <div class="certificate-kv">
-              <p class="table-label">SAN</p>
-              <p class="table-value">{{ joinValues(status?.selfSignedTls?.domains) }}</p>
-            </div>
-            <div class="certificate-kv">
-              <p class="table-label">OIDCLD</p>
-              <p class="table-value">{{ certificates?.rootCA.info?.subject ?? 'Not created yet' }}</p>
-            </div>
-            <div class="certificate-kv">
-              <p class="table-label">Validity</p>
-              <p class="table-value">{{ formatValidity(certificates?.rootCA.info?.notBefore, certificates?.rootCA.info?.notAfter) }}</p>
-            </div>
-            <div class="certificate-kv">
-              <p class="table-label">Domains</p>
-              <p class="table-value">{{ joinValues(status?.selfSignedTls?.domains) }}</p>
+          <div class="detail-grid certificate-detail-grid">
+            <div v-for="item in rootDetails" :key="item.key" class="detail-row detail-row-span-2">
+              <span class="detail-label">{{ item.label }}</span>
+              <code class="detail-value">{{ item.value }}</code>
             </div>
           </div>
 
           <div class="certificate-download-panel">
-            <a class="download-action" :href="installerDownloadHref">Download Certificate Installer</a>
-            <p class="table-helper">Unzip and run `install.sh` on macOS/Linux or `install.ps1` on Windows.</p>
+            <a class="download-action" :href="installerDownloadHref">{{ t('certificateAuthority.downloadInstaller') }}</a>
+            <p class="table-helper">{{ t('certificateAuthority.downloadHelp') }}</p>
           </div>
         </div>
       </article>
 
-      <article class="section-card panel-sheen certificate-panel">
-        <div class="section-heading">
+      <article class="oidc-panel certificate-panel">
+        <div class="panel-header">
           <div>
-            <h3>Issued certificate list</h3>
+            <h3>{{ t('certificateAuthority.issuedListTitle') }}</h3>
           </div>
         </div>
 
-        <div v-if="(certificates?.leafCertificates.length ?? 0) === 0" class="certificate-empty">
-          <p class="table-value">No certificates issued yet</p>
+        <div v-if="(certificates?.leafCertificates.length ?? 0) === 0" class="empty-state">
+          <p class="table-value">{{ t('certificateAuthority.noIssuedCertificates') }}</p>
         </div>
 
-        <div v-else class="certificate-list">
-          <article v-for="item in certificates?.leafCertificates" :key="`${item.subject ?? 'certificate'}-${item.serial ?? 'unknown'}`" class="certificate-row-inline">
+        <div v-else class="inline-list">
+          <article
+            v-for="item in certificates?.leafCertificates"
+            :key="`${item.subject ?? 'certificate'}-${item.serial ?? 'unknown'}`"
+            class="inline-list-row"
+          >
             <p class="table-value certificate-row-organization">{{ issuedOrganization(item) }}</p>
-            <p class="table-helper certificate-row-domain">Domain: {{ issuedDomain(item) }}</p>
-            <p class="table-helper certificate-row-date">Expires: {{ formatDate(item.notAfter) }}</p>
+            <p class="table-helper certificate-row-domain">{{ t('certificateAuthority.issuedDomain', { domain: issuedDomain(item) }) }}</p>
+            <p class="table-helper certificate-row-date">{{ t('certificateAuthority.issuedExpires', { date: formatDate(item.notAfter) }) }}</p>
           </article>
         </div>
       </article>
 
-      <article class="section-card panel-sheen certificate-panel">
-        <div class="section-heading">
+      <article class="oidc-panel certificate-panel">
+        <div class="panel-header">
           <div>
-            <h3>Certification Generator</h3>
+            <h3>{{ t('certificateAuthority.generatorTitle') }}</h3>
           </div>
         </div>
 
-        <div v-if="wildcardDomain" class="certificate-issuance">
-          <p class="table-helper">Generate a leaf certificate inside {{ wildcardDomain }} and download the PEM bundle immediately.</p>
+        <div v-if="wildcardDomain" class="stack-panel">
+          <p class="table-helper">{{ t('certificateAuthority.generatorHelp', { domain: wildcardDomain }) }}</p>
 
           <div class="issuance-grid">
             <label class="issuance-field">
-              <span class="table-label">Organization (Name of Certificate)</span>
-              <input v-model="issuanceOrganization" class="issuance-input" type="text" autocomplete="off">
+              <span class="table-label">{{ t('certificateAuthority.fieldOrganization') }}</span>
+              <input v-model="issuanceOrganization" class="form-input" type="text" autocomplete="off">
             </label>
 
             <label class="issuance-field">
-              <span class="table-label">Domain</span>
+              <span class="table-label">{{ t('certificateAuthority.fieldDomain') }}</span>
               <div class="issuance-domain-row">
-                <input v-model="issuanceDomainLabel" class="issuance-input issuance-input-domain" type="text" autocomplete="off" placeholder="host">
+                <input
+                  v-model="issuanceDomainLabel"
+                  class="form-input issuance-input-domain"
+                  type="text"
+                  autocomplete="off"
+                  :placeholder="t('certificateAuthority.domainPlaceholder')"
+                >
                 <span class="issuance-domain-suffix">.{{ wildcardSuffix }}</span>
               </div>
             </label>
@@ -332,47 +346,48 @@ onBeforeUnmount(() => {
             <div class="issuance-grid-spacer" aria-hidden="true"></div>
 
             <label class="issuance-field issuance-field-expiration">
-              <span class="table-label">Expiration</span>
-              <input v-model="issuanceTTL" class="issuance-input" type="text" autocomplete="off">
+              <span class="table-label">{{ t('certificateAuthority.fieldExpiration') }}</span>
+              <input v-model="issuanceTTL" class="form-input" type="text" autocomplete="off">
             </label>
 
             <label class="issuance-field">
-              <span class="table-label">Start date/time</span>
-              <input v-model="issuanceStartLocal" class="issuance-input" type="datetime-local">
+              <span class="table-label">{{ t('certificateAuthority.fieldStartDateTime') }}</span>
+              <input v-model="issuanceStartLocal" class="form-input" type="datetime-local">
             </label>
 
             <div class="issuance-field issuance-field-action">
               <button type="button" class="download-action issuance-submit" :disabled="!canSubmit || issueSubmitting" @click="issueCertificate">
-                {{ issueSubmitting ? 'Preparing...' : 'Create' }}
+                {{ issueSubmitting ? t('certificateAuthority.preparing') : t('certificateAuthority.create') }}
               </button>
             </div>
           </div>
 
-          <p v-if="fullIssuedDomain" class="table-helper">Issued host: {{ fullIssuedDomain }}</p>
+          <p v-if="fullIssuedDomain" class="table-helper">{{ t('certificateAuthority.issuedHost', { domain: fullIssuedDomain }) }}</p>
 
           <p v-if="issueError" class="issuance-error">{{ issueError }}</p>
 
-          <div v-if="hasRequiredInputs" class="curl-preview">
+          <div v-if="hasRequiredInputs" class="stack-panel">
+            <div class="panel-divider"></div>
             <div class="curl-preview-header">
               <div>
-                <p class="table-label">curl</p>
-                <p class="table-helper">Use the same API from a terminal.</p>
+                <p class="table-label">{{ t('certificateAuthority.curlLabel') }}</p>
+                <p class="table-helper">{{ t('certificateAuthority.curlHelp') }}</p>
               </div>
               <button
                 type="button"
                 class="copy-button"
                 @click="copyToClipboard(copyStateKey('curl', curlPreview), curlPreview)"
               >
-                {{ isCopied(copyStateKey('curl', curlPreview)) ? 'Copied' : 'Copy' }}
+                {{ isCopied(copyStateKey('curl', curlPreview)) ? t('common.copied') : t('common.copy') }}
               </button>
             </div>
-            <pre class="curl-command">{{ curlPreview }}</pre>
+            <pre class="code-surface curl-command">{{ curlPreview }}</pre>
           </div>
         </div>
 
-        <div v-else class="certificate-placeholder">
-          <p class="placeholder-title">Managed self-signed issues single-host leaf certificates for each client.</p>
-          <p class="table-helper">The configured CA domains define what can be issued. Add a wildcard domain to enable manual host issuance from this page.</p>
+        <div v-else class="empty-state">
+          <p class="placeholder-title">{{ t('certificateAuthority.placeholderTitle') }}</p>
+          <p class="table-helper">{{ t('certificateAuthority.placeholderCopy') }}</p>
         </div>
       </article>
     </template>
@@ -381,12 +396,13 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .page-certificates {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
 .certificate-panel {
   gap: 1.1rem;
-  padding: 1.15rem 1.2rem;
 }
 
 .certificate-split {
@@ -396,21 +412,8 @@ onBeforeUnmount(() => {
   align-items: start;
 }
 
-.certificate-kv-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.certificate-detail-grid {
   gap: 0.9rem 1.1rem;
-}
-
-.certificate-kv {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.certificate-kv .table-value {
-  word-break: break-word;
 }
 
 .certificate-download-panel {
@@ -422,25 +425,6 @@ onBeforeUnmount(() => {
   min-height: 100%;
   padding-left: 1.2rem;
   border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.certificate-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  align-items: flex-start;
-}
-
-.certificate-row-inline {
-  display: grid;
-  grid-template-columns: max-content max-content max-content;
-  gap: 0.8rem;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 1rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  width: auto;
-  max-width: 100%;
 }
 
 .certificate-row-organization,
@@ -460,29 +444,6 @@ onBeforeUnmount(() => {
 
 .certificate-row-date {
   white-space: nowrap;
-}
-
-.certificate-row-inline:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.certificate-row-inline:last-child {
-  padding-bottom: 0;
-}
-
-.certificate-empty,
-.certificate-placeholder,
-.certificate-issuance {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.certificate-empty,
-.certificate-placeholder,
-.certificate-issuance {
-  padding: 0.2rem 0 0;
 }
 
 .issuance-grid {
@@ -515,27 +476,6 @@ onBeforeUnmount(() => {
 
 .issuance-domain-row {
   flex-wrap: wrap;
-}
-
-.issuance-input {
-  width: 100%;
-  min-height: 2.6rem;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 0.85rem;
-  padding: 0.7rem 0.85rem;
-  background: rgba(7, 17, 31, 0.45);
-  color: #f6f9ff;
-  font: inherit;
-}
-
-.issuance-input::placeholder {
-  color: rgba(224, 234, 250, 0.36);
-}
-
-.issuance-input:focus {
-  outline: none;
-  border-color: rgba(140, 212, 255, 0.45);
-  box-shadow: 0 0 0 3px rgba(55, 200, 192, 0.14);
 }
 
 .issuance-input-domain {
@@ -573,75 +513,21 @@ onBeforeUnmount(() => {
   font-size: 0.9rem;
 }
 
-.curl-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  padding: 1rem 1.05rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 1rem;
-  background: rgba(7, 17, 31, 0.34);
-}
-
 .curl-preview-header {
   justify-content: space-between;
   align-items: flex-start;
 }
 
 .curl-command {
-  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  color: #f6f9ff;
-  font-size: 0.84rem;
-  line-height: 1.55;
 }
 
-.copy-button {
-  flex: 0 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #eff7ff;
-  font-size: 0.76rem;
-  font-weight: 700;
-  padding: 0.36rem 0.72rem;
-  cursor: pointer;
-  transition:
-    background 140ms ease,
-    transform 140ms ease,
-    border-color 140ms ease;
-}
-
-.copy-button:hover {
-  transform: translateY(-1px);
-  background: rgba(43, 144, 220, 0.18);
-  border-color: rgba(140, 212, 255, 0.32);
-}
-
-@media (max-width: 960px) {
+@media (max-width: 980px) {
   .certificate-split,
-  .certificate-kv-grid,
+  .certificate-detail-grid,
   .issuance-grid {
     grid-template-columns: 1fr;
-  }
-
-  .issuance-field-expiration {
-    grid-column: auto;
-  }
-
-  .issuance-field-action {
-    justify-self: stretch;
-    width: 100%;
-  }
-
-  .issuance-submit {
-    width: 100%;
-  }
-
-  .certificate-row-inline {
-    grid-template-columns: 1fr;
-    gap: 0.45rem 0.8rem;
   }
 
   .certificate-download-panel {
@@ -651,10 +537,20 @@ onBeforeUnmount(() => {
     border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
 
+  .issuance-field-action {
+    justify-self: stretch;
+  }
+}
+
+@media (max-width: 640px) {
   .curl-preview-header,
   .issuance-domain-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .issuance-submit {
+    width: 100%;
   }
 }
 </style>

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 )
 
 var ErrAdminConsolePortRequired = errors.New("admin console port is required")
+var adminReverseProxyLogsHeartbeatInterval = 20 * time.Second
 
 type adminStatusResponse struct {
 	Issuer               string                      `json:"issuer"`
@@ -138,6 +140,7 @@ func (s *Server) AdminHandler() http.Handler {
 	consoleMux.HandleFunc("/console/api/certificates/issue", s.handleAdminIssueCertificate)
 	consoleMux.HandleFunc("/console/api/reverse-proxy", s.handleAdminReverseProxy)
 	consoleMux.HandleFunc("/console/api/reverse-proxy/logs", s.handleAdminReverseProxyLogs)
+	consoleMux.HandleFunc("/console/api/reverse-proxy/logs/stream", s.handleAdminReverseProxyLogsStream)
 	consoleMux.HandleFunc("/console/api/downloads/certificate-installer.zip", s.handleAdminCertificateInstallerDownload)
 	consoleMux.HandleFunc("/console/api/downloads/root-ca.pem", s.handleAdminRootCADownload)
 	consoleMux.HandleFunc("/console/api/downloads/install.sh", s.handleAdminUnixInstallScript)
@@ -309,6 +312,96 @@ func (s *Server) handleAdminReverseProxyLogs(w http.ResponseWriter, _ *http.Requ
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) handleAdminReverseProxyLogsStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	lastEventID := int64(0)
+	if raw := strings.TrimSpace(r.Header.Get("Last-Event-ID")); raw != "" {
+		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
+			lastEventID = parsed
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	backlog := []reverseProxyLogEntry(nil)
+	var updates <-chan reverseProxyLogEntry
+	unsubscribe := func() {}
+	if s.reverseProxyLog != nil {
+		backlog, updates, unsubscribe = s.reverseProxyLog.SubscribeAfter(lastEventID)
+	}
+	defer unsubscribe()
+
+	for _, entry := range backlog {
+		if err := writeReverseProxyLogSSE(w, entry); err != nil {
+			return
+		}
+		lastEventID = entry.ID
+	}
+	if err := writeSSEEvent(w, "sync", map[string]bool{"complete": true}, 0); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	heartbeat := time.NewTicker(adminReverseProxyLogsHeartbeatInterval)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		case entry := <-updates:
+			if entry.ID <= lastEventID {
+				continue
+			}
+			if err := writeReverseProxyLogSSE(w, entry); err != nil {
+				return
+			}
+			lastEventID = entry.ID
+		}
+	}
+}
+
+func writeReverseProxyLogSSE(w http.ResponseWriter, entry reverseProxyLogEntry) error {
+	return writeSSEEvent(w, "", entry, entry.ID)
+}
+
+func writeSSEEvent(w http.ResponseWriter, event string, payload any, eventID int64) error {
+	if eventID > 0 {
+		if _, err := fmt.Fprintf(w, "id: %d\n", eventID); err != nil {
+			return err
+		}
+	}
+	if event != "" {
+		if _, err := fmt.Fprintf(w, "event: %s\n", event); err != nil {
+			return err
+		}
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
 }
 
 func cloneClaimsMap(src map[string]any) map[string]any {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type StatusPayload = {
   issuer: string
@@ -20,6 +21,7 @@ type StatusPayload = {
   }
 }
 
+const { t } = useI18n()
 const statusRows = ref<Array<{ title: string; copy: string; state: string }>>([])
 const loading = ref(true)
 
@@ -29,25 +31,32 @@ async function loadStatus() {
     const payload = (await response.json()) as StatusPayload
     statusRows.value = [
       {
-        title: 'Developer Console listener',
-        copy: `Configured bind: ${payload.adminConsole?.bindAddress ?? '127.0.0.1'}:${payload.adminConsole?.port ?? '18889'}`,
-        state: payload.staticAssetsResolved ? 'Serving SPA assets' : 'Fallback response',
+        title: t('status.listenerTitle'),
+        copy: t('status.configuredBind', {
+          address: payload.adminConsole?.bindAddress ?? '127.0.0.1',
+          port: payload.adminConsole?.port ?? '18889',
+        }),
+        state: payload.staticAssetsResolved ? t('status.servingSpaAssets') : t('status.fallbackResponse'),
       },
       {
-        title: 'OIDC HTTPS listener',
+        title: t('status.httpsTitle'),
         copy: payload.selfSignedTls?.enabled
           ? payload.selfSignedTls.ready
-            ? 'Managed self-signed leaf certificates are active.'
-            : payload.selfSignedTls.reason ?? 'Managed self-signed TLS is configured.'
+            ? t('status.managedActive')
+            : payload.selfSignedTls.reason ?? t('status.managedConfigured')
           : payload.httpsExpected
-            ? 'HTTPS is expected from issuer or autocert configuration.'
-            : 'HTTP-only configuration',
-        state: payload.autocertEnabled ? 'Autocert' : payload.selfSignedTls?.enabled ? 'Self-signed managed' : 'Standard mode',
+            ? t('status.httpsExpected')
+            : t('status.httpOnly'),
+        state: payload.autocertEnabled ? t('status.autocert') : payload.selfSignedTls?.enabled ? t('status.managedMode') : t('status.standardMode'),
       },
       {
-        title: 'OIDC runtime summary',
-        copy: `Issuer ${payload.issuer} · ${payload.usersCount} users · scopes: ${payload.validScopes.join(', ')}`,
-        state: 'Runtime snapshot',
+        title: t('status.runtimeTitle'),
+        copy: t('status.runtimeCopy', {
+          issuer: payload.issuer,
+          users: payload.usersCount,
+          scopes: payload.validScopes.join(', '),
+        }),
+        state: t('status.runtimeState'),
       },
     ]
   } finally {
@@ -63,13 +72,13 @@ onMounted(() => {
 <template>
   <section class="page">
     <header class="page-header">
-      <p class="page-eyebrow">System Status</p>
-      <h2>Local control surface</h2>
-      <p class="page-copy">The Developer Console remains local-only and now carries the HTTP metadata companion alongside certificate and runtime status workflows.</p>
+      <p class="page-eyebrow">{{ t('status.eyebrow') }}</p>
+      <h2>{{ t('status.title') }}</h2>
+      <p class="page-copy">{{ t('status.copy') }}</p>
     </header>
 
     <div v-if="loading" class="page-panel">
-      <p class="list-copy">Loading runtime snapshot...</p>
+      <p class="list-copy">{{ t('status.loading') }}</p>
     </div>
 
     <div v-else class="list-stack">

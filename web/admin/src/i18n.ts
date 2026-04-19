@@ -1,0 +1,470 @@
+import { createI18n } from "vue-i18n";
+
+export const LOCALE_STORAGE_KEY = "oidcld-admin-locale";
+export const supportedLocales = ["en", "ja"] as const;
+
+export type SupportedLocale = (typeof supportedLocales)[number];
+
+function isSupportedLocale(
+  value: string | null | undefined,
+): value is SupportedLocale {
+  return value === "en" || value === "ja";
+}
+
+function detectBrowserLocale(): SupportedLocale {
+  if (typeof navigator === "undefined") {
+    return "en";
+  }
+
+  const candidates = [...(navigator.languages ?? []), navigator.language];
+  return candidates.some((value) => value?.toLowerCase().startsWith("ja"))
+    ? "ja"
+    : "en";
+}
+
+export function resolveInitialLocale(): SupportedLocale {
+  if (typeof window !== "undefined") {
+    const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    if (isSupportedLocale(stored)) {
+      return stored;
+    }
+  }
+
+  return detectBrowserLocale();
+}
+
+const messages = {
+  en: {
+    app: {
+      brand: {
+        eyebrow: "OIDCLD",
+        title: "Developer Console",
+        lede: "Local tools for trust and identity.",
+      },
+      nav: {
+        certificateAuthority: "Local Certificate Authority",
+        openidConnect: "OpenID Connect IdP",
+        reverseProxy: "Reverse Proxy",
+        accessLogs: "Access Logs",
+      },
+      language: {
+        label: "Language",
+        en: "EN",
+        ja: "JA",
+      },
+      githubAria: "GitHub repository",
+    },
+    common: {
+      copy: "Copy",
+      copied: "Copied",
+      unavailable: "Unavailable",
+      notConfigured: "Not configured",
+      unknown: "Unknown",
+      active: "Active",
+      disabled: "Disabled",
+      available: "Available",
+      pending: "Pending",
+      none: "None",
+      manual: "Manual",
+      acme: "ACME",
+      selfSigned: "Self-Signed",
+      string: "String",
+      array: "Array",
+      oidc: "OIDC",
+      proxy: "Proxy",
+      static: "Static",
+      loading: "Loading...",
+    },
+    certificateAuthority: {
+      loading: "Loading certificate authority details...",
+      title: "Local Root Certificate Authority",
+      issuerStatusAvailable: "Available",
+      issuerStatusPending: "Pending",
+      san: "SAN",
+      subject: "OIDCLD",
+      validity: "Validity",
+      domains: "Domains",
+      notCreatedYet: "Not created yet",
+      validityRange: "{from} to {to}",
+      downloadInstaller: "Download Certificate Installer",
+      downloadHelp:
+        "Unzip and run `install.sh` on macOS/Linux or `install.ps1` on Windows.",
+      issuedListTitle: "Issued certificate list",
+      noIssuedCertificates: "No certificates issued yet",
+      issuedDomain: "Domain: {domain}",
+      issuedExpires: "Expires: {date}",
+      generatorTitle: "Certificate Generator",
+      generatorHelp:
+        "Generate a leaf certificate inside {domain} and download the PEM bundle immediately.",
+      fieldOrganization: "Organization (Name of Certificate)",
+      fieldDomain: "Domain",
+      fieldExpiration: "Expiration",
+      fieldStartDateTime: "Start date/time",
+      domainPlaceholder: "host",
+      preparing: "Preparing...",
+      create: "Create",
+      issuedHost: "Issued host: {domain}",
+      curlLabel: "curl",
+      curlHelp: "Use the same API from a terminal.",
+      placeholderTitle:
+        "Managed self-signed issues single-host leaf certificates for each client.",
+      placeholderCopy:
+        "The configured CA domains define what can be issued. Add a wildcard domain to enable manual host issuance from this page.",
+      issueFailed: "Certificate issuance failed.",
+      unknownDomain: "Unknown domain",
+      unknownOrganization: "Unknown organization",
+    },
+    openidConnect: {
+      loading: "Loading OpenID Connect runtime summary...",
+      title: "OpenID Connect Identity Provider for Local Development",
+      issuer: "Issuer",
+      validScopes: "Valid Scopes",
+      noScopesConfigured: "No scopes configured",
+      tenantPaths: "Tenant Paths",
+      mode: "Mode",
+      tls: "TLS",
+      pkce: "PKCE",
+      nonce: "Nonce",
+      expiredIn: "Expired In",
+      audience: "Audience",
+      refreshToken: "Refresh Token",
+      refreshExpiry: "Refresh Expiry",
+      endSession: "End Session",
+      accessFilter: "Access Filter",
+      accessFilterDisabled: "disabled",
+      usersTitle: "Available Users",
+      claimsScopes: "Scopes: {scopes}",
+      endpointsTitle: "Published Endpoints",
+      httpsDiscovery: "HTTPS Discovery",
+      httpsJwks: "HTTPS JWKS",
+      httpDiscovery: "HTTP Fallback Discovery",
+      httpJwks: "HTTP Fallback JWKS",
+    },
+    reverseProxy: {
+      loading: "Loading reverse proxy routes...",
+      title: "Reverse Proxy Configurations",
+      disabled: "Disabled",
+      active: "Active",
+      emptyTitle: "No reverse proxy hosts configured.",
+      emptyCopy:
+        "Add a `reverse_proxy.hosts` section in the config file to expose dev servers or static sites.",
+      host: "Host",
+      tls: "TLS",
+      routes: "Routes",
+      spaFallback: "SPA fallback",
+      rewriteTo: "rewrite to {prefix}",
+    },
+    accessLogs: {
+      loading: "Loading traffic logs...",
+      title: "Access Logs",
+      noTrafficYet: "No traffic yet",
+      entriesCount: "{count} entries",
+      emptyTitle: "No traffic has been recorded yet.",
+      emptyCopy:
+        "OIDC requests and configured reverse proxy traffic appear here after the first request.",
+      when: "When",
+      host: "Host",
+      route: "Route",
+      type: "Type",
+      target: "Target",
+      latency: "Latency",
+      remote: "Remote",
+      latencyValue: "{duration} ms / {bytes} bytes",
+    },
+    dashboard: {
+      overview: "Overview",
+      title: "Management starts with certificates, not ends there.",
+      copy: "This console is shaped as a control surface for future modules. The current build focuses on local-development trust management and keeps room for proxy and settings workflows.",
+      metrics: {
+        modulesLabel: "Managed modules",
+        modulesCopy:
+          "Dashboard, Certificates, Downloads, and System Status are reserved from the start.",
+        tlsLabel: "TLS modes",
+        tlsCopy:
+          "Manual TLS, ACME, and managed self-signed TLS are now treated as explicit modes.",
+        surfacesLabel: "Runtime surfaces",
+        surfacesCopy:
+          "OpenID Connect stays on the main listener while the Developer Console also carries local-only HTTP metadata support.",
+      },
+      buildEyebrow: "Current build",
+      buildTitle: "Developer Console foundation",
+      buildCopy:
+        "The Vue app, config model, and init entry points are being laid out first so later backend integration does not have to redesign the UI shell.",
+      wildcardEyebrow: "Wildcard policy",
+      wildcardTitle: "Fixed suffix scope",
+      wildcardCopy:
+        "Unknown domains are intentionally limited to the configured wildcard suffix. Arbitrary on-demand SAN issuance is not part of the first phase.",
+    },
+    status: {
+      eyebrow: "System Status",
+      title: "Local control surface",
+      copy: "The Developer Console remains local-only and now carries the HTTP metadata companion alongside certificate and runtime status workflows.",
+      loading: "Loading runtime snapshot...",
+      listenerTitle: "Developer Console listener",
+      servingSpaAssets: "Serving SPA assets",
+      fallbackResponse: "Fallback response",
+      httpsTitle: "OIDC HTTPS listener",
+      managedActive: "Managed self-signed leaf certificates are active.",
+      managedConfigured: "Managed self-signed TLS is configured.",
+      httpsExpected: "HTTPS is expected from issuer or autocert configuration.",
+      httpOnly: "HTTP-only configuration",
+      autocert: "Autocert",
+      managedMode: "Self-signed managed",
+      standardMode: "Standard mode",
+      runtimeTitle: "OIDC runtime summary",
+      runtimeState: "Runtime snapshot",
+      configuredBind: "Configured bind: {address}:{port}",
+      runtimeCopy: "Issuer {issuer} · {users} users · scopes: {scopes}",
+    },
+    downloads: {
+      eyebrow: "Downloads",
+      title: "Trust distribution",
+      copy: "The first concrete operator workflow is certificate distribution. These cards are wired to the endpoints that will expose the root CA and the install / uninstall helpers.",
+      rootTag: "Root CA",
+      rootTitle: "root-ca.pem",
+      rootCopy:
+        "Download the persisted root certificate for local trust installation.",
+      macTag: "macOS / Linux",
+      macTitle: "install.sh",
+      macCopy:
+        "Install the root CA into the OS trust store with a single script.",
+      windowsTag: "Windows",
+      windowsTitle: "install.ps1",
+      windowsCopy: "Install the root CA into the Windows certificate store.",
+      cleanupTag: "Cleanup",
+      uninstallShTitle: "uninstall.sh",
+      uninstallShCopy:
+        "Remove previously installed root certificates cleanly from the supported OS store.",
+      uninstallPsTitle: "uninstall.ps1",
+      uninstallPsCopy: "Remove the root CA from the Windows certificate store.",
+      downloadPem: "Download PEM",
+      downloadScript: "Download script",
+      downloadShellUninstall: "Download shell uninstall",
+      downloadPsUninstall: "Download PowerShell uninstall",
+    },
+  },
+  ja: {
+    app: {
+      brand: {
+        eyebrow: "OIDCLD",
+        title: "Developer Console",
+        lede: "ローカル環境の信頼と認証を扱うツール群。",
+      },
+      nav: {
+        certificateAuthority: "ローカル認証局",
+        openidConnect: "OpenID Connect IdP",
+        reverseProxy: "リバースプロキシ",
+        accessLogs: "アクセスログ",
+      },
+      language: {
+        label: "言語",
+        en: "EN",
+        ja: "JA",
+      },
+      githubAria: "GitHub リポジトリ",
+    },
+    common: {
+      copy: "コピー",
+      copied: "コピー済み",
+      unavailable: "利用不可",
+      notConfigured: "未設定",
+      unknown: "不明",
+      active: "有効",
+      disabled: "無効",
+      available: "利用可能",
+      pending: "準備中",
+      none: "なし",
+      manual: "手動",
+      acme: "ACME",
+      selfSigned: "自己署名",
+      string: "文字列",
+      array: "配列",
+      oidc: "OIDC",
+      proxy: "プロキシ",
+      static: "静的配信",
+      loading: "読み込み中...",
+    },
+    certificateAuthority: {
+      loading: "認証局情報を読み込んでいます...",
+      title: "ローカルルート認証局",
+      issuerStatusAvailable: "利用可能",
+      issuerStatusPending: "準備中",
+      san: "SAN",
+      subject: "OIDCLD",
+      validity: "有効期間",
+      domains: "ドメイン",
+      notCreatedYet: "まだ作成されていません",
+      validityRange: "{from} から {to}",
+      downloadInstaller: "証明書インストーラーをダウンロード",
+      downloadHelp:
+        "展開後、macOS/Linux では `install.sh`、Windows では `install.ps1` を実行してください。",
+      issuedListTitle: "発行済み証明書一覧",
+      noIssuedCertificates: "まだ証明書は発行されていません",
+      issuedDomain: "ドメイン: {domain}",
+      issuedExpires: "有効期限: {date}",
+      generatorTitle: "証明書生成",
+      generatorHelp:
+        "{domain} 配下で leaf 証明書を生成し、PEM バンドルをすぐにダウンロードできます。",
+      fieldOrganization: "組織名 (証明書名)",
+      fieldDomain: "ドメイン",
+      fieldExpiration: "有効期限",
+      fieldStartDateTime: "開始日時",
+      domainPlaceholder: "host",
+      preparing: "準備中...",
+      create: "作成",
+      issuedHost: "発行対象ホスト: {domain}",
+      curlLabel: "curl",
+      curlHelp: "同じ API をターミナルから利用できます。",
+      placeholderTitle:
+        "自己署名管理モードでは、クライアントごとに単一ホスト証明書を発行します。",
+      placeholderCopy:
+        "設定済みの CA ドメインが発行可能範囲です。このページから手動発行するにはワイルドカードドメインを追加してください。",
+      issueFailed: "証明書の発行に失敗しました。",
+      unknownDomain: "不明なドメイン",
+      unknownOrganization: "不明な組織",
+    },
+    openidConnect: {
+      loading: "OpenID Connect の実行状態を読み込んでいます...",
+      title: "ローカル開発向け OpenID Connect Identity Provider",
+      issuer: "Issuer",
+      validScopes: "有効なスコープ",
+      noScopesConfigured: "スコープは設定されていません",
+      tenantPaths: "テナントパス",
+      mode: "モード",
+      tls: "TLS",
+      pkce: "PKCE",
+      nonce: "Nonce",
+      expiredIn: "有効期限",
+      audience: "Audience",
+      refreshToken: "Refresh Token",
+      refreshExpiry: "Refresh の有効期限",
+      endSession: "End Session",
+      accessFilter: "アクセスフィルター",
+      accessFilterDisabled: "無効",
+      usersTitle: "利用可能なユーザー",
+      claimsScopes: "スコープ: {scopes}",
+      endpointsTitle: "公開エンドポイント",
+      httpsDiscovery: "HTTPS Discovery",
+      httpsJwks: "HTTPS JWKS",
+      httpDiscovery: "HTTP フォールバック Discovery",
+      httpJwks: "HTTP フォールバック JWKS",
+    },
+    reverseProxy: {
+      loading: "リバースプロキシのルートを読み込んでいます...",
+      title: "リバースプロキシ設定",
+      disabled: "無効",
+      active: "有効",
+      emptyTitle: "リバースプロキシホストは設定されていません。",
+      emptyCopy:
+        "開発サーバーや静的サイトを公開するには、設定ファイルに `reverse_proxy.hosts` セクションを追加してください。",
+      host: "ホスト",
+      tls: "TLS",
+      routes: "ルート数",
+      spaFallback: "SPA フォールバック",
+      rewriteTo: "{prefix} に書き換え",
+    },
+    accessLogs: {
+      loading: "通信ログを読み込んでいます...",
+      title: "アクセスログ",
+      noTrafficYet: "まだトラフィックはありません",
+      entriesCount: "{count} 件",
+      emptyTitle: "まだ通信は記録されていません。",
+      emptyCopy:
+        "OIDC リクエストと設定済みリバースプロキシの通信は、最初のリクエスト後にここへ表示されます。",
+      when: "時刻",
+      host: "ホスト",
+      route: "ルート",
+      type: "種別",
+      target: "転送先",
+      latency: "レイテンシ",
+      remote: "送信元",
+      latencyValue: "{duration} ms / {bytes} bytes",
+    },
+    dashboard: {
+      overview: "概要",
+      title: "管理は証明書から始まるが、それで終わらない。",
+      copy: "このコンソールは将来のモジュール拡張を前提にした制御画面です。現状はローカル開発向けの信頼管理を中心にしつつ、プロキシや設定ワークフローへ広げられる構成にしています。",
+      metrics: {
+        modulesLabel: "管理モジュール",
+        modulesCopy:
+          "Dashboard、Certificates、Downloads、System Status を初期段階から確保しています。",
+        tlsLabel: "TLS モード",
+        tlsCopy:
+          "手動 TLS、ACME、自己署名管理 TLS を明示的なモードとして扱います。",
+        surfacesLabel: "公開面",
+        surfacesCopy:
+          "OpenID Connect はメインリスナーに残しつつ、Developer Console 側ではローカル専用の HTTP メタデータも扱います。",
+      },
+      buildEyebrow: "現在のビルド",
+      buildTitle: "Developer Console の基盤",
+      buildCopy:
+        "Vue アプリ、設定モデル、初期化エントリポイントを先に整えることで、後からバックエンド連携を加えても UI シェルを作り直さずに済む構成にしています。",
+      wildcardEyebrow: "ワイルドカード方針",
+      wildcardTitle: "固定サフィックス範囲",
+      wildcardCopy:
+        "未知のドメインは設定済みのワイルドカードサフィックスに限定します。任意 SAN のオンデマンド発行は初期フェーズに含めません。",
+    },
+    status: {
+      eyebrow: "システム状態",
+      title: "ローカル制御画面",
+      copy: "Developer Console はローカル専用のまま、証明書とランタイム状態に加えて HTTP メタデータの補助面も扱います。",
+      loading: "ランタイムスナップショットを読み込んでいます...",
+      listenerTitle: "Developer Console リスナー",
+      servingSpaAssets: "SPA アセットを配信中",
+      fallbackResponse: "フォールバック応答",
+      httpsTitle: "OIDC HTTPS リスナー",
+      managedActive: "自己署名管理の leaf 証明書が有効です。",
+      managedConfigured: "自己署名管理 TLS が設定されています。",
+      httpsExpected:
+        "issuer または autocert 設定から HTTPS が期待されています。",
+      httpOnly: "HTTP のみの設定",
+      autocert: "Autocert",
+      managedMode: "自己署名管理",
+      standardMode: "標準モード",
+      runtimeTitle: "OIDC ランタイム概要",
+      runtimeState: "ランタイムスナップショット",
+      configuredBind: "設定済み bind: {address}:{port}",
+      runtimeCopy: "Issuer {issuer} · ユーザー数 {users} · scopes: {scopes}",
+    },
+    downloads: {
+      eyebrow: "ダウンロード",
+      title: "信頼配布",
+      copy: "最初の具体的な運用フローは証明書配布です。これらのカードは、ルート CA と install / uninstall ヘルパーを公開するエンドポイントに接続されます。",
+      rootTag: "Root CA",
+      rootTitle: "root-ca.pem",
+      rootCopy:
+        "永続化されたルート証明書をダウンロードしてローカルの信頼ストアに登録します。",
+      macTag: "macOS / Linux",
+      macTitle: "install.sh",
+      macCopy: "1本のスクリプトで OS の信頼ストアにルート CA を登録します。",
+      windowsTag: "Windows",
+      windowsTitle: "install.ps1",
+      windowsCopy: "Windows の証明書ストアへルート CA を登録します。",
+      cleanupTag: "クリーンアップ",
+      uninstallShTitle: "uninstall.sh",
+      uninstallShCopy:
+        "対応 OS のストアから、以前に登録したルート証明書をきれいに削除します。",
+      uninstallPsTitle: "uninstall.ps1",
+      uninstallPsCopy: "Windows の証明書ストアからルート CA を削除します。",
+      downloadPem: "PEM をダウンロード",
+      downloadScript: "スクリプトをダウンロード",
+      downloadShellUninstall: "シェル用削除スクリプトをダウンロード",
+      downloadPsUninstall: "PowerShell 用削除スクリプトをダウンロード",
+    },
+  },
+} as const;
+
+export const i18n = createI18n({
+  legacy: false,
+  locale: resolveInitialLocale(),
+  fallbackLocale: "en",
+  globalInjection: true,
+  messages,
+});
+
+export function setLocale(locale: SupportedLocale) {
+  i18n.global.locale.value = locale;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+  }
+}
