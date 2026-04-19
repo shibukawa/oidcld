@@ -1,19 +1,24 @@
 <script setup lang="ts">
-const downloads = [
-  { tag: 'Root CA', title: 'root-ca.pem', copy: 'Download the persisted root certificate for local trust installation.', href: '/console/api/downloads/root-ca.pem', action: 'Download PEM' },
-  { tag: 'macOS / Linux', title: 'install.sh', copy: 'Install the root CA into the OS trust store with a single script.', href: '/console/api/downloads/install.sh', action: 'Download script' },
-  { tag: 'Windows', title: 'install.ps1', copy: 'Install the root CA into the Windows certificate store.', href: '/console/api/downloads/install.ps1', action: 'Download script' },
-  { tag: 'Cleanup', title: 'uninstall scripts', copy: 'Remove previously installed root certificates cleanly from the supported OS store.', href: '/console/api/downloads/uninstall.sh', action: 'Download shell uninstall' },
-  { tag: 'Cleanup', title: 'uninstall.ps1', copy: 'Remove the root CA from the Windows certificate store.', href: '/console/api/downloads/uninstall.ps1', action: 'Download PowerShell uninstall' },
-]
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
+const downloads = computed(() => [
+  { tag: t('downloads.rootTag'), title: t('downloads.rootTitle'), copy: t('downloads.rootCopy'), href: '/console/api/downloads/root-ca.pem', action: t('downloads.downloadPem') },
+  { tag: t('downloads.macTag'), title: t('downloads.macTitle'), copy: t('downloads.macCopy'), href: '/console/api/downloads/install.sh', action: t('downloads.downloadScript') },
+  { tag: t('downloads.windowsTag'), title: t('downloads.windowsTitle'), copy: t('downloads.windowsCopy'), href: '/console/api/downloads/install.ps1', action: t('downloads.downloadScript') },
+  { tag: t('downloads.cleanupTag'), title: t('downloads.uninstallShTitle'), copy: t('downloads.uninstallShCopy'), href: '/console/api/downloads/uninstall.sh', action: t('downloads.downloadShellUninstall') },
+  { tag: t('downloads.cleanupTag'), title: t('downloads.uninstallPsTitle'), copy: t('downloads.uninstallPsCopy'), href: '/console/api/downloads/uninstall.ps1', action: t('downloads.downloadPsUninstall') },
+])
 </script>
 
 <template>
   <section class="page">
     <header class="page-header">
-      <p class="page-eyebrow">Downloads</p>
-      <h2>Trust distribution</h2>
-      <p class="page-copy">The first concrete operator workflow is certificate distribution. These cards are wired to the endpoints that will expose the root CA and the install / uninstall helpers.</p>
+      <p class="page-eyebrow">{{ t('downloads.eyebrow') }}</p>
+      <h2>{{ t('downloads.title') }}</h2>
+      <p class="page-copy">{{ t('downloads.copy') }}</p>
     </header>
 
     <div class="downloads-grid">

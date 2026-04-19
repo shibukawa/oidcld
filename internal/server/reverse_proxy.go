@@ -58,6 +58,7 @@ type reverseProxyRequestAuthority struct {
 }
 
 type reverseProxyLogEntry struct {
+	ID         int64     `json:"id"`
 	Timestamp  time.Time `json:"timestamp"`
 	Host       string    `json:"host"`
 	Method     string    `json:"method"`
@@ -80,9 +81,12 @@ type reverseProxyLogMeta struct {
 }
 
 type reverseProxyLogStore struct {
-	mu      sync.RWMutex
-	entries []reverseProxyLogEntry
-	limit   int
+	mu               sync.RWMutex
+	entries          []reverseProxyLogEntry
+	limit            int
+	nextID           int64
+	nextSubscriberID int
+	subscribers      map[int]chan reverseProxyLogEntry
 }
 
 func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) {
@@ -161,7 +165,10 @@ func newReverseProxyLogStore(limit int) *reverseProxyLogStore {
 	if limit <= 0 {
 		limit = config.DefaultReverseProxyLogRetention
 	}
-	return &reverseProxyLogStore{limit: limit}
+	return &reverseProxyLogStore{
+		limit:       limit,
+		subscribers: map[int]chan reverseProxyLogEntry{},
+	}
 }
 
 func (s *reverseProxyLogStore) Add(entry reverseProxyLogEntry) {
@@ -169,10 +176,23 @@ func (s *reverseProxyLogStore) Add(entry reverseProxyLogEntry) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.nextID++
+	entry.ID = s.nextID
 	s.entries = append(s.entries, entry)
 	if extra := len(s.entries) - s.limit; extra > 0 {
 		s.entries = append([]reverseProxyLogEntry(nil), s.entries[extra:]...)
+	}
+	subscribers := make([]chan reverseProxyLogEntry, 0, len(s.subscribers))
+	for _, subscriber := range s.subscribers {
+		subscribers = append(subscribers, subscriber)
+	}
+	s.mu.Unlock()
+
+	for _, subscriber := range subscribers {
+		select {
+		case subscriber <- entry:
+		default:
+		}
 	}
 }
 
@@ -185,6 +205,50 @@ func (s *reverseProxyLogStore) Snapshot() []reverseProxyLogEntry {
 	out := make([]reverseProxyLogEntry, len(s.entries))
 	copy(out, s.entries)
 	slices.Reverse(out)
+	return out
+}
+
+func (s *reverseProxyLogStore) EntriesAfter(lastID int64) []reverseProxyLogEntry {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.entriesAfterLocked(lastID)
+}
+
+func (s *reverseProxyLogStore) SubscribeAfter(lastID int64) ([]reverseProxyLogEntry, <-chan reverseProxyLogEntry, func()) {
+	if s == nil {
+		return nil, nil, func() {}
+	}
+
+	s.mu.Lock()
+	backlog := s.entriesAfterLocked(lastID)
+	subscriberID := s.nextSubscriberID
+	s.nextSubscriberID++
+	ch := make(chan reverseProxyLogEntry, 32)
+	s.subscribers[subscriberID] = ch
+	s.mu.Unlock()
+
+	var once sync.Once
+	unsubscribe := func() {
+		once.Do(func() {
+			s.mu.Lock()
+			delete(s.subscribers, subscriberID)
+			s.mu.Unlock()
+		})
+	}
+
+	return backlog, ch, unsubscribe
+}
+
+func (s *reverseProxyLogStore) entriesAfterLocked(lastID int64) []reverseProxyLogEntry {
+	start := 0
+	for start < len(s.entries) && s.entries[start].ID <= lastID {
+		start++
+	}
+	out := make([]reverseProxyLogEntry, len(s.entries)-start)
+	copy(out, s.entries[start:])
 	return out
 }
 

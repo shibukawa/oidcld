@@ -1,17 +1,22 @@
 <script setup lang="ts">
-const metrics = [
-  { label: 'Managed modules', value: '4', copy: 'Dashboard, Certificates, Downloads, and System Status are reserved from the start.' },
-  { label: 'TLS modes', value: '3', copy: 'Manual TLS, ACME, and managed self-signed TLS are now treated as explicit modes.' },
-  { label: 'Runtime surfaces', value: '2', copy: 'OpenID Connect stays on the main listener while the Developer Console also carries local-only HTTP metadata support.' },
-]
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
+
+const metrics = computed(() => [
+  { label: t('dashboard.metrics.modulesLabel'), value: '4', copy: t('dashboard.metrics.modulesCopy') },
+  { label: t('dashboard.metrics.tlsLabel'), value: '3', copy: t('dashboard.metrics.tlsCopy') },
+  { label: t('dashboard.metrics.surfacesLabel'), value: '2', copy: t('dashboard.metrics.surfacesCopy') },
+])
 </script>
 
 <template>
   <section class="page">
     <header class="page-header">
-      <p class="page-eyebrow">Overview</p>
-      <h2>Management starts with certificates, not ends there.</h2>
-      <p class="page-copy">This console is shaped as a control surface for future modules. The current build focuses on local-development trust management and keeps room for proxy and settings workflows.</p>
+      <p class="page-eyebrow">{{ t('dashboard.overview') }}</p>
+      <h2>{{ t('dashboard.title') }}</h2>
+      <p class="page-copy">{{ t('dashboard.copy') }}</p>
     </header>
 
     <div class="metric-grid">
@@ -24,14 +29,14 @@ const metrics = [
 
     <section class="page-grid">
       <article class="page-panel">
-        <p class="page-eyebrow">Current build</p>
-        <h3>Developer Console foundation</h3>
-        <p class="list-copy">The Vue app, config model, and init entry points are being laid out first so later backend integration does not have to redesign the UI shell.</p>
+        <p class="page-eyebrow">{{ t('dashboard.buildEyebrow') }}</p>
+        <h3>{{ t('dashboard.buildTitle') }}</h3>
+        <p class="list-copy">{{ t('dashboard.buildCopy') }}</p>
       </article>
       <article class="page-panel">
-        <p class="page-eyebrow">Wildcard policy</p>
-        <h3>Fixed suffix scope</h3>
-        <p class="list-copy">Unknown domains are intentionally limited to the configured wildcard suffix. Arbitrary on-demand SAN issuance is not part of the first phase.</p>
+        <p class="page-eyebrow">{{ t('dashboard.wildcardEyebrow') }}</p>
+        <h3>{{ t('dashboard.wildcardTitle') }}</h3>
+        <p class="list-copy">{{ t('dashboard.wildcardCopy') }}</p>
       </article>
     </section>
   </section>

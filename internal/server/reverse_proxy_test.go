@@ -1,13 +1,17 @@
 package server
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/alecthomas/assert/v2"
 	"github.com/shibukawa/oidcld/internal/config"
@@ -258,4 +262,187 @@ func TestAdminHandler_TrafficLogsIncludeOIDCRequests(t *testing.T) {
 	assert.Equal(t, "oidc.localhost", logsPayload.Entries[0].RouteHost)
 	assert.Equal(t, "/.well-known/openid-configuration", logsPayload.Entries[0].RoutePath)
 	assert.Equal(t, "https://oidc.localhost:18443", logsPayload.Entries[0].Target)
+}
+
+func TestAdminHandler_ReverseProxyLogsStreamSendsBacklogAndSync(t *testing.T) {
+	tempDir := t.TempDir()
+	assert.NoError(t, os.WriteFile(filepath.Join(tempDir, "index.html"), []byte("<html>site</html>"), 0o644))
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "http://localhost:18888",
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+		ReverseProxy: &config.ReverseProxyConfig{
+			LogRetention: 64,
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "http://spa.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/", StaticDir: tempDir, SPAFallback: true},
+					},
+				},
+			},
+		},
+	})
+
+	makeStaticRequest(t, server, "http://spa.localhost/dashboard", "spa.localhost")
+	makeStaticRequest(t, server, "http://spa.localhost/settings", "spa.localhost")
+
+	adminServer := httptest.NewServer(server.AdminHandler())
+	defer adminServer.Close()
+
+	response, err := http.Get(adminServer.URL + "/console/api/reverse-proxy/logs/stream")
+	assert.NoError(t, err)
+	defer response.Body.Close()
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, "text/event-stream", strings.Split(response.Header.Get("Content-Type"), ";")[0])
+
+	reader := bufio.NewReader(response.Body)
+	first := readSSEEvent(t, reader)
+	second := readSSEEvent(t, reader)
+	syncEvent := readSSEEvent(t, reader)
+
+	assert.Equal(t, "", first.Event)
+	assert.Equal(t, int64(1), first.ID)
+	assert.Equal(t, "/dashboard", first.Entry.Path)
+	assert.Equal(t, "", second.Event)
+	assert.Equal(t, int64(2), second.ID)
+	assert.Equal(t, "/settings", second.Entry.Path)
+	assert.Equal(t, "sync", syncEvent.Event)
+	assert.True(t, syncEvent.SyncComplete)
+}
+
+func TestAdminHandler_ReverseProxyLogsStreamRespectsLastEventIDAndDisconnectCleanup(t *testing.T) {
+	previousInterval := adminReverseProxyLogsHeartbeatInterval
+	adminReverseProxyLogsHeartbeatInterval = 10 * time.Millisecond
+	defer func() {
+		adminReverseProxyLogsHeartbeatInterval = previousInterval
+	}()
+
+	tempDir := t.TempDir()
+	assert.NoError(t, os.WriteFile(filepath.Join(tempDir, "index.html"), []byte("<html>site</html>"), 0o644))
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "http://localhost:18888",
+		},
+		Console: &config.ConsoleConfig{
+			Port:        "18889",
+			BindAddress: "127.0.0.1",
+		},
+		ReverseProxy: &config.ReverseProxyConfig{
+			LogRetention: 64,
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "http://spa.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/", StaticDir: tempDir, SPAFallback: true},
+					},
+				},
+			},
+		},
+	})
+
+	makeStaticRequest(t, server, "http://spa.localhost/dashboard", "spa.localhost")
+	makeStaticRequest(t, server, "http://spa.localhost/settings", "spa.localhost")
+
+	adminServer := httptest.NewServer(server.AdminHandler())
+	defer adminServer.Close()
+
+	req, err := http.NewRequest(http.MethodGet, adminServer.URL+"/console/api/reverse-proxy/logs/stream", nil)
+	assert.NoError(t, err)
+	req.Header.Set("Last-Event-ID", "1")
+
+	response, err := http.DefaultClient.Do(req)
+	assert.NoError(t, err)
+	reader := bufio.NewReader(response.Body)
+
+	backlog := readSSEEvent(t, reader)
+	syncEvent := readSSEEvent(t, reader)
+	heartbeat := readSSEEvent(t, reader)
+
+	assert.Equal(t, int64(2), backlog.ID)
+	assert.Equal(t, "/settings", backlog.Entry.Path)
+	assert.Equal(t, "sync", syncEvent.Event)
+	assert.True(t, syncEvent.SyncComplete)
+	assert.True(t, heartbeat.IsHeartbeat)
+
+	makeStaticRequest(t, server, "http://spa.localhost/profile", "spa.localhost")
+	live := readSSEEvent(t, reader)
+	assert.Equal(t, int64(3), live.ID)
+	assert.Equal(t, "/profile", live.Entry.Path)
+
+	assert.Equal(t, 1, len(server.reverseProxyLog.subscribers))
+	assert.NoError(t, response.Body.Close())
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		server.reverseProxyLog.mu.RLock()
+		count := len(server.reverseProxyLog.subscribers)
+		server.reverseProxyLog.mu.RUnlock()
+		if count == 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("expected SSE subscriber cleanup after stream disconnect")
+}
+
+func makeStaticRequest(t *testing.T, server *Server, url, host string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Host = host
+	req.RemoteAddr = "127.0.0.1:41234"
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	assert.Equal(t, http.StatusOK, res.Code)
+}
+
+type testSSEEvent struct {
+	ID           int64
+	Event        string
+	Entry        reverseProxyLogEntry
+	SyncComplete bool
+	IsHeartbeat  bool
+}
+
+func readSSEEvent(t *testing.T, reader *bufio.Reader) testSSEEvent {
+	t.Helper()
+
+	event := testSSEEvent{}
+	for {
+		line, err := reader.ReadString('\n')
+		assert.NoError(t, err)
+		line = strings.TrimRight(line, "\r\n")
+
+		if line == "" {
+			return event
+		}
+		if strings.HasPrefix(line, ":") {
+			event.IsHeartbeat = true
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "id: "):
+			_, err := fmt.Sscanf(line, "id: %d", &event.ID)
+			assert.NoError(t, err)
+		case strings.HasPrefix(line, "event: "):
+			event.Event = strings.TrimPrefix(line, "event: ")
+		case strings.HasPrefix(line, "data: "):
+			payload := strings.TrimPrefix(line, "data: ")
+			if event.Event == "sync" {
+				var syncPayload struct {
+					Complete bool `json:"complete"`
+				}
+				assert.NoError(t, json.Unmarshal([]byte(payload), &syncPayload))
+				event.SyncComplete = syncPayload.Complete
+				continue
+			}
+			assert.NoError(t, json.Unmarshal([]byte(payload), &event.Entry))
+		}
+	}
 }

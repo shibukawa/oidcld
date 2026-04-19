@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type LogEntry = {
+  id: number
   timestamp: string
   host: string
   method: string
@@ -16,88 +18,135 @@ type LogEntry = {
   remoteAddr: string
 }
 
-type LogsPayload = {
-  entries: LogEntry[]
-}
-
-const payload = ref<LogsPayload | null>(null)
+const { t, locale } = useI18n()
+const logEntries = ref<LogEntry[]>([])
 const loading = ref(true)
+const syncComplete = ref(false)
+const scrollContainer = ref<HTMLElement | null>(null)
 
-const entries = computed(() => payload.value?.entries ?? [])
+const seenEntryIds = new Set<number>()
+let eventSource: EventSource | null = null
+
+const entries = computed(() => logEntries.value)
 
 function formatTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
     return value
   }
-  return date.toLocaleString()
-}
-
-async function loadPage() {
-  try {
-    const response = await fetch('/console/api/reverse-proxy/logs')
-    payload.value = (await response.json()) as LogsPayload
-  } finally {
-    loading.value = false
-  }
+  return date.toLocaleString(locale.value)
 }
 
 function typeLabel(value: string) {
   if (value === 'oidc') {
-    return 'OIDC'
+    return t('common.oidc')
   }
   if (value === 'proxy') {
-    return 'Proxy'
+    return t('common.proxy')
   }
   if (value === 'static') {
-    return 'Static'
+    return t('common.static')
   }
   return value
 }
 
+function isNearBottom(element: HTMLElement | null) {
+  if (!element) {
+    return true
+  }
+  return element.scrollHeight - (element.scrollTop + element.clientHeight) <= 24
+}
+
+async function appendEntry(entry: LogEntry) {
+  if (seenEntryIds.has(entry.id)) {
+    return
+  }
+
+  const shouldStickToBottom = isNearBottom(scrollContainer.value)
+  seenEntryIds.add(entry.id)
+  logEntries.value = [...logEntries.value, entry]
+
+  if (shouldStickToBottom) {
+    await nextTick()
+    if (scrollContainer.value) {
+      scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
+    }
+  }
+}
+
+function connectStream() {
+  eventSource = new EventSource('/console/api/reverse-proxy/logs/stream')
+
+  eventSource.onmessage = (event) => {
+    const entry = JSON.parse(event.data) as LogEntry
+    void appendEntry(entry)
+  }
+
+  eventSource.addEventListener('sync', () => {
+    syncComplete.value = true
+    loading.value = false
+    void nextTick(() => {
+      if (scrollContainer.value) {
+        scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
+      }
+    })
+  })
+
+  eventSource.onerror = () => {
+    if (syncComplete.value) {
+      loading.value = false
+    }
+  }
+}
+
 onMounted(() => {
-  void loadPage()
+  connectStream()
+})
+
+onBeforeUnmount(() => {
+  eventSource?.close()
+  eventSource = null
 })
 </script>
 
 <template>
-  <section class="page">
-    <div v-if="loading" class="section-card loading-card">
-      <p class="list-copy">Loading traffic logs...</p>
+  <section ref="scrollContainer" class="oidc-page">
+    <div v-if="loading" class="oidc-loading">
+      <p>{{ t('accessLogs.loading') }}</p>
     </div>
 
-    <article v-else class="section-card panel-sheen">
-      <div class="section-heading">
+    <article v-else class="oidc-panel">
+      <div class="panel-header">
         <div>
-          <h3>Access Logs</h3>
+          <h2>{{ t('accessLogs.title') }}</h2>
         </div>
         <span class="status-pill" :class="{ 'status-pill-muted': entries.length === 0 }">
-          {{ entries.length === 0 ? 'No traffic yet' : `${entries.length} entries` }}
+          {{ entries.length === 0 ? t('accessLogs.noTrafficYet') : t('accessLogs.entriesCount', { count: entries.length }) }}
         </span>
       </div>
 
-      <div v-if="entries.length === 0" class="proxy-log-empty">
-        <p class="table-value">No traffic has been recorded yet.</p>
-        <p class="table-helper">OIDC requests and configured reverse proxy traffic appear here after the first request.</p>
+      <div v-if="entries.length === 0" class="empty-state">
+        <p class="table-value">{{ t('accessLogs.emptyTitle') }}</p>
+        <p class="table-helper">{{ t('accessLogs.emptyCopy') }}</p>
       </div>
 
       <div v-else class="proxy-log-list">
-        <article v-for="entry in entries" :key="`${entry.timestamp}-${entry.host}-${entry.path}`" class="proxy-log-row">
+        <article v-for="entry in entries" :key="entry.id" class="proxy-log-row">
           <div class="proxy-log-topline">
             <p class="table-value">{{ entry.method }} {{ entry.path }}</p>
-            <span class="status-pill" :class="{ 'status-pill-muted': entry.statusCode >= 400 }">
+            <span class="status-pill" :class="entry.statusCode >= 400 ? 'status-pill-danger' : ''">
               {{ entry.statusCode }}
             </span>
           </div>
 
-          <div class="proxy-log-grid">
-            <p class="table-helper">When: {{ formatTime(entry.timestamp) }}</p>
-            <p class="table-helper">Host: {{ entry.host }}</p>
-            <p class="table-helper">Route: {{ entry.routeHost }} {{ entry.routePath }}</p>
-            <p class="table-helper">Type: {{ typeLabel(entry.routeType) }}</p>
-            <p class="table-helper">Target: {{ entry.target }}</p>
-            <p class="table-helper">Latency: {{ entry.durationMs }} ms / {{ entry.bytes }} bytes</p>
-            <p class="table-helper">Remote: {{ entry.remoteAddr }}</p>
+          <div class="meta-grid">
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.when') }}:</span> {{ formatTime(entry.timestamp) }}</p>
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.host') }}:</span> {{ entry.host }}</p>
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.route') }}:</span> {{ entry.routeHost }} {{ entry.routePath }}</p>
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.type') }}:</span> {{ typeLabel(entry.routeType) }}</p>
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.target') }}:</span> {{ entry.target }}</p>
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.latency') }}:</span> {{ t('accessLogs.latencyValue', { duration: entry.durationMs, bytes: entry.bytes }) }}</p>
+            <p class="meta-row"><span class="meta-label">{{ t('accessLogs.remote') }}:</span> {{ entry.remoteAddr }}</p>
           </div>
         </article>
       </div>
@@ -109,14 +158,23 @@ onMounted(() => {
 .proxy-log-list {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
 }
 
 .proxy-log-row {
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
-  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.proxy-log-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.proxy-log-row:last-child {
+  padding-bottom: 0;
 }
 
 .proxy-log-topline {
@@ -124,26 +182,9 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.7rem;
-}
-
-.proxy-log-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem 1rem;
-}
-
-.proxy-log-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
 }
 
 @media (max-width: 960px) {
-  .proxy-log-grid {
-    grid-template-columns: 1fr;
-  }
-
   .proxy-log-topline {
     align-items: flex-start;
     flex-direction: column;

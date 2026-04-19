@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type ReverseProxyRoute = {
   path: string
@@ -20,6 +21,7 @@ type ReverseProxyPayload = {
   hosts: ReverseProxyHost[]
 }
 
+const { t } = useI18n()
 const payload = ref<ReverseProxyPayload | null>(null)
 const loading = ref(true)
 
@@ -27,10 +29,10 @@ const hosts = computed(() => payload.value?.hosts ?? [])
 
 function routeTypeLabel(value: string) {
   if (value === 'proxy') {
-    return 'Proxy'
+    return t('common.proxy')
   }
   if (value === 'static') {
-    return 'Static'
+    return t('common.static')
   }
   return value
 }
@@ -52,41 +54,33 @@ onMounted(() => {
 <template>
   <section class="oidc-page">
     <div v-if="loading" class="oidc-loading">
-      <p>Loading reverse proxy routes...</p>
+      <p>{{ t('reverseProxy.loading') }}</p>
     </div>
 
     <div v-else class="proxy-layout">
       <section class="oidc-panel proxy-panel">
         <div class="panel-header">
           <div>
-            <h2>Reverse Proxy Configurations</h2>
+            <h2>{{ t('reverseProxy.title') }}</h2>
           </div>
           <span class="status-pill" :class="{ 'status-pill-muted': hosts.length === 0 }">
-            {{ hosts.length === 0 ? 'Disabled' : 'Active' }}
+            {{ hosts.length === 0 ? t('reverseProxy.disabled') : t('reverseProxy.active') }}
           </span>
         </div>
 
         <div v-if="hosts.length === 0" class="proxy-empty">
-          <p class="detail-text">No reverse proxy hosts configured.</p>
-          <p class="detail-value">Add a `reverse_proxy.hosts` section in the config file to expose dev servers or static sites.</p>
+          <p class="detail-text">{{ t('reverseProxy.emptyTitle') }}</p>
+          <p class="detail-value">{{ t('reverseProxy.emptyCopy') }}</p>
         </div>
 
         <div v-else class="proxy-hosts">
-          <article v-for="host in hosts" :key="host.host" class="proxy-host-card">
-            <div class="detail-grid">
-              <div class="detail-row detail-row-span-2">
-                <span class="detail-label">Host</span>
-                <code class="detail-value">{{ host.host }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">TLS</span>
-                <code class="detail-value">{{ host.tlsSource }}</code>
-              </div>
-
-              <div class="detail-row">
-                <span class="detail-label">Routes</span>
-                <code class="detail-value">{{ host.routes.length }}</code>
+          <article v-for="host in hosts" :key="host.host" class="proxy-host-row">
+            <div class="proxy-host-header">
+              <div class="proxy-host-summary">
+                <p class="table-value">{{ host.host }}</p>
+                <p class="table-helper">
+                  {{ t('reverseProxy.tls') }}: {{ host.tlsSource }} / {{ t('reverseProxy.routes') }}: {{ host.routes.length }}
+                </p>
               </div>
             </div>
 
@@ -96,8 +90,8 @@ onMounted(() => {
                   <p class="proxy-route-path">{{ route.path }}</p>
                   <p class="proxy-route-meta">
                     {{ routeTypeLabel(route.routeType) }}
-                    <span v-if="route.spaFallback"> / SPA fallback</span>
-                    <span v-if="route.rewritePathPrefix"> / rewrite to {{ route.rewritePathPrefix }}</span>
+                    <span v-if="route.spaFallback"> / {{ t('reverseProxy.spaFallback') }}</span>
+                    <span v-if="route.rewritePathPrefix"> / {{ t('reverseProxy.rewriteTo', { prefix: route.rewritePathPrefix }) }}</span>
                   </p>
                 </div>
                 <code class="proxy-target">{{ route.target }}</code>
@@ -117,26 +111,39 @@ onMounted(() => {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.proxy-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
+.proxy-empty,
 .proxy-hosts {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
 }
 
-.proxy-host-card {
+.proxy-host-row {
   display: flex;
   flex-direction: column;
-  gap: 0.95rem;
-  padding: 1rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
+  gap: 0.85rem;
+  padding: 1rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.proxy-host-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.proxy-host-row:last-child {
+  padding-bottom: 0;
+}
+
+.proxy-host-header,
+.proxy-host-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.proxy-host-summary .table-value,
+.proxy-host-summary .table-helper {
+  margin: 0;
 }
 
 .proxy-route-list {
@@ -154,8 +161,7 @@ onMounted(() => {
 }
 
 .proxy-route-row:first-child {
-  padding-top: 0;
-  border-top: 0;
+  padding-top: 0.2rem;
 }
 
 .proxy-route-copy {
