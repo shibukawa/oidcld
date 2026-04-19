@@ -799,11 +799,7 @@ func (c *Config) Normalize() error {
 	isEntra := c.EntraID != nil
 	ensureDefaultScopes(&c.OIDC, isEntra)
 	c.OIDC.AudienceClaimFormat = normalizeAudienceClaimFormat(c.OIDC.AudienceClaimFormat)
-	oidcCORS, err := normalizeCORSConfig(c.OIDC.CORS)
-	if err != nil {
-		return err
-	}
-	c.OIDC.CORS = oidcCORS
+	c.OIDC.CORS = normalizeCORSConfig(c.OIDC.CORS)
 
 	accessFilter, err := normalizeAccessFilterConfig(c.AccessFilter)
 	if err != nil {
@@ -896,9 +892,9 @@ func normalizeCertificateDomains(domains []string) []string {
 	return normalized
 }
 
-func normalizeCORSConfig(cfg *CORSConfig) (*CORSConfig, error) {
+func normalizeCORSConfig(cfg *CORSConfig) *CORSConfig {
 	if cfg == nil || !cfg.Enabled {
-		return nil, nil
+		return nil
 	}
 
 	return &CORSConfig{
@@ -906,7 +902,7 @@ func normalizeCORSConfig(cfg *CORSConfig) (*CORSConfig, error) {
 		Origins: normalizeStringList(cfg.Origins),
 		Methods: normalizeStringList(cfg.Methods),
 		Headers: normalizeStringList(cfg.Headers),
-	}, nil
+	}
 }
 
 func normalizeStringList(values []string) []string {

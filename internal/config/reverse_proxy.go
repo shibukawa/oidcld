@@ -107,11 +107,7 @@ func normalizeReverseProxyHost(host ReverseProxyHost, sourceDir string) (Reverse
 		return ReverseProxyHost{}, ErrReverseProxyTLSCertificateKeyRequired
 	}
 
-	hostCORS, err := normalizeCORSConfig(host.CORS)
-	if err != nil {
-		return ReverseProxyHost{}, err
-	}
-	host.CORS = hostCORS
+	host.CORS = normalizeCORSConfig(host.CORS)
 
 	if host.Host == "" {
 		host.defaultVirtualHost = true
