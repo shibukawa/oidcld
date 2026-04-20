@@ -2,9 +2,9 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -19,6 +19,11 @@ import (
 const (
 	maxCapturedRequestBodyBytes  = 64 * 1024
 	maxCapturedResponseBodyBytes = 64 * 1024
+)
+
+var (
+	ErrReplayTargetInvalid          = errors.New("invalid replay target")
+	ErrReplayRequestFieldsRequired  = errors.New("scheme, host, and path are required")
 )
 
 type reverseProxyLogSummary struct {
@@ -358,15 +363,6 @@ func captureResponseBody(contentType string, body []byte, limit int) capturedBod
 	return result
 }
 
-func shouldCaptureResponseBody(contentType string) bool {
-	switch bodyKindFromContentType(contentType) {
-	case "json", "form", "text":
-		return true
-	default:
-		return false
-	}
-}
-
 func matchLogPathPattern(pattern, requestPath string) bool {
 	pattern = strings.TrimSpace(pattern)
 	if pattern == "" {
@@ -547,7 +543,7 @@ func buildReplayHTTPRequest(item replayRequest) (*http.Request, error) {
 	if item.RouteType == "proxy" && strings.TrimSpace(item.Target) != "" {
 		parsedTarget, err := neturl.Parse(strings.TrimSpace(item.Target))
 		if err != nil || parsedTarget.Scheme == "" || parsedTarget.Host == "" {
-			return nil, errors.New("invalid replay target")
+			return nil, ErrReplayTargetInvalid
 		}
 		rewrittenPath := rewriteMatchedPath(path, item.RoutePath, item.RewritePathPrefix)
 		target = &neturl.URL{
@@ -560,7 +556,7 @@ func buildReplayHTTPRequest(item replayRequest) (*http.Request, error) {
 		scheme := strings.TrimSpace(item.Scheme)
 		host := strings.TrimSpace(item.Host)
 		if scheme == "" || host == "" || path == "" {
-			return nil, errors.New("scheme, host, and path are required")
+			return nil, ErrReplayRequestFieldsRequired
 		}
 		target = &neturl.URL{
 			Scheme:   scheme,
@@ -573,7 +569,7 @@ func buildReplayHTTPRequest(item replayRequest) (*http.Request, error) {
 	if item.Body.Kind == "none" || item.Body.OmittedReason != "" {
 		bodyText = ""
 	}
-	req, err := http.NewRequest(method, target.String(), strings.NewReader(bodyText))
+	req, err := http.NewRequestWithContext(context.Background(), method, target.String(), strings.NewReader(bodyText))
 	if err != nil {
 		return nil, err
 	}
@@ -593,32 +589,9 @@ func buildReplayHTTPRequest(item replayRequest) (*http.Request, error) {
 	return req, nil
 }
 
-func requestToReplayRequest(detail reverseProxyLogDetail) replayRequest {
-	return replayRequest{
-		Scheme:  detail.Request.Scheme,
-		Host:    detail.Request.Host,
-		Method:  detail.Request.Method,
-		Path:    detail.Request.Path,
-		Query:   detail.Request.Query,
-		Headers: cloneHeaderMap(http.Header(detail.Request.Headers)),
-		Body:    detail.Request.Body,
-	}
-}
-
 func trimCapturedResponseBytes(buf []byte, truncated bool) []byte {
 	if truncated && len(buf) > maxCapturedResponseBodyBytes {
 		return append([]byte(nil), buf[:maxCapturedResponseBodyBytes]...)
 	}
 	return append([]byte(nil), buf...)
-}
-
-func summarizeReplayRequest(item replayRequest) string {
-	if item.Name != "" {
-		return item.Name
-	}
-	querySuffix := ""
-	if item.Query != "" {
-		querySuffix = "?" + item.Query
-	}
-	return fmt.Sprintf("%s %s://%s%s%s", item.Method, item.Scheme, item.Host, item.Path, querySuffix)
 }
