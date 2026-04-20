@@ -1264,6 +1264,8 @@ autocert:
 {{if .ReverseProxy}}# Reverse proxy and static hosting rules
 reverse_proxy:
   log_retention: {{.ReverseProxy.LogRetention}}
+  ignore_log_paths:{{range .ReverseProxy.IgnoreLogPaths}}
+    - "{{.}}"{{end}}
   hosts:{{range .ReverseProxy.Hosts}}
     -{{if .Host}} host: "{{.Host}}"{{end}}{{if .CORS}}
       cors:{{if and .CORS.Enabled (eq (len .CORS.Origins) 0) (eq (len .CORS.Methods) 0) (eq (len .CORS.Headers) 0)}} true{{else}}
@@ -1284,6 +1286,9 @@ reverse_proxy:
           rewrite_path_prefix: "{{.RewritePathPrefix}}"{{end}}{{end}}{{end}}
 {{else}}# reverse_proxy:
 #   log_retention: 200
+#   ignore_log_paths:
+#     - "/health"
+#     - "/metrics*"
 #   hosts:
 #     - host: "https://app.dev.localhost"
 #       routes:

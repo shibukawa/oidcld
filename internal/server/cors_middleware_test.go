@@ -206,3 +206,21 @@ func TestReverseProxyHostCORSPreflight(t *testing.T) {
 	assert.Equal(t, http.StatusOK, res.Code)
 	assert.Equal(t, "*", res.Header().Get("Access-Control-Allow-Origin"))
 }
+
+func TestOIDCCORSAppliesToEntraIDDiscoveryRoute(t *testing.T) {
+	server := createTestServer(newEntraIDv2CORSConfig())
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/12345678-1234-1234-1234-123456789abc/v2.0/.well-known/openid-configuration",
+		nil,
+	)
+	req.Host = "oidc.localhost:8443"
+	req.Header.Set("Origin", "https://app.localhost:8443")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, "*", res.Header().Get("Access-Control-Allow-Origin"))
+}

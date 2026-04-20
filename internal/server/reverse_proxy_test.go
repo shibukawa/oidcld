@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,15 @@ import (
 	"github.com/alecthomas/assert/v2"
 	"github.com/shibukawa/oidcld/internal/config"
 )
+
+func TestContentTypeLabelClassification(t *testing.T) {
+	assert.Equal(t, "JSON", contentTypeLabel("application/json"))
+	assert.Equal(t, "HTML", contentTypeLabel("text/html; charset=utf-8"))
+	assert.Equal(t, "CSS", contentTypeLabel("text/css"))
+	assert.Equal(t, "JS", contentTypeLabel("application/javascript"))
+	assert.Equal(t, "Image", contentTypeLabel("image/png"))
+	assert.Equal(t, "-", contentTypeLabel(""))
+}
 
 func TestReverseProxy_ProxiesMatchedHostAndPath(t *testing.T) {
 	var upstreamPath string
@@ -216,6 +226,63 @@ func TestAdminHandler_ReverseProxyEndpointsExposeConfigAndLogs(t *testing.T) {
 	assert.Equal(t, "static", logsPayload.Entries[0].RouteType)
 	assert.Equal(t, "http://spa.localhost", logsPayload.Entries[0].RouteHost)
 	assert.Equal(t, filepath.Base(tempDir), logsPayload.Entries[0].RouteLabel)
+	assert.Equal(t, "HTML", logsPayload.Entries[0].ContentTypeLabel)
+}
+
+func TestAdminHandler_ReverseProxyLogDetailCapturesRequestAndResponseBodies(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
+		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "http://api.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/submit", Label: "submit", TargetURL: upstream.URL},
+					},
+				},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "http://api.localhost/submit?expand=true", strings.NewReader(`{"hello":"world"}`))
+	req.Host = "api.localhost"
+	req.RemoteAddr = "127.0.0.1:41234"
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	assert.Equal(t, http.StatusOK, res.Code)
+
+	logReq := httptest.NewRequest(http.MethodGet, "/console/api/reverse-proxy/logs", nil)
+	logReq.RemoteAddr = "127.0.0.1:41234"
+	logRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(logRes, logReq)
+	assert.Equal(t, http.StatusOK, logRes.Code)
+
+	var logsPayload adminReverseProxyLogsResponse
+	assert.NoError(t, json.Unmarshal(logRes.Body.Bytes(), &logsPayload))
+	assert.Equal(t, 1, len(logsPayload.Entries))
+	assert.Equal(t, "JSON", logsPayload.Entries[0].ContentTypeLabel)
+
+	detailReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/console/api/reverse-proxy/logs/%d", logsPayload.Entries[0].ID), nil)
+	detailReq.RemoteAddr = "127.0.0.1:41234"
+	detailRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(detailRes, detailReq)
+	assert.Equal(t, http.StatusOK, detailRes.Code)
+
+	var detail reverseProxyLogDetail
+	assert.NoError(t, json.Unmarshal(detailRes.Body.Bytes(), &detail))
+	assert.Equal(t, "expand=true", detail.Request.Query)
+	assert.Equal(t, `{"hello":"world"}`, detail.Request.Body.Text)
+	assert.Equal(t, "json", detail.Request.Body.Kind)
+	assert.Equal(t, "application/json", detail.Response.ContentType)
+	assert.Equal(t, `{"ok":true}`, detail.Response.Body.Text)
 }
 
 func TestReverseProxy_MatchesExplicitPortBeforePortlessFallback(t *testing.T) {
@@ -301,7 +368,137 @@ func TestAdminHandler_TrafficLogsIncludeOIDCRequests(t *testing.T) {
 	assert.Equal(t, "oidc.localhost", logsPayload.Entries[0].RouteHost)
 	assert.Equal(t, "/.well-known/openid-configuration", logsPayload.Entries[0].RoutePath)
 	assert.Equal(t, "oidc", logsPayload.Entries[0].RouteLabel)
-	assert.Equal(t, "https://oidc.localhost:18443", logsPayload.Entries[0].Target)
+
+	detailReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/console/api/reverse-proxy/logs/%d", logsPayload.Entries[0].ID), nil)
+	detailReq.RemoteAddr = "127.0.0.1:41234"
+	detailRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(detailRes, detailReq)
+	assert.Equal(t, http.StatusOK, detailRes.Code)
+
+	var detailPayload reverseProxyLogDetail
+	assert.NoError(t, json.Unmarshal(detailRes.Body.Bytes(), &detailPayload))
+	assert.Equal(t, "https://oidc.localhost:18443", detailPayload.Target)
+}
+
+func TestAccessLogs_IgnoreConfiguredPaths(t *testing.T) {
+	server := createTestServer(&config.Config{
+		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
+		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			IgnoreLogPaths: []string{"/health", "/metrics*"},
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "http://app.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/", TargetURL: "http://127.0.0.1:65535"},
+					},
+				},
+			},
+		},
+	})
+
+	healthReq := httptest.NewRequest(http.MethodGet, "http://localhost:18888/health", nil)
+	healthReq.RemoteAddr = "127.0.0.1:41234"
+	healthRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(healthRes, healthReq)
+	assert.Equal(t, http.StatusOK, healthRes.Code)
+
+	logReq := httptest.NewRequest(http.MethodGet, "/console/api/reverse-proxy/logs", nil)
+	logReq.RemoteAddr = "127.0.0.1:41234"
+	logRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(logRes, logReq)
+
+	var logsPayload adminReverseProxyLogsResponse
+	assert.NoError(t, json.Unmarshal(logRes.Body.Bytes(), &logsPayload))
+	assert.Equal(t, 0, len(logsPayload.Entries))
+}
+
+func TestAdminHandler_ReverseProxyLogsReplay(t *testing.T) {
+	var seenMethod string
+	var seenPath string
+	var seenBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		seenMethod = r.Method
+		seenPath = r.URL.RequestURI()
+		seenBody = string(bodyBytes)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
+		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "http://app.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{
+							Path:              "/api",
+							Label:             "demo-api",
+							TargetURL:         upstream.URL,
+							RewritePathPrefix: "/",
+						},
+					},
+				},
+			},
+		},
+	})
+
+	payload := []replayRequest{{
+		Name:   "json-post",
+		Scheme: "http",
+		Host:   "app.localhost",
+		Method: http.MethodPost,
+		Path:   "/api/items",
+		Query:  "a=1",
+		Headers: map[string][]string{
+			"Content-Type": {"application/json"},
+			"Cookie":       {"hidden=true"},
+		},
+		Body: capturedBody{
+			Kind:        "json",
+			ContentType: "application/json",
+			Text:        `{"hello":"world"}`,
+		},
+	}}
+	bodyBytes, err := json.Marshal(payload)
+	assert.NoError(t, err)
+
+	replayReq := httptest.NewRequest(http.MethodPost, "/console/api/reverse-proxy/logs/replay", strings.NewReader(string(bodyBytes)))
+	replayReq.RemoteAddr = "127.0.0.1:41234"
+	replayReq.Header.Set("Content-Type", "application/json")
+	replayRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(replayRes, replayReq)
+	assert.Equal(t, http.StatusAccepted, replayRes.Code)
+	assert.Equal(t, http.MethodPost, seenMethod)
+	assert.Equal(t, "/items?a=1", seenPath)
+	assert.Equal(t, `{"hello":"world"}`, seenBody)
+
+	logReq := httptest.NewRequest(http.MethodGet, "/console/api/reverse-proxy/logs", nil)
+	logReq.RemoteAddr = "127.0.0.1:41234"
+	logRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(logRes, logReq)
+	assert.Equal(t, http.StatusOK, logRes.Code)
+
+	var logsPayload adminReverseProxyLogsResponse
+	assert.NoError(t, json.Unmarshal(logRes.Body.Bytes(), &logsPayload))
+	assert.Equal(t, 1, len(logsPayload.Entries))
+	assert.Equal(t, "(REPLAY) /api/items", logsPayload.Entries[0].Path)
+	assert.Equal(t, http.StatusCreated, logsPayload.Entries[0].StatusCode)
+
+	detailReq := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/console/api/reverse-proxy/logs/%d", logsPayload.Entries[0].ID), nil)
+	detailReq.RemoteAddr = "127.0.0.1:41234"
+	detailRes := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(detailRes, detailReq)
+	assert.Equal(t, http.StatusOK, detailRes.Code)
+
+	var detailPayload reverseProxyLogDetail
+	assert.NoError(t, json.Unmarshal(detailRes.Body.Bytes(), &detailPayload))
+	assert.Equal(t, "Admin Console", detailPayload.RemoteAddr)
+	assert.Equal(t, "/api/items", detailPayload.Request.Path)
 }
 
 func TestAdminHandler_ReverseProxyLogsStreamSendsBacklogAndSync(t *testing.T) {
@@ -445,7 +642,7 @@ func makeStaticRequest(t *testing.T, server *Server, url string) {
 type testSSEEvent struct {
 	ID           int64
 	Event        string
-	Entry        reverseProxyLogEntry
+	Entry        reverseProxyLogSummary
 	SyncComplete bool
 	IsHeartbeat  bool
 }
