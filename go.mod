@@ -12,7 +12,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/yuin/goldmark v1.8.2
-	github.com/zitadel/oidc/v3 v3.47.2
+	github.com/zitadel/oidc/v3 v3.47.5
 	golang.org/x/crypto v0.50.0
 	golang.org/x/text v0.36.0
 )
