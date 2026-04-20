@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build admin console assets
-FROM node:24-trixie AS admin-builder
+FROM node:25-trixie AS admin-builder
 
 WORKDIR /app/web/admin
 
