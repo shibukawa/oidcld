@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"net"
@@ -85,8 +86,9 @@ type adminUsersResponse struct {
 }
 
 type adminReverseProxyResponse struct {
-	LogRetention int                     `json:"logRetention"`
-	Hosts        []adminReverseProxyHost `json:"hosts"`
+	LogRetention   int                     `json:"logRetention"`
+	IgnoreLogPaths []string                `json:"ignoreLogPaths"`
+	Hosts          []adminReverseProxyHost `json:"hosts"`
 }
 
 type adminReverseProxyHost struct {
@@ -106,7 +108,7 @@ type adminReverseProxyRoute struct {
 }
 
 type adminReverseProxyLogsResponse struct {
-	Entries []reverseProxyLogEntry `json:"entries"`
+	Entries []reverseProxyLogSummary `json:"entries"`
 }
 
 type adminUserSummary struct {
@@ -142,7 +144,9 @@ func (s *Server) AdminHandler() http.Handler {
 	consoleMux.HandleFunc("/console/api/certificates/issue", s.handleAdminIssueCertificate)
 	consoleMux.HandleFunc("/console/api/reverse-proxy", s.handleAdminReverseProxy)
 	consoleMux.HandleFunc("/console/api/reverse-proxy/logs", s.handleAdminReverseProxyLogs)
+	consoleMux.HandleFunc("/console/api/reverse-proxy/logs/", s.handleAdminReverseProxyLogDetail)
 	consoleMux.HandleFunc("/console/api/reverse-proxy/logs/stream", s.handleAdminReverseProxyLogsStream)
+	consoleMux.HandleFunc("/console/api/reverse-proxy/logs/replay", s.handleAdminReverseProxyLogsReplay)
 	consoleMux.HandleFunc("/console/api/downloads/certificate-installer.zip", s.handleAdminCertificateInstallerDownload)
 	consoleMux.HandleFunc("/console/api/downloads/root-ca.pem", s.handleAdminRootCADownload)
 	consoleMux.HandleFunc("/console/api/downloads/install.sh", s.handleAdminUnixInstallScript)
@@ -276,6 +280,7 @@ func (s *Server) handleAdminReverseProxy(w http.ResponseWriter, _ *http.Request)
 	response := adminReverseProxyResponse{}
 	if s.config.ReverseProxy != nil {
 		response.LogRetention = s.config.ReverseProxy.LogRetention
+		response.IgnoreLogPaths = append([]string(nil), s.config.ReverseProxy.IgnoreLogPaths...)
 		for _, host := range s.config.ReverseProxy.Hosts {
 			item := adminReverseProxyHost{
 				Host:               host.DisplayHost(),
@@ -318,6 +323,59 @@ func (s *Server) handleAdminReverseProxyLogs(w http.ResponseWriter, _ *http.Requ
 	}
 }
 
+func (s *Server) handleAdminReverseProxyLogDetail(w http.ResponseWriter, r *http.Request) {
+	rawID := strings.TrimPrefix(r.URL.Path, "/console/api/reverse-proxy/logs/")
+	if rawID == "" || rawID == "stream" || rawID == "replay" {
+		http.NotFound(w, r)
+		return
+	}
+	id, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid log id", http.StatusBadRequest)
+		return
+	}
+	if s.reverseProxyLog == nil {
+		http.NotFound(w, r)
+		return
+	}
+	detail, ok := s.reverseProxyLog.Detail(id)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(detail); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) handleAdminReverseProxyLogsReplay(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read replay payload", http.StatusBadRequest)
+		return
+	}
+	var requestItems []replayRequest
+	decoder := json.NewDecoder(bytes.NewReader(bodyBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&requestItems); err != nil {
+		var single replayRequest
+		singleDecoder := json.NewDecoder(bytes.NewReader(bodyBytes))
+		singleDecoder.DisallowUnknownFields()
+		if rewindErr := singleDecoder.Decode(&single); rewindErr != nil {
+			http.Error(w, "invalid replay payload", http.StatusBadRequest)
+			return
+		}
+		requestItems = []replayRequest{single}
+	}
+	s.replayLoggedRequests(requestItems, "Admin Console")
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (s *Server) handleAdminReverseProxyLogsStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -337,8 +395,8 @@ func (s *Server) handleAdminReverseProxyLogsStream(w http.ResponseWriter, r *htt
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	backlog := []reverseProxyLogEntry(nil)
-	var updates <-chan reverseProxyLogEntry
+	backlog := []reverseProxyLogSummary(nil)
+	var updates <-chan reverseProxyLogSummary
 	unsubscribe := func() {}
 	if s.reverseProxyLog != nil {
 		backlog, updates, unsubscribe = s.reverseProxyLog.SubscribeAfter(lastEventID)
@@ -380,7 +438,7 @@ func (s *Server) handleAdminReverseProxyLogsStream(w http.ResponseWriter, r *htt
 	}
 }
 
-func writeReverseProxyLogSSE(w http.ResponseWriter, entry reverseProxyLogEntry) error {
+func writeReverseProxyLogSSE(w http.ResponseWriter, entry reverseProxyLogSummary) error {
 	return writeSSEEvent(w, "", entry, entry.ID)
 }
 

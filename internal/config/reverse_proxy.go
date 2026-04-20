@@ -10,9 +10,12 @@ import (
 
 const DefaultReverseProxyLogRetention = 200
 
+var DefaultReverseProxyIgnoreLogPaths = []string{"/health"}
+
 type ReverseProxyConfig struct {
-	Hosts        []ReverseProxyHost `yaml:"hosts,omitempty"`
-	LogRetention int                `yaml:"log_retention,omitempty"`
+	Hosts          []ReverseProxyHost `yaml:"hosts,omitempty"`
+	LogRetention   int                `yaml:"log_retention,omitempty"`
+	IgnoreLogPaths []string           `yaml:"ignore_log_paths,omitempty"`
 }
 
 type ReverseProxyHost struct {
@@ -65,10 +68,24 @@ func normalizeReverseProxyConfig(cfg *ReverseProxyConfig, sourceDir string) (*Re
 	}
 
 	normalized := &ReverseProxyConfig{
-		LogRetention: DefaultReverseProxyLogRetention,
+		LogRetention:   DefaultReverseProxyLogRetention,
+		IgnoreLogPaths: append([]string(nil), DefaultReverseProxyIgnoreLogPaths...),
 	}
 	if cfg.LogRetention > 0 {
 		normalized.LogRetention = cfg.LogRetention
+	}
+	if len(cfg.IgnoreLogPaths) > 0 {
+		normalized.IgnoreLogPaths = make([]string, 0, len(cfg.IgnoreLogPaths))
+		for _, pattern := range cfg.IgnoreLogPaths {
+			pattern = strings.TrimSpace(pattern)
+			if pattern == "" {
+				continue
+			}
+			normalized.IgnoreLogPaths = append(normalized.IgnoreLogPaths, pattern)
+		}
+		if len(normalized.IgnoreLogPaths) == 0 {
+			normalized.IgnoreLogPaths = append([]string(nil), DefaultReverseProxyIgnoreLogPaths...)
+		}
 	}
 
 	seenHosts := map[string]struct{}{}

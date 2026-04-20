@@ -13,8 +13,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/shibukawa/oidcld/internal/config"
 )
@@ -60,40 +58,6 @@ type reverseProxyRequestAuthority struct {
 	scheme   string
 	hostname string
 	port     string
-}
-
-type reverseProxyLogEntry struct {
-	ID         int64     `json:"id"`
-	Timestamp  time.Time `json:"timestamp"`
-	Host       string    `json:"host"`
-	Method     string    `json:"method"`
-	Path       string    `json:"path"`
-	StatusCode int       `json:"statusCode"`
-	DurationMS int64     `json:"durationMs"`
-	Bytes      int       `json:"bytes"`
-	RouteType  string    `json:"routeType"`
-	RouteHost  string    `json:"routeHost"`
-	RoutePath  string    `json:"routePath"`
-	RouteLabel string    `json:"routeLabel"`
-	Target     string    `json:"target"`
-	RemoteAddr string    `json:"remoteAddr"`
-}
-
-type reverseProxyLogMeta struct {
-	RouteType  string
-	RouteHost  string
-	RoutePath  string
-	RouteLabel string
-	Target     string
-}
-
-type reverseProxyLogStore struct {
-	mu               sync.RWMutex
-	entries          []reverseProxyLogEntry
-	limit            int
-	nextID           int64
-	nextSubscriberID int
-	subscribers      map[int]chan reverseProxyLogEntry
 }
 
 func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) {
@@ -178,97 +142,6 @@ func reverseProxyLogRetention(cfg *config.Config) int {
 	return cfg.ReverseProxy.LogRetention
 }
 
-func newReverseProxyLogStore(limit int) *reverseProxyLogStore {
-	if limit <= 0 {
-		limit = config.DefaultReverseProxyLogRetention
-	}
-	return &reverseProxyLogStore{
-		limit:       limit,
-		subscribers: map[int]chan reverseProxyLogEntry{},
-	}
-}
-
-func (s *reverseProxyLogStore) Add(entry reverseProxyLogEntry) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	s.nextID++
-	entry.ID = s.nextID
-	s.entries = append(s.entries, entry)
-	if extra := len(s.entries) - s.limit; extra > 0 {
-		s.entries = append([]reverseProxyLogEntry(nil), s.entries[extra:]...)
-	}
-	subscribers := make([]chan reverseProxyLogEntry, 0, len(s.subscribers))
-	for _, subscriber := range s.subscribers {
-		subscribers = append(subscribers, subscriber)
-	}
-	s.mu.Unlock()
-
-	for _, subscriber := range subscribers {
-		select {
-		case subscriber <- entry:
-		default:
-		}
-	}
-}
-
-func (s *reverseProxyLogStore) Snapshot() []reverseProxyLogEntry {
-	if s == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	out := make([]reverseProxyLogEntry, len(s.entries))
-	copy(out, s.entries)
-	slices.Reverse(out)
-	return out
-}
-
-func (s *reverseProxyLogStore) EntriesAfter(lastID int64) []reverseProxyLogEntry {
-	if s == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.entriesAfterLocked(lastID)
-}
-
-func (s *reverseProxyLogStore) SubscribeAfter(lastID int64) ([]reverseProxyLogEntry, <-chan reverseProxyLogEntry, func()) {
-	if s == nil {
-		return nil, nil, func() {}
-	}
-
-	s.mu.Lock()
-	backlog := s.entriesAfterLocked(lastID)
-	subscriberID := s.nextSubscriberID
-	s.nextSubscriberID++
-	ch := make(chan reverseProxyLogEntry, 32)
-	s.subscribers[subscriberID] = ch
-	s.mu.Unlock()
-
-	var once sync.Once
-	unsubscribe := func() {
-		once.Do(func() {
-			s.mu.Lock()
-			delete(s.subscribers, subscriberID)
-			s.mu.Unlock()
-		})
-	}
-
-	return backlog, ch, unsubscribe
-}
-
-func (s *reverseProxyLogStore) entriesAfterLocked(lastID int64) []reverseProxyLogEntry {
-	start := 0
-	for start < len(s.entries) && s.entries[start].ID <= lastID {
-		start++
-	}
-	out := make([]reverseProxyLogEntry, len(s.entries)-start)
-	copy(out, s.entries[start:])
-	return out
-}
-
 func newSingleHostReverseProxy(target *neturl.URL, matchPath, rewritePathPrefix string) *httputil.ReverseProxy {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	defaultDirector := proxy.Director
@@ -338,11 +211,12 @@ func (s *Server) reverseProxyMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		annotateReverseProxyLog(w, reverseProxyLogMeta{
-			RouteType:  match.route.routeType,
-			RouteHost:  match.host.displayHost,
-			RoutePath:  match.route.path,
-			RouteLabel: match.route.label,
-			Target:     match.route.targetLabel,
+			RouteType:         match.route.routeType,
+			RouteHost:         match.host.displayHost,
+			RoutePath:         match.route.path,
+			RouteLabel:        match.route.label,
+			Target:            match.route.targetLabel,
+			RewritePathPrefix: match.route.rewritePathPrefix,
 		})
 		if handleCORS(w, r, match.host.cors) {
 			return

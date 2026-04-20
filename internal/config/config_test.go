@@ -74,6 +74,7 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "console:"), "Should contain console section")
 	assert.True(t, strings.Contains(yamlContent, "certificate_authority:"), "Should contain certificate authority section")
 	assert.True(t, strings.Contains(yamlContent, "# reverse_proxy:"), "Should contain reverse proxy sample section")
+	assert.True(t, strings.Contains(yamlContent, "#   ignore_log_paths:"), "Should contain reverse proxy ignore path sample")
 	assert.True(t, strings.Contains(yamlContent, "enabled: true"), "Should contain default access filter enabled state")
 	assert.True(t, strings.Contains(yamlContent, "max_forwarded_hops: 0"), "Should contain default forwarded hops")
 
@@ -89,6 +90,29 @@ func TestGenerateConfigYAML(t *testing.T) {
 	assert.True(t, strings.Contains(yamlContent, "guest:"), "Should contain guest")
 	assert.True(t, strings.Contains(yamlContent, "# login_ui:"), "Should contain login_ui sample")
 	assert.True(t, strings.Contains(yamlContent, "domains:"), "Should contain certificate authority domains")
+}
+
+func TestNormalizeReverseProxyDefaultsIgnoreLogPaths(t *testing.T) {
+	cfg := &Config{
+		OIDC: OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &ReverseProxyConfig{
+			Hosts: []ReverseProxyHost{
+				{
+					Host: "http://app.localhost",
+					Routes: []ReverseProxyRoute{
+						{Path: "/", TargetURL: "http://127.0.0.1:3000"},
+					},
+				},
+			},
+		},
+		Users: map[string]User{
+			"admin": {DisplayName: "Administrator"},
+		},
+	}
+
+	err := cfg.Normalize()
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"/health"}, cfg.ReverseProxy.IgnoreLogPaths)
 }
 
 func TestCreateDefaultConfig_DefaultAudienceClaimFormat(t *testing.T) {

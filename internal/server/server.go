@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -873,6 +874,7 @@ func (s *Server) GetPrettyLogger() *Logger {
 func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		requestCapture := captureRequestForLog(r)
 
 		// Create a response writer wrapper to capture status code and headers
 		wrapper := &responseWriter{ResponseWriter: w, statusCode: 200}
@@ -884,8 +886,7 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 		// access logs unless verbose logging is explicitly enabled in config.
 		duration := time.Since(start)
 
-		// Health probes are intentionally silent to avoid access-log noise.
-		if r.URL != nil && r.URL.Path == "/health" && wrapper.reverseProxy == nil {
+		if r.URL != nil && s.shouldIgnoreAccessLog(r.URL.Path) {
 			return
 		}
 
@@ -908,21 +909,35 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 			if logHost == "" && r.URL != nil {
 				logHost = strings.TrimSpace(r.URL.Host)
 			}
-			s.reverseProxyLog.Add(reverseProxyLogEntry{
-				Timestamp:  time.Now().UTC(),
-				Host:       logHost,
-				Method:     r.Method,
-				Path:       r.URL.Path,
-				StatusCode: wrapper.statusCode,
-				DurationMS: duration.Milliseconds(),
-				Bytes:      wrapper.bytesWritten,
-				RouteType:  logMeta.RouteType,
-				RouteHost:  logMeta.RouteHost,
-				RoutePath:  logMeta.RoutePath,
-				RouteLabel: logMeta.RouteLabel,
-				Target:     logMeta.Target,
-				RemoteAddr: r.RemoteAddr,
-			})
+			responseContentType := wrapper.Header().Get("Content-Type")
+			summary := reverseProxyLogSummary{
+				Timestamp:        time.Now().UTC(),
+				Host:             logHost,
+				Method:           r.Method,
+				Path:             r.URL.Path,
+				StatusCode:       wrapper.statusCode,
+				ContentTypeLabel: contentTypeLabel(responseContentType),
+				DurationMS:       duration.Milliseconds(),
+				Bytes:            wrapper.bytesWritten,
+				RouteType:        logMeta.RouteType,
+				RouteHost:        logMeta.RouteHost,
+				RoutePath:        logMeta.RoutePath,
+				RouteLabel:       logMeta.RouteLabel,
+			}
+			detail := reverseProxyLogDetail{
+				Target:            logMeta.Target,
+				RewritePathPrefix: logMeta.RewritePathPrefix,
+				RemoteAddr:        r.RemoteAddr,
+				Request:           requestCapture,
+				Response: capturedResponse{
+					StatusCode:  wrapper.statusCode,
+					Headers:     cloneHeaderMap(wrapper.Header()),
+					ContentType: responseContentType,
+					Bytes:       wrapper.bytesWritten,
+					Body:        captureResponseBody(responseContentType, wrapper.capturedBodyBytes(), maxCapturedResponseBodyBytes),
+				},
+			}
+			s.reverseProxyLog.Add(summary, detail)
 		}
 	})
 }
@@ -931,20 +946,47 @@ func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
 type responseWriter struct {
 	http.ResponseWriter
 
-	statusCode   int
-	bytesWritten int
-	reverseProxy *reverseProxyLogMeta
+	statusCode    int
+	bytesWritten  int
+	reverseProxy  *reverseProxyLogMeta
+	body          bytes.Buffer
+	bodyTruncated bool
+	wroteHeader   bool
 }
 
 func (rw *responseWriter) WriteHeader(code int) {
+	rw.wroteHeader = true
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
 }
 
 func (rw *responseWriter) Write(data []byte) (int, error) {
+	if !rw.wroteHeader {
+		rw.WriteHeader(http.StatusOK)
+	}
+	if len(data) > 0 {
+		remaining := maxCapturedResponseBodyBytes - rw.body.Len()
+		if remaining > 0 {
+			if len(data) > remaining {
+				_, _ = rw.body.Write(data[:remaining])
+				rw.bodyTruncated = true
+			} else {
+				_, _ = rw.body.Write(data)
+			}
+		} else {
+			rw.bodyTruncated = true
+		}
+	}
 	n, err := rw.ResponseWriter.Write(data)
 	rw.bytesWritten += n
 	return n, err
+}
+
+func (rw *responseWriter) capturedBodyBytes() []byte {
+	if rw == nil {
+		return nil
+	}
+	return trimCapturedResponseBytes(rw.body.Bytes(), rw.bodyTruncated)
 }
 
 func (rw *responseWriter) Flush() {
