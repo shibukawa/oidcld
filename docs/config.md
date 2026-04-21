@@ -156,6 +156,8 @@ Notes:
 - `gateway` is valid on `target_url` and `openapi_file` routes and can replay OIDCLD-issued JWTs with refreshed signature and timestamps before proxying upstream
 - `openapi_file` is resolved relative to the config file, loaded at startup, and validated with `kin-openapi`
 - `mock.prefer_examples` prefers named / inline examples; schema synthesis is used only when examples are unavailable
+- `oidcld serve --proxy-port <port>` starts a dedicated browser-facing reverse-proxy listener; in that mode all explicit `reverse_proxy.hosts[].host` values must use the same scheme
+- when split listener mode is enabled, any explicit port in `reverse_proxy.hosts[].host` must match `--proxy-port`; portless hosts still act as fallbacks
 
 #### 7. Automatic HTTPS Certificates (`autocert`)
 
@@ -230,6 +232,7 @@ When using EntraID templates, users automatically include:
 |------|-------------|---------|
 | `--config` | Configuration file path | oidcld.yaml |
 | `--port` | Server listen port | 18888 for HTTP, 18443 for HTTPS |
+| `--proxy-port` | Optional dedicated reverse proxy listener port | disabled |
 | `--http-readonly-port` | Restricted HTTP metadata listener in HTTPS mode | 18888 |
 | `--watch` | Enable live reload | false |
 | `--cert-file` | TLS certificate file | - |
@@ -306,6 +309,18 @@ Require restart (process-level constructs or TLS listener changes):
 | Manual HTTPS | Test SPA with secure origin | Provide `--cert-file` / `--key-file` |
 | mkcert | Trust local certs across browsers | Generate + use manual HTTPS method |
 | ACME (auto) | End-to-end TLS lifecycle simulation | Configure `autocert` or env overrides |
+
+### Split Listener Mode
+
+Use `oidcld serve --proxy-port <port>` when OIDC and reverse-proxy traffic must be exposed on separate browser-facing ports.
+
+- `--port` remains the OIDC listener
+- `--proxy-port` becomes the reverse-proxy listener
+- `console.port` remains the Developer Console / metadata companion listener
+- OIDC scheme is derived from `oidc.iss` plus manual TLS / autocert settings
+- reverse-proxy scheme is derived from `reverse_proxy.hosts[].host`
+- split mode supports OIDC HTTP + proxy HTTP, OIDC HTTPS + proxy HTTP, OIDC HTTP + proxy HTTPS, and OIDC HTTPS + proxy HTTPS
+- reverse-proxy hosts may not mix `http://` and `https://` in split mode
 
 ### MCP (Model Context Protocol) Mode
 ```bash

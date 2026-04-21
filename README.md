@@ -1,6 +1,6 @@
-# OpenID Connect for Local Development: OIDCLD
+# OIDCLD
 
-A fake OpenID Connect Identity Provider (IdP) designed for testing and development purposes.
+Local development identity, TLS, and edge routing in one runtime.
 
 [![CI](https://github.com/shibukawa/oidcld/actions/workflows/ci.yml/badge.svg)](https://github.com/shibukawa/oidcld/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/shibukawa/oidcld)](https://github.com/shibukawa/oidcld/releases)
@@ -10,384 +10,185 @@ A fake OpenID Connect Identity Provider (IdP) designed for testing and developme
 
 Japanese: see [README.ja.md](README.ja.md)
 
-Quick links: [llms.txt](llms.txt) | [Configuration Guide](docs/config.md)
+Quick links: [Configuration Guide](docs/config.md) | [0.1.x to 0.2 Compatibility](COMPATIBILITY.md) | [llms.txt](llms.txt)
 
-## Table of Contents
-- [Terminology](#terminology)
-- [Primary Function](#primary-function)
-- [Use Cases](#use-cases)
-- [3. EntraID Compatible Mode (MSAL / Azure-style claims)](#3-entraid-compatible-mode-msal--azure-style-claims)
-- [HTTPS Configuration](#https-configuration)
-- [MSAL Configuration for OIDCLD](#msal-configuration-for-oidcld)
-- [CLI Summary](#cli-summary)
-- [Security Limitations](#security-limitations)
-- [Documentation](#documentation)
-- [License](#license)
+OIDCLD started as a fake OpenID Connect Identity Provider for testing. In 0.2, it is better described as a local development edge platform: it can act as an OIDC / EntraID-compatible IdP, manage a local development CA, terminate TLS for multiple hosts, reverse proxy frontend and API traffic, serve static assets, return OpenAPI-backed mock responses, and expose a developer console with reverse-proxy logs.
+
+This project is still for development and testing only. Do not use it in production.
 
 ![console](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/console.png)
 
-## Terminology
+## Full Stack Topology
 
-This project uses terminology from xUnit test patterns to clearly describe its purpose and functionality:
+![OIDCLD full stack topology](docs/oidcld-components.svg)
 
-### **Fake vs Mock**
-- **Fake**: A working implementation with simplified behavior, suitable for testing. Fakes have real business logic but take shortcuts (e.g., in-memory storage instead of a database).
-- **Mock**: An object that verifies behavior by recording interactions and asserting expectations.
+The diagram shows the full 0.2 shape: browser traffic reaches OIDCLD as both an identity provider and an edge router, OIDC-issued tokens can be validated at reverse-proxy routes, and the managed local CA covers the browser-facing hosts. In the integrated Compose sample, `oidc.localhost`, `app.localhost`, and `app2.localhost` share the HTTPS listener on container port `443`, exposed as host port `8443`, while the Developer Console and metadata companion use a separate listener on `18889`.
 
-### **This Project is a "Fake"**
-This OpenID Connect Identity Provider is a **fake** implementation because it:
-- Provides a fully functional OpenID Connect server with real protocol compliance
-- Uses simplified implementations (in-memory storage, test certificates, user selection UI)
-- Enables actual authentication flows for testing purposes
-- Does not verify specific interactions or assert expectations like a mock would
+If you enable split listener mode with `--proxy-port`, the same topology still applies logically, but OIDC and reverse-proxy traffic are exposed on separate browser-facing ports instead of sharing one listener.
 
-The term "fake" accurately describes this tool's role in testing scenarios - it's a real, working identity provider designed specifically for development and testing environments.
+## What OIDCLD Is Now
 
-----
+OIDCLD 0.2 has three primary roles:
 
-![screenshot](https://raw.githubusercontent.com/shibukawa/oidcld/refs/heads/main/docs/login-screen.png)
+### 1. OIDC / EntraID-compatible identity provider
 
-**Login Screen:** No password—just click to log in. Helps testing. No more dev-only login bypasses.
+- Supports Authorization Code, Client Credentials, Device Flow, refresh tokens, PKCE, and RP-initiated logout
+- Exposes standards-compliant OIDC discovery and JWKS endpoints
+- Can emulate EntraID / Azure-style claims and endpoint aliases for MSAL integration
+- Keeps the fast developer login model: select a user instead of typing passwords
 
-You can also mark each environment on `/login` with a title, a color, and a Markdown note:
+### 2. Managed local CA and TLS tooling
 
-```yaml
-oidc:
-  login_ui:
-    env_title: "Staging"
-    info_markdown_file: "./docs/login-links.staging.md"
-```
+- Generates and persists a local development root CA under `certificate_authority.ca_dir`
+- Issues leaf certificates for the OIDC issuer host and reverse-proxy hosts
+- Provides root CA downloads and install / uninstall scripts from the Developer Console
+- Can also use manual TLS cert files or `autocert` when you need a different HTTPS path
 
-----
+### 3. Reverse proxy, static hosting, and mock APIs
 
-## Primary Function
-- **OpenID Connect ID provider for local test environment** (❌ NEVER USE IT ON PROD ENV)
-  - **Multiple Flow Support**: Authorization Code Flow, Client Credentials Flow, Device Flow, and Refresh Token Flow
-  - **PKCE Support**: Proof Key for Code Exchange implementation for enhanced security
-  - **Refresh Token Support**: Optional refresh token generation and validation for long-lived sessions
-  - **End Session Support**: OpenID Connect RP-Initiated Logout with configurable discovery visibility
-  - **OpenID Discovery**: Standards-compliant `/.well-known/openid-configuration` endpoint
-- **Best for Local Testing**
-  - **Works well with Docker**: No database required; single config file.
-  - **Fast login**: Just click a user name; no password.
-  - **Custom JWT Claims**: YAML configuration supports additional information in JWT tokens
-  - **Edge/Web Gateway**: Virtual Host routing, reverse proxy, static hosting with SPA fallback, OpenAPI mock routes, and route-level JWT gatekeeping
-- **EntraID/AzureAD Compatibility**:
-  - **Test with MSAL.js**
+- Routes by virtual host and path via `reverse_proxy.hosts[]`
+- Proxies frontend and backend traffic to upstream services
+- Serves static assets with optional SPA fallback
+- Returns OpenAPI-backed mock responses
+- Enforces route-level API gateway checks against OIDCLD-issued bearer tokens
+- Shows reverse-proxy configuration and request logs in the Developer Console
 
-## Use Cases
+## Quick Start Options
 
-There are two launch styles (single binary, container) and two API modes (OpenID Connect, EntraID compatible).
+### Simple local OIDC server
 
-### 1. Simple Local Server and Standard OpenID Connect
+Use the binary directly when you only need a local IdP.
 
-Use the compiled `oidcld` binary directly on your workstation. Fastest iteration, minimal moving parts.
-
-```mermaid
-flowchart TB
-  DevApp["Local App (React/Vite, Go, Node, etc)"] -->|Auth Code / Device / Client Credentials| OIDCLD[oidcld Binary<br/>http://localhost:18888]
-  OIDCLD --> Config[(oidcld.yaml)]
-  OIDCLD --> Users[In-Memory Users]
-```
-
-Key points:
-- HTTP by default (port 18888)
-- One YAML file (`oidcld.yaml`) + generated key pair
-- Click-to-login user picker (no password)
-- Great for quick prototyping & unit/integration tests
-
-Quick start:
 ```bash
-./oidcld init            # generate config + keys
-./oidcld                 # start on http://localhost:18888
+./oidcld init
+./oidcld
 open http://localhost:18888/.well-known/openid-configuration
 ```
 
-Add HTTPS later by generating certs (mkcert) and starting with `--cert-file/--key-file`.
+By default this starts the HTTP listener on `18888`. Add `--cert-file` / `--key-file` later if you want manual HTTPS.
 
-For the managed local-development path, configure `certificate_authority` and `console` in [oidcld.yaml](oidcld.yaml). OIDCLD exposes the Developer Console on `http://127.0.0.1:18889/console/`, issues a local root CA under the configured `ca_dir`, and provides download endpoints for the root certificate plus install / uninstall scripts.
+### Managed local TLS + developer console
 
-The same runtime can also act as a lightweight edge/web gateway for local environments. `reverse_proxy.hosts[]` works like a Virtual Host table, and each route can proxy to an upstream, serve static files with `spa_fallback`, or return OpenAPI-backed mock responses. Route-level gateway rules can require self-issued Bearer tokens with claim-based checks such as `scope` and `aud`, and OIDCLD-issued tokens can be replayed upstream with refreshed signature and timestamps.
-
-For local frontend work, use the VS Code `dev` task. It starts the backend with the usual `serve` flow and runs the Vite dev server with `/console/api/*` proxied to the Developer Console listener, so Vue changes are reflected immediately. For release-style builds, use the `build` task to build `web/admin`, sync the generated files into the backend embed directory, and then compile the Go binary.
-
-**Option 1: Go install (Go 1.24+)**
-```bash
-go install github.com/shibukawa/oidcld@latest
-```
-Make sure `$GOBIN` is on your `PATH`.
-
-**Option 2: Download from GitHub Releases**
-1. Visit the [GitHub releases page](https://github.com/shibukawa/oidcld/releases)
-2. Download the appropriate binary archive for your operating system/architecture
-3. Make the binary executable (on Unix-like systems): `chmod +x oidcld`
-
-Current release binary targets:
-- `oidcld-linux-amd64.tar.gz`
-- `oidcld-linux-arm64.tar.gz`
-- `oidcld-darwin-arm64.tar.gz`
-- `oidcld-windows-amd64.zip`
-- `oidcld-windows-arm64.zip`
-
-Checksum verification:
-```bash
-# Example for Linux AMD64 archive
-archive="oidcld-linux-amd64.tar.gz"
-curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
-curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/SHA256SUMS.txt" -o SHA256SUMS.txt
-grep " ${archive}$" SHA256SUMS.txt | sha256sum -c -
-```
-
-macOS Gatekeeper note (for downloaded binaries):
-```bash
-chmod +x oidcld
-xattr -l ./oidcld
-xattr -d com.apple.quarantine ./oidcld
-```
-
-Use from GitHub Actions (latest release):
+Use `certificate_authority` and `console` in `oidcld.yaml` when you want OIDCLD to manage local certificates and expose console tooling.
 
 ```yaml
-- name: Download oidcld (Linux/macOS)
-  if: runner.os != 'Windows'
-  shell: bash
-  run: |
-    set -euo pipefail
-    case "${RUNNER_OS}-${RUNNER_ARCH}" in
-      Linux-X64)   archive="oidcld-linux-amd64.tar.gz" ;;
-      Linux-ARM64) archive="oidcld-linux-arm64.tar.gz" ;;
-      macOS-ARM64) archive="oidcld-darwin-arm64.tar.gz" ;;
-      *) echo "unsupported runner: ${RUNNER_OS}-${RUNNER_ARCH}"; exit 1 ;;
-    esac
-    curl -fsSL "https://github.com/shibukawa/oidcld/releases/latest/download/${archive}" -o "${archive}"
-    tar -xzf "${archive}"
-    chmod +x oidcld
-    echo "${PWD}" >> "${GITHUB_PATH}"
+access_filter:
+  enabled: true
 
-- name: Download oidcld (Windows)
-  if: runner.os == 'Windows'
-  shell: pwsh
-  run: |
-    switch ("$env:RUNNER_ARCH") {
-      "X64" { $archive = "oidcld-windows-amd64.zip" }
-      "ARM64" { $archive = "oidcld-windows-arm64.zip" }
-      default { throw "unsupported runner architecture: $env:RUNNER_ARCH" }
-    }
-    Invoke-WebRequest -Uri "https://github.com/shibukawa/oidcld/releases/latest/download/$archive" -OutFile $archive
-    Expand-Archive -Path $archive -DestinationPath . -Force
-    Add-Content -Path $env:GITHUB_PATH -Value $PWD
+oidc:
+  iss: "https://oidc.localhost:8443"
+  pkce_required: true
+  login_ui:
+    env_title: "Local Compose"
+    info_markdown_file: "./login-info.md"
+  cors: true
+
+console:
+  port: "18889"
+  bind_address: "127.0.0.1"
+
+certificate_authority:
+  ca_dir: "./tls"
+  domains:
+    - "oidc.localhost"
+    - "app.localhost"
+    - "app2.localhost"
 ```
 
-After these steps, run `oidcld --help` (Unix) or `./oidcld.exe --help` (Windows).
+This mode is the basis for the full-stack sample described below.
 
-### 2. Docker Mode and Standard OpenID Connect
+## Integrated Compose Sample
 
-Run oidcld and your SPA/API in containers. Reproducible environment for teams & CI.
+The repository root [`compose.yaml`](/Users/shibukawayoshiki/.codex/worktrees/7974/oidcld/compose.yaml) and [`examples/reverseproxy/config/oidcld.yaml`](/Users/shibukawayoshiki/.codex/worktrees/7974/oidcld/examples/reverseproxy/config/oidcld.yaml) demonstrate the 0.2 integrated topology:
+
+- One HTTPS listener on container port `443`, exposed as `https://*.localhost:8443`
+- One separate Developer Console and metadata companion listener on `http://localhost:18889`
+- `app.localhost` reverse proxies an upstream-built frontend and `/api/*` backend
+- `app2.localhost` serves static files directly from OIDCLD and maps `/apimock/*` to OpenAPI mocks
+- The local CA persists in the `oidcld-managed-ca` volume, so the root CA remains stable across restarts while the volume exists
+
+Start it with:
 
 ```bash
-docker pull ghcr.io/shibukawa/oidcld
+docker compose up --build
 ```
 
-```mermaid
-flowchart TB
-  Browser[Browser SPA Container<br/>:5173 or :80] -->|OIDC Flows| OIDCLDContainer[oidcld Container<br/>:18888]
-  OIDCLDContainer --> Volume[(Mounted oidcld.yaml)]
-```
+Then use:
 
-Key points:
-- Share `oidcld.yaml` via bind mount or COPY for user definition (Other configuration values can be passed via environment variables)
-- Health checks can gate dependent services
-- Same flows as local mode; config reload watch still works if file is mounted
+- OIDC issuer: `https://oidc.localhost:8443`
+- Reverse-proxied frontend: `https://app.localhost:8443`
+- Static-hosted frontend: `https://app2.localhost:8443`
+- Developer Console: `http://localhost:18889/console/`
 
-Example minimal compose service (excerpt):
+The console lets you download the root CA and inspect reverse-proxy routes and request logs. The sample is also documented in [examples/reverseproxy/README.md](examples/reverseproxy/README.md).
 
-```yaml
-services:
-  oidcld:
-    image: ghcr.io/shibukawa/oidcld:latest
-    ports:
-      - "18888:18888"
-    volumes:
-      - ./oidcld.yaml:/app/oidcld.yaml:ro
-    command: ["serve", "--config", "/app/oidcld.yaml"]
-```
+If you cannot rely on wildcard `*.localhost` resolution, use split listener mode:
 
-Usage:
 ```bash
-./oidcld init                # create oidcld.yaml locally
-docker compose up -d         # start stack
-curl http://localhost:18888/health
+./oidcld serve --port 18443 --proxy-port 19080
 ```
 
-### 3. EntraID Compatible Mode (MSAL / Azure-style claims)
+In that mode, `--port` stays the OIDC listener and `--proxy-port` becomes the dedicated reverse-proxy listener. `console.port` still controls the optional third browser-facing port for the Developer Console and metadata companion.
 
-Emulates Azure AD (EntraID) shape for local MSAL integration. Requires HTTPS + fragment response mode.
+## EntraID Compatibility
 
-```mermaid
-flowchart TB
-  MSALApp[MSAL-enabled App<br/>HTTPS] -->|Auth Code + PKCE + fragment| OIDCLDEntra["oidcld (entraid-v2 template)<br/>https://localhost:18443"]
-  OIDCLDEntra --> Claims["Azure-like Claims<br/>(oid, tid, preferred_username, upn)"]
-  OIDCLDEntra --> ConfigEntra[(entraid-v2 template yaml)]
-```
+OIDCLD can emulate Azure AD / EntraID behavior for MSAL-driven local development.
 
-Key points:
-- Use `./oidcld init --template entraid-v2` to scaffold
-- Forces `nonce_required` and appropriate issuer format
-- Provides Azure-style claim set (e.g. `oid`, `tid`, `preferred_username`)
-- Defaults single-audience `aud` claims to a string for closer EntraID compatibility; set `oidcld.aud_claim_format: array` if you need array output
-- Serves Microsoft-style v2 discovery and endpoint aliases such as `/{tenant}/v2.0/.well-known/openid-configuration` and `/{tenant}/oauth2/v2.0/authorize`
-- Accepts EntraID v2 tenant aliases `common`, `organizations`, `customers`, and `contoso.onmicrosoft.com`, and also accepts tenantless v2 paths such as `/v2.0/.well-known/openid-configuration`
-- The same alias-tenant and tenantless behavior is also available in EntraID v1 mode, using the v1 path shape without the `v2.0` segment
-- Startup logs compact EntraID endpoint output with `{tenant}` placeholders, tenantless requests emit warnings, and `/health` requests stay out of access logs
-- HTTPS mandatory for MSAL libraries
+- Use `./oidcld init --template entraid-v2` to scaffold an EntraID-flavored config
+- EntraID modes set the appropriate issuer shape and Azure-style claim layout
+- `aud_claim_format: string` remains the default for single-audience EntraID-style output
+- Microsoft-style aliases such as `/{tenant}/v2.0/.well-known/openid-configuration` are supported
+- HTTPS is required for realistic MSAL browser testing
 
-Quick start:
+Minimal example:
+
 ```bash
 ./oidcld init --template entraid-v2
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
 curl -k https://localhost:18443/.well-known/openid-configuration
 ```
 
-Troubleshooting:
-- `oidcld init` finishes but no `oidcld.yaml` is created (v0.1.2 only) → upgrade to a newer release; as a workaround run non-interactive mode: `oidcld init oidcld.yaml --template standard`
-- MSAL error about insecure origins → ensure HTTPS + trusted cert (mkcert install)
-- Missing refresh token → include `offline_access` scope & enable refresh in config
-- Need Azure-style single-string `aud` output across all flows → keep the default `oidcld.aud_claim_format: string`; switch to `array` only when a client explicitly expects JSON array output
+## Configuration Notes
+
+OIDCLD 0.2 uses the current config model:
+
+- `oidc:` is the OIDC / IdP section
+- `access_filter:` is a top-level section
+- `oidc.cors` configures CORS for IdP endpoints
+- `reverse_proxy.hosts[].cors` configures CORS for reverse-proxy hosts
+- `console`, `certificate_authority`, and `reverse_proxy` are top-level sections
+
+If you are migrating from 0.1.x, read [COMPATIBILITY.md](COMPATIBILITY.md) before reusing an older config file.
 
 ## CLI Summary
 
-Commands for local development and testing. MCP is intentionally omitted here.
+- `oidcld init`: scaffold a config from a template
+- `oidcld serve`: start the runtime
+- `oidcld serve --proxy-port <port>`: split OIDC and reverse proxy onto separate browser-facing listeners
+- `oidcld health`: probe readiness / liveness
+- `oidcld mcp`: run the MCP server mode
 
-- `oidcld init`: Initialize configuration from a template
-  - Flags: `--template standard|entraid-v1|entraid-v2`, `--tenant-id`, `--https`, `--autocert`, `--acme-server`, `--domains`, `--email`, `--port`, `--issuer`, `--overwrite`
-
-- `oidcld serve`: Start the OpenID Connect server
-  - Flags: `--config oidcld.yaml`, `--port`, `--http-readonly-port`, `--watch`, `--cert-file`, `--key-file`, `--verbose`
-  - Notes: HTTP defaults to port `18888`. HTTPS defaults to port `18443`. In HTTPS mode, `--http-readonly-port` defaults to `18888` for discovery/JWKS/health only. `serve` listeners also enable the local access filter by default: requests without `Forwarded`/`X-Forwarded-For` must come from loopback or local private space (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`), and forwarded requests are rejected unless `oidcld.access_filter.max_forwarded_hops` is raised from its default `0`. When `--port` is specified and the issuer host is local (`localhost`/loopback), the issuer port is synchronized to the same port.
-
-- `oidcld health`: Probe server health
-  - Flags: `--url`, `--port`, `--config`, `--timeout`
-  - Notes: If `--url` is omitted, it auto-detects from config. In container setups with `OIDCLD_CONFIG`, it dials localhost and skips TLS verification for self-signed certs.
+See [docs/config.md](docs/config.md) for full flags, env vars, defaults, and runtime behavior.
 
 ## Security Limitations
 
-This project is for development/testing only. Do not use in production.
+OIDCLD deliberately trades security strictness for local development speed.
 
-- Accepts any `client_id`: There is no client registration or allowlist.
-- Redirect URIs are not whitelisted: The requested `redirect_uri` is permitted dynamically for development convenience.
-- Client secrets are not required/enforced: Suitable only for local testing.
-- Ephemeral signing keys: RSA keys are generated on startup and not persisted; tokens from previous runs will not validate after restart.
-- Local-only defaults: `serve` blocks non-local peers and any request carrying `Forwarded` / `X-Forwarded-For` unless you loosen `oidcld.access_filter`.
-- Permissive CORS/discovery defaults: CORS and discovery are configured to ease local SPA development; narrow them in config if needed.
+- `client_id` values are not allowlisted
+- `redirect_uri` values are accepted dynamically
+- client secrets are not enforced
+- signing keys are generated on startup and not persisted
+- local-only access rules are applied by `access_filter`
+- permissive CORS defaults exist to simplify SPA development
 
-These trade-offs are deliberate to maximize developer ergonomics in local environments.
+These behaviors are intentional for development and testing, not production use.
 
 ## Documentation
 
-Extended docs (kept out of this top-level README for brevity):
-
-- AI-oriented repository summary: [llms.txt](llms.txt)
-- Configuration Guide: [docs/config.md](docs/config.md)
-- Other OAuth/OIDC Flows: [docs/otherflows.md](docs/otherflows.md)
-
-See examples under `examples/` for concrete integration setups (React/MSAL, Vue, device/client credentials, autocert, etc.).
-
-#### HTTPS Configuration
-
-MSAL libraries require HTTPS for security. There are two options to configure OIDCLD with HTTPS support:
-
-
-**Option 1: Use certificate files**
-
-You can use mkcert to create certificates:
-
-```bash
-# Generate certificates with mkcert
-brew install mkcert  # macOS
-mkcert -install
-mkcert localhost 127.0.0.1 ::1
-
-# Start OIDCLD with HTTPS
-./oidcld --cert-file localhost.pem --key-file localhost-key.pem
-```
-
-When HTTPS is active, oidcld also keeps discovery, JWKS, and health reachable on a restricted HTTP companion listener. The default HTTPS port is `18443`, and the companion HTTP port defaults to `18888`. Set `--http-readonly-port off` to disable it. The same `oidcld.access_filter` rules apply to both the HTTPS listener and the HTTP metadata companion.
-
-**Option 2: Use managed self-signed TLS in Docker Compose**
-
-The following sample uses OIDCLD's managed development CA and persists it in a Docker volume so the same root CA and key material are reused across restarts until the volume is removed.
-
-```yaml:compose.yaml
-services:
-  oidc.localhost:
-    # image: oidcld:local
-    build: .
-    # image: ghcr.io/shibukawa/oidcld:latest
-    ports:
-      - "8443:443"     # HTTPS listener for oidc.localhost and app.localhost
-      - "18889:18889"  # Developer Console + HTTP metadata companion
-    volumes:
-      - ./examples/reverseproxy/config:/app/config:ro
-      - oidcld-managed-ca:/app/tls
-    environment:
-      - OIDCLD_CONFIG=/app/config/oidcld.yaml
-    command: ["serve", "--config", "/app/config/oidcld.yaml", "--port", "443"]
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18889"]
-      interval: 30s
-      timeout: 10s
-      start_period: 5s
-      retries: 3
-    restart: unless-stopped
-
-  app.localhost:
-    build:
-      context: ./examples/azure-msal-browser-react
-      dockerfile: Dockerfile
-      args:
-        VITE_OIDC_AUTHORITY: "https://oidc.localhost:8443"
-        VITE_OIDC_CLIENT_ID: "test-client-id"
-        VITE_OIDC_REDIRECT_URI: "https://app.localhost:8443/redirect"
-        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "https://app.localhost:8443/"
-        VITE_OIDC_SCOPES: "openid,profile,email,offline_access,User.Read"
-    depends_on:
-      oidc.localhost:
-        condition: service_healthy
-    restart: unless-stopped
-
-volumes:
-  oidcld-managed-ca:
-```
-
-With this sample, the browser-facing entrypoint for the React app is `https://app.localhost:8443/`. OIDCLD terminates TLS for both `oidc.localhost` and `app.localhost` on the same HTTPS listener, then reverse proxies `app.localhost` traffic to the internal frontend container. Logging out from the React app returns to `https://app.localhost:8443/`. If the provider lands on the logout success page first, oidcld now shows a short success message and automatically redirects back after a few seconds. The root CA can be downloaded from `http://localhost:18889/console/`, and the Developer Console also shows the reverse proxy configuration and request log while the `oidcld-managed-ca` volume remains stable.
-
-
-#### MSAL Configuration for OIDCLD
-
-```typescript
-import { PublicClientApplication } from '@azure/msal-browser';
-
-const msalConfig = {
-  auth: {
-    clientId: 'your-azure-app-id',
-    authority: 'https://localhost:18443',  // HTTPS required
-    redirectUri: 'https://localhost:3000/callback',
-    postLogoutRedirectUri: 'https://localhost:3000/'
-  },
-  cache: {
-    cacheLocation: 'localStorage',
-    storeAuthStateInCookie: false,
-  }
-};
-
-const msalInstance = new PublicClientApplication(msalConfig);
-
-// Login request
-const loginRequest = {
-  scopes: ['openid', 'profile', 'email'],
-  extraScopesToConsent: ['offline_access']  // For refresh tokens
-};
-```
+- [Configuration Guide](docs/config.md)
+- [0.1.x to 0.2 Compatibility](COMPATIBILITY.md)
+- [Other OAuth / OIDC Flows](docs/otherflows.md)
+- [examples/reverseproxy/README.md](examples/reverseproxy/README.md)
 
 ## License
 

@@ -128,6 +128,9 @@ reverse_proxy:
 - `gateway` は `target_url` と `openapi_file` route の前段で self-issued Bearer JWT を検証し、proxy 時に OIDCLD 発行 JWT を再署名して upstream に渡せます
 - `openapi_file` は設定ファイル相対で解決し、起動時に `kin-openapi` で読み込み・検証します
 - `mock.prefer_examples` が true の場合は example を優先し、example がない場合だけ schema から最小レスポンスを生成します
+- `oidcld serve --proxy-port <port>` を使うと、browser-facing の reverse-proxy listener を OIDC listener から分離できます
+- split listener mode では、明示された `reverse_proxy.hosts[].host` はすべて同じ scheme である必要があります
+- split listener mode では、`reverse_proxy.hosts[].host` に明示portを書く場合は `--proxy-port` と一致している必要があります。port を省略した host は fallback として扱われます
 
 #### 7. 自動証明書 (`autocert`)
 ```yaml
@@ -160,6 +163,9 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 
 ## CLI フラグ
 `init`, `serve`, `health` コマンドは README を参照。
+
+- `oidcld serve --proxy-port <port>` を指定すると、OIDC listener と reverse-proxy listener を別ポートで起動します
+- `--port` は引き続き OIDC listener、`--proxy-port` は reverse-proxy listener、`console.port` は Developer Console / metadata companion listener を表します
 
 ## 環境変数
 | 変数 | 説明 | 現在の実装状況 |
@@ -203,6 +209,18 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 | 手動 HTTPS | SPA セキュアオリジン | cert/key 指定 |
 | mkcert | ブラウザ信頼 | 手動 HTTPS の一形態 |
 | ACME | ライフサイクル再現 | autocert + env |
+
+## Split Listener Mode
+
+OIDC と reverse proxy を別ポートでブラウザ公開したい場合は `oidcld serve --proxy-port <port>` を使います。
+
+- `--port` は引き続き OIDC listener
+- `--proxy-port` は reverse-proxy listener
+- `console.port` は Developer Console / metadata companion listener
+- OIDC 側の scheme は `oidc.iss` と manual TLS / autocert 設定から決まります
+- reverse proxy 側の scheme は `reverse_proxy.hosts[].host` から決まります
+- OIDC HTTP + proxy HTTP、OIDC HTTPS + proxy HTTP、OIDC HTTP + proxy HTTPS、OIDC HTTPS + proxy HTTPS を選べます
+- split mode では reverse-proxy host に `http://` と `https://` を混在させることはできません
 
 ## 初期化ウィザードフロー (概要)
 1. テンプレ選択 (standard / entraid-v1 / entraid-v2)

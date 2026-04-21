@@ -4,9 +4,12 @@ Compact guidance for AI systems working with this repository.
 
 ## Project
 
-- OIDCLD is a fake OpenID Connect identity provider for local development and testing.
-- It is not a production identity provider.
-- It favors local ergonomics: in-memory storage, click-to-login users, and a single YAML config.
+- OIDCLD is a local development edge platform that combines:
+  - an OIDC / EntraID-compatible identity provider
+  - managed local TLS / certificate-authority tooling
+  - reverse proxy, static hosting, OpenAPI mock APIs, and a developer console
+- It started as a fake OpenID Connect IdP and is still for development / testing only.
+- It is not a production identity provider, reverse proxy, or certificate authority.
 
 ## Capabilities
 
@@ -15,10 +18,17 @@ Compact guidance for AI systems working with this repository.
 - Device Flow
 - Refresh token support
 - RP-initiated logout support
-- OpenID Connect discovery and JWKS endpoints
+- OIDC discovery and JWKS endpoints
 - Optional EntraID-compatible issuer and claim shape modes
 - In-memory users with click-to-login UX instead of passwords
-- Optional `/login` environment banner and Markdown info panel for environment-specific notes
+- Optional `/login` environment banner and Markdown info panel
+- Managed local development CA with downloadable root certificate and install / uninstall scripts
+- Shared HTTPS termination for `oidc.localhost`, `app.localhost`, and `app2.localhost`
+- Virtual host and path routing via `reverse_proxy.hosts[]`
+- Upstream proxying for frontend and API routes
+- Static hosting with SPA fallback
+- OpenAPI-backed mock responses
+- Reverse-proxy request logs in the Developer Console
 
 ## Commands
 
@@ -26,55 +36,66 @@ Compact guidance for AI systems working with this repository.
   - Generates `oidcld.yaml` from `standard`, `entraid-v1`, or `entraid-v2` templates.
 
 - `oidcld serve`
-  - Default HTTP port: `18888`.
-  - Default HTTPS port: `18443`.
+  - Default HTTP port: `18888`
+  - Default HTTPS port: `18443`
   - In HTTPS mode, `--http-readonly-port` defaults to `18888` and exposes discovery, JWKS, and health only.
+  - `--proxy-port` optionally splits reverse-proxy traffic onto a dedicated browser-facing listener.
 
 - `oidcld health`
   - If `--url` is omitted, it auto-detects the target from config.
-  - In container-style setups where `OIDCLD_CONFIG` is set, health checks dial `localhost` and allow self-signed/local TLS.
+  - In container-style setups where `OIDCLD_CONFIG` is set, health checks dial `localhost` and allow self-signed / local TLS.
+
+- `oidcld mcp`
+  - Starts the MCP server mode.
 
 ## Runtime
 
-- Default config file name: `oidcld.yaml`.
-- `serve` enables a local access filter by default.
-- Requests without forwarded headers must come from loopback or RFC1918 ranges.
-- Requests with `Forwarded` or `X-Forwarded-For` are rejected unless `oidcld.access_filter.max_forwarded_hops` is raised.
-- Signing keys are generated in memory at startup and are not persisted.
-- Tokens from a previous run will not validate after restart.
-- This repository supports HTTP, manual HTTPS, and autocert-based HTTPS.
+- Default config file name: `oidcld.yaml`
+- `serve` enables a local access filter by default
+- Requests without forwarded headers must come from loopback or RFC1918 / local private ranges
+- Requests with `Forwarded` or `X-Forwarded-For` are rejected unless `access_filter.max_forwarded_hops` is raised
+- Signing keys are generated in memory at startup and are not persisted
+- Tokens from a previous run will not validate after restart
+- HTTPS can be provided by manual TLS files, `autocert`, or the managed development CA path
+- When `--proxy-port` is used, OIDC and reverse-proxy listeners can choose HTTP or HTTPS independently
 
 ## Config
 
 Primary file: `oidcld.yaml`
 
-Top-level sections:
+Current top-level sections:
 
-1. `oidcld`
-2. `entraid`
-3. `cors`
-4. `autocert`
-5. `users`
+1. `access_filter`
+2. `oidc`
+3. `console`
+4. `certificate_authority`
+5. `entraid`
+6. `autocert`
+7. `reverse_proxy`
+8. `users`
 
 ```yaml
-oidcld:
-  iss: "http://localhost:18888"
-  pkce_required: false
-  nonce_required: false
+access_filter:
+  enabled: true
+  extra_allowed_ips: []
+  max_forwarded_hops: 0
+
+oidc:
+  iss: "https://oidc.localhost:8443"
+  pkce_required: true
+  nonce_required: true
   expired_in: 3600
   aud_claim_format: "string"
   valid_scopes:
-    - "admin"
-    - "read"
-    - "write"
-  access_filter:
-    enabled: true
-    extra_allowed_ips: []
-    max_forwarded_hops: 0
+    - "openid"
+    - "profile"
+    - "email"
+    - "offline_access"
+    - "User.Read"
   login_ui:
-    env_title: "Staging"
-    accent_color: "#D97A00"
-    info_markdown_file: "./docs/login-links.staging.md"
+    env_title: "Compose Sample"
+    accent_color: "#2563EB"
+    info_markdown_file: "./login-info.md"
   refresh_token_enabled: true
   refresh_token_expiry: 86400
   end_session_enabled: true
@@ -82,22 +103,24 @@ oidcld:
   verbose_logging: false
   tls_cert_file: ""
   tls_key_file: ""
+  cors: true
+
+console:
+  port: "18889"
+  bind_address: "127.0.0.1"
+
+certificate_authority:
+  ca_dir: "./tls"
+  domains:
+    - "oidc.localhost"
+    - "app.localhost"
+    - "app2.localhost"
+  ca_cert_ttl: "87600h"
+  leaf_cert_ttl: "720h"
 
 entraid:
   tenant_id: "12345678-1234-1234-1234-123456789abc"
   version: "v2"
-
-  cors:
-    origins:
-      - "http://localhost:3000"
-    methods:
-      - "GET"
-      - "POST"
-      - "OPTIONS"
-    headers:
-      - "Content-Type"
-      - "Authorization"
-      - "Accept"
 
 autocert:
   enabled: false
@@ -109,111 +132,140 @@ autocert:
   staging: false
   renewal_threshold: 1
 
+reverse_proxy:
+  log_retention: 200
+  ignore_log_paths:
+    - "/health"
+  hosts:
+    - host: "https://app.localhost"
+      cors: true
+      routes:
+        - path: "/api"
+          target_url: "http://127.0.0.1:3000"
+        - path: "/"
+          target_url: "http://127.0.0.1:8080"
+    - host: "https://app2.localhost"
+      cors: true
+      routes:
+        - path: "/apimock"
+          openapi_file: "./openapi/mock.yaml"
+        - path: "/"
+          static_dir: "./dist"
+          spa_fallback: true
+
 users:
   admin:
     display_name: "Administrator"
     extra_valid_scopes:
-      - "admin"
+      - "User.Read"
     extra_claims:
       email: "admin@example.com"
       role: "admin"
 ```
 
-- `oidcld.iss` is the issuer URL.
-- `aud_claim_format` controls whether a single `aud` claim is emitted as a string or array.
-- `access_filter` is important in local and container setups because it limits who can reach the server.
-- `login_ui` affects the `/login` page only.
-- `login_ui.accent_color` must be `#RRGGBB`; if omitted and `env_title` is set, oidcld generates a stable readable color from `env_title`.
-- `login_ui.info_markdown_file` is resolved relative to the config file when not absolute and is re-read on each `/login` request.
-- `autocert.acme_server` is the YAML field name even when environment variables use the term `DIRECTORY_URL`.
-- `users` is a map keyed by username-like identifiers, with per-user claims and extra scopes.
+- `oidc` is the IdP section; old top-level `oidcld` is legacy and rejected
+- `access_filter` is top-level in 0.2; it is no longer nested under the IdP section
+- top-level `cors` is legacy and rejected; use `oidc.cors` or `reverse_proxy.hosts[].cors`
+- `aud_claim_format` controls whether a single `aud` claim is emitted as a string or array
+- `login_ui` affects the `/login` page only
+- `certificate_authority.domains` covers hosts for managed development certificates
+- `reverse_proxy.hosts[]` is the virtual-host table; each route must choose exactly one of `target_url`, `static_dir`, or `openapi_file`
+- In split listener mode, all explicit `reverse_proxy.hosts[].host` values must use one scheme and any explicit host port must match `--proxy-port`
 
-    ## Compose
+## Compose
 
-The repository root `compose.yaml` defines three services:
+The repository root `compose.yaml` defines a full integrated sample:
 
-- `myencrypt.localhost`
-  - Local ACME server used for development certificates.
-  - Exposes host port `14000` to container port `80`.
-  - Persists data in the `myencrypt-data` volume.
+- `app2-static-builder`
+  - Builds a second frontend bundle for `app2.localhost`
+  - Writes static output to the `app2-static-dist` volume
 
 - `oidc.localhost`
-  - Builds OIDCLD from the current repository.
-  - Binds `./examples/reverseproxy/config` into the container read-only.
-  - Exposes `18889:18889` for the Developer Console and HTTP metadata companion listener.
-  - Exposes `8443:443` for the shared HTTPS listener used by `oidc.localhost` and `app.localhost`.
-  - Starts with:
-    - `serve --config /app/config/oidcld.yaml --port 443`
-  - Health check uses:
-    - `oidcld health --url http://localhost:18889`
+  - Builds OIDCLD from the current repository
+  - Binds `./examples/reverseproxy/config` into the container read-only
+  - Mounts `app2-static-dist` for static hosting
+  - Mounts `oidcld-managed-ca` for persistent local CA state
+  - Exposes `8443:443` for the shared HTTPS listener used by `oidc.localhost`, `app.localhost`, and `app2.localhost`
+  - Exposes `18889:18889` for the Developer Console and HTTP metadata companion listener
+  - Starts with `serve --config /app/config/oidcld.yaml --port 443`
+  - Health check uses `oidcld health --url http://localhost:18889`
 
-- `app.localhost`
-  - Sample frontend container built from `examples/azure-msal-browser-react`.
-  - Is only reachable inside the Docker network on port `80`.
-  - Depends on `oidc.localhost` becoming healthy.
+- `app-frontend`
+  - Sample frontend container built from `examples/azure-msal-browser-react`
+  - Is reachable through OIDCLD at `https://app.localhost:8443`
 
-- HTTPS traffic for the OIDC server comes in on `https://oidc.localhost:8443`.
-- HTTPS traffic for the sample frontend comes in on `https://app.localhost:8443` and is reverse proxied by OIDCLD.
-- HTTP on `http://localhost:18889` is a restricted metadata companion endpoint plus the Developer Console, not a full plaintext OIDC surface.
+- `demo-api`
+  - Sample backend container for `/api/*`
+
+- Browser-facing TLS traffic:
+  - `https://oidc.localhost:8443` for the issuer
+  - `https://app.localhost:8443` for the reverse-proxied frontend and `/api/*`
+  - `https://app2.localhost:8443` for static hosting and `/apimock/*`
+
+- Plain HTTP on `http://localhost:18889` is the Developer Console plus metadata companion, not a full plaintext app surface
 
 ## Environment
 
 Environment variables currently consumed by the implementation:
 
 - `OIDCLD_VERBOSE`
-  - Enables verbose logging for `serve`.
+  - Enables verbose logging for `serve`
 
 - `OIDCLD_CONFIG`
-  - Used as a runtime convention in container examples.
-  - Important for `health` auto-detection behavior in container-style setups.
+  - Used as a runtime convention in container examples
+  - Important for `health` auto-detection behavior in container-style setups
 
 - `OIDCLD_ENV_TITLE`
-  - Overrides `oidcld.login_ui.env_title`.
+  - Overrides `oidc.login_ui.env_title`
 
 - `OIDCLD_ENV_COLOR`
-  - Overrides `oidcld.login_ui.accent_color`.
+  - Overrides `oidc.login_ui.accent_color`
 
 - `OIDCLD_ENV_MARKDOWN_FILE`
-  - Overrides `oidcld.login_ui.info_markdown_file`.
+  - Overrides `oidc.login_ui.info_markdown_file`
 
 - `OIDCLD_ACME_DIRECTORY_URL`
-  - Overrides `autocert.acme_server`.
+  - Overrides `autocert.acme_server`
 
 - `OIDCLD_ACME_EMAIL`
-  - Overrides autocert email.
+  - Overrides `autocert.email`
 
 - `OIDCLD_ACME_DOMAIN`
-  - Comma-separated domain list for autocert.
+  - Comma-separated domain list for `autocert.domains`
 
 - `OIDCLD_ACME_CACHE_DIR`
-  - Overrides autocert cache directory.
+  - Overrides `autocert.cache_dir`
 
 - `OIDCLD_ACME_AGREE_TOS`
-  - Enables Terms of Service agreement for autocert when set to `true`.
+  - Enables Terms of Service agreement for autocert when set to `true`
 
 Documented in repository docs but not directly read by the current Go entrypoints:
 
 - `PORT`
-  - Treat this as documentation drift; prefer explicit CLI flags such as `oidcld serve --port ...`.
+  - Prefer explicit CLI flags such as `oidcld serve --port ...`
 
-Present in compose examples but not parsed by the current `internal/config.LoadConfig` implementation:
+Present in older examples or docs but not parsed by the current `internal/config.LoadConfig` implementation:
 
 - `OIDCLD_ACME_INSECURE_SKIP_VERIFY`
 - `OIDCLD_ACME_RENEWAL_THRESHOLD`
 
-## Source of truth
+## Source Of Truth
 
 - `README.md`
+- `README.ja.md`
+- `COMPATIBILITY.md`
 - `docs/config.md`
 - `compose.yaml`
 - `internal/config/config.go`
 - `main.go`
 - `serve.go`
 
-## Guidance constraints
+## Guidance Constraints
 
-- Do not present OIDCLD as production-ready.
-- Do not assume persistent signing keys or client registration.
-- Do not assume every variable seen in `compose.yaml` is implemented.
-- When explaining HTTPS mode, mention the restricted HTTP companion listener.
-- When explaining access, mention the default local access filter.
+- Do not present OIDCLD as production-ready
+- Do not assume persistent signing keys, client registration, or redirect URI allowlists
+- Do not assume every environment variable seen in old docs or examples is implemented
+- When explaining 0.2 config, use `oidc`, top-level `access_filter`, and non-legacy CORS placement
+- When explaining HTTPS mode, mention the restricted HTTP metadata companion listener
+- When explaining Compose, describe OIDCLD as both IdP and edge router
+- When discussing migration, point to `COMPATIBILITY.md`

@@ -15,6 +15,7 @@ var (
 	ErrAutocertConflictProvidedFiles = fmt.Errorf("autocert is configured and automatic autocert start is available; do not provide TLS cert/key files when using autocert")
 	ErrAutocertNoCertsUnavailable    = fmt.Errorf("autocert configured but no cert/key provided and automatic autocert start is unavailable")
 	ErrAdminConsolePortConflict      = fmt.Errorf("admin console port conflicts with an existing listener")
+	ErrProxyPortConflict             = fmt.Errorf("proxy listener port conflicts with an existing listener")
 	ErrManualTLSFilesIncomplete      = fmt.Errorf("both TLS certificate and key files are required for manual TLS")
 )
 
@@ -22,6 +23,7 @@ var (
 type ServeCmd struct {
 	Config           string `short:"c" help:"Configuration file path" default:"oidcld.yaml"`
 	Port             string `short:"p" help:"Port to listen on (default: 18888 for HTTP, 18443 for HTTPS)" default:""`
+	ProxyPort        string `name:"proxy-port" help:"Optional dedicated reverse proxy listener port. When omitted, OIDC and reverse proxy share the main listener." default:""`
 	HTTPReadOnlyPort string `name:"http-readonly-port" help:"Deprecated. HTTP metadata companion now shares the Developer Console listener." default:""`
 	Watch            bool   `short:"w" help:"Watch configuration file for changes and reload automatically"`
 	CertFile         string `help:"Path to TLS certificate file (for HTTPS)"`
@@ -39,10 +41,11 @@ func (cmd *ServeCmd) Run() error {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	effectivePort := resolveServePort(cmd.Port, shouldUseHTTPSByDefault(cfg, cmd.CertFile, cmd.KeyFile))
+	splitProxy := strings.TrimSpace(cmd.ProxyPort) != ""
+	effectivePort := resolveServePort(cmd.Port, shouldUseOIDCHTTPSByDefault(cfg, cmd.CertFile, cmd.KeyFile))
 
 	// Let config package prepare serve-time defaults (autocert may force HTTPS)
-	useHTTPS, _ := cfg.PrepareForServe(&config.ServeOptions{Port: effectivePort, Verbose: cmd.Verbose})
+	useHTTPS, _ := cfg.PrepareForServe(&config.ServeOptions{Port: effectivePort, ProxyPort: strings.TrimSpace(cmd.ProxyPort), Verbose: cmd.Verbose})
 
 	// Auto-enable HTTPS if explicit cert files provided (both) and not already enabled via autocert
 	if !useHTTPS && cmd.CertFile != "" && cmd.KeyFile != "" {
@@ -66,6 +69,14 @@ func (cmd *ServeCmd) Run() error {
 		adminPort = cfg.Console.Port
 		adminBindAddress = cfg.Console.BindAddress
 	}
+	if splitProxy {
+		if adminEnabled && adminPort != "" && adminPort == strings.TrimSpace(cmd.ProxyPort) {
+			return ErrProxyPortConflict
+		}
+		if err := cfg.ValidateSplitListenerPorts(effectivePort, strings.TrimSpace(cmd.ProxyPort), adminPort); err != nil {
+			return err
+		}
+	}
 
 	// If watch mode is enabled, set up file watching
 	if cmd.Watch {
@@ -74,39 +85,102 @@ func (cmd *ServeCmd) Run() error {
 		}
 	}
 
-	// Start server with HTTPS options
-	if useHTTPS {
-		manualCertFile := firstNonEmpty(strings.TrimSpace(cmd.CertFile), strings.TrimSpace(cfg.OIDC.TLSCertFile))
-		manualKeyFile := firstNonEmpty(strings.TrimSpace(cmd.KeyFile), strings.TrimSpace(cfg.OIDC.TLSKeyFile))
-		if (manualCertFile == "") != (manualKeyFile == "") {
-			return ErrManualTLSFilesIncomplete
-		}
+	proxyUseHTTPS, err := shouldUseReverseProxyHTTPS(cfg, strings.TrimSpace(cmd.ProxyPort))
+	if err != nil {
+		return err
+	}
 
+	// Start server with HTTPS options
+	if !splitProxy {
+		if useHTTPS {
+			manualCertFile := firstNonEmpty(strings.TrimSpace(cmd.CertFile), strings.TrimSpace(cfg.OIDC.TLSCertFile))
+			manualKeyFile := firstNonEmpty(strings.TrimSpace(cmd.KeyFile), strings.TrimSpace(cfg.OIDC.TLSKeyFile))
+			if (manualCertFile == "") != (manualKeyFile == "") {
+				return ErrManualTLSFilesIncomplete
+			}
+
+			if adminEnabled && adminPort != "" && adminPort == effectivePort {
+				return ErrAdminConsolePortConflict
+			}
+
+			// If autocert is configured but server package doesn't provide an autocert starter,
+			// attempt to start with provided cert/key. If none provided, return helpful error.
+			var mainRunner func() error
+			if cfg.Autocert != nil && cfg.Autocert.Enabled {
+				// If server supports autocert, prefer it — but error if user also provided cert/key.
+				if srv.SupportsAutocert() {
+					if manualCertFile != "" || manualKeyFile != "" {
+						return ErrAutocertConflictProvidedFiles
+					}
+					mainRunner = func() error {
+						return srv.StartTLS(effectivePort, "", "")
+					}
+				} else {
+					// Fallback: try using provided cert/key files if available when autocert is configured
+					// but not available in this build.
+					if manualCertFile != "" && manualKeyFile != "" {
+						if err := server.ValidateIssuerMatchesCertificate(cfg.OIDC.Issuer, manualCertFile); err != nil {
+							return err
+						}
+						mainRunner = func() error {
+							return srv.StartTLS(effectivePort, manualCertFile, manualKeyFile)
+						}
+					} else {
+						return ErrAutocertNoCertsUnavailable
+					}
+				}
+			} else {
+				if manualCertFile != "" {
+					if err := server.ValidateIssuerMatchesCertificate(cfg.OIDC.Issuer, manualCertFile); err != nil {
+						return err
+					}
+				}
+				mainRunner = func() error {
+					return srv.StartTLS(effectivePort, manualCertFile, manualKeyFile)
+				}
+			}
+
+			return runServeListeners(mainRunner, adminEnabled, func() error {
+				return srv.StartAdmin(adminBindAddress, adminPort)
+			})
+		}
 		if adminEnabled && adminPort != "" && adminPort == effectivePort {
 			return ErrAdminConsolePortConflict
 		}
+		return runServeListeners(func() error {
+			return srv.Start(effectivePort)
+		}, adminEnabled, func() error {
+			return srv.StartAdmin(adminBindAddress, adminPort)
+		})
+	}
 
-		// If autocert is configured but server package doesn't provide an autocert starter,
-		// attempt to start with provided cert/key. If none provided, return helpful error.
-		var mainRunner func() error
+	manualCertFile := firstNonEmpty(strings.TrimSpace(cmd.CertFile), strings.TrimSpace(cfg.OIDC.TLSCertFile))
+	manualKeyFile := firstNonEmpty(strings.TrimSpace(cmd.KeyFile), strings.TrimSpace(cfg.OIDC.TLSKeyFile))
+	if (manualCertFile == "") != (manualKeyFile == "") {
+		return ErrManualTLSFilesIncomplete
+	}
+	if adminEnabled && adminPort != "" && adminPort == effectivePort {
+		return ErrAdminConsolePortConflict
+	}
+
+	var listeners []func() error
+	if useHTTPS {
+		var oidcRunner func() error
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
-			// If server supports autocert, prefer it — but error if user also provided cert/key.
 			if srv.SupportsAutocert() {
 				if manualCertFile != "" || manualKeyFile != "" {
 					return ErrAutocertConflictProvidedFiles
 				}
-				mainRunner = func() error {
-					return srv.StartTLS(effectivePort, "", "")
+				oidcRunner = func() error {
+					return srv.StartTLSOIDC(effectivePort, "", "")
 				}
 			} else {
-				// Fallback: try using provided cert/key files if available when autocert is configured
-				// but not available in this build.
 				if manualCertFile != "" && manualKeyFile != "" {
 					if err := server.ValidateIssuerMatchesCertificate(cfg.OIDC.Issuer, manualCertFile); err != nil {
 						return err
 					}
-					mainRunner = func() error {
-						return srv.StartTLS(effectivePort, manualCertFile, manualKeyFile)
+					oidcRunner = func() error {
+						return srv.StartTLSOIDC(effectivePort, manualCertFile, manualKeyFile)
 					}
 				} else {
 					return ErrAutocertNoCertsUnavailable
@@ -118,23 +192,33 @@ func (cmd *ServeCmd) Run() error {
 					return err
 				}
 			}
-			mainRunner = func() error {
-				return srv.StartTLS(effectivePort, manualCertFile, manualKeyFile)
+			oidcRunner = func() error {
+				return srv.StartTLSOIDC(effectivePort, manualCertFile, manualKeyFile)
 			}
 		}
+		listeners = append(listeners, oidcRunner)
+	} else {
+		listeners = append(listeners, func() error {
+			return srv.StartOIDC(effectivePort)
+		})
+	}
 
-		return runServeListeners(mainRunner, adminEnabled, func() error {
+	if proxyUseHTTPS {
+		listeners = append(listeners, func() error {
+			return srv.StartTLSReverseProxy(strings.TrimSpace(cmd.ProxyPort), manualCertFile, manualKeyFile)
+		})
+	} else {
+		listeners = append(listeners, func() error {
+			return srv.StartReverseProxy(strings.TrimSpace(cmd.ProxyPort))
+		})
+	}
+	if adminEnabled {
+		listeners = append(listeners, func() error {
 			return srv.StartAdmin(adminBindAddress, adminPort)
 		})
 	}
-	if adminEnabled && adminPort != "" && adminPort == effectivePort {
-		return ErrAdminConsolePortConflict
-	}
-	return runServeListeners(func() error {
-		return srv.Start(effectivePort)
-	}, adminEnabled, func() error {
-		return srv.StartAdmin(adminBindAddress, adminPort)
-	})
+
+	return runConcurrentListeners(listeners...)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -146,7 +230,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func shouldUseHTTPSByDefault(cfg *config.Config, certFile, keyFile string) bool {
+func shouldUseOIDCHTTPSByDefault(cfg *config.Config, certFile, keyFile string) bool {
 	if cfg != nil {
 		if strings.HasPrefix(cfg.OIDC.Issuer, "https://") {
 			return true
@@ -154,11 +238,22 @@ func shouldUseHTTPSByDefault(cfg *config.Config, certFile, keyFile string) bool 
 		if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			return true
 		}
-		if cfg.ReverseProxyUsesHTTPS() {
-			return true
-		}
 	}
 	return certFile != "" && keyFile != ""
+}
+
+func shouldUseReverseProxyHTTPS(cfg *config.Config, proxyPort string) (bool, error) {
+	if strings.TrimSpace(proxyPort) == "" {
+		return false, nil
+	}
+	if cfg == nil {
+		return false, nil
+	}
+	scheme, err := cfg.ReverseProxyListenerScheme()
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(scheme, "https"), nil
 }
 
 func runServeListeners(mainRunner func() error, adminEnabled bool, adminRunner func() error) error {
@@ -174,6 +269,23 @@ func runServeListeners(mainRunner func() error, adminEnabled bool, adminRunner f
 		errCh <- mainRunner()
 	}()
 
+	return <-errCh
+}
+
+func runConcurrentListeners(listeners ...func() error) error {
+	if len(listeners) == 0 {
+		return nil
+	}
+	if len(listeners) == 1 {
+		return listeners[0]()
+	}
+
+	errCh := make(chan error, len(listeners))
+	for _, listener := range listeners {
+		go func(run func() error) {
+			errCh <- run()
+		}(listener)
+	}
 	return <-errCh
 }
 
