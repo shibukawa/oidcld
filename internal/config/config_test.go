@@ -277,6 +277,29 @@ users:
 	assert.Equal(t, filepath.Join(tempDir, "public"), cfg.ReverseProxy.Hosts[0].Routes[0].ResolvedStaticDir())
 }
 
+func TestLoadConfig_NormalizesReverseProxyOpenAPIRelativeToConfig(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "https://api.localhost"
+      routes:
+        - path: "/api"
+          openapi_file: "./openapi/mock.yaml"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.Equal(t, filepath.Join(tempDir, "openapi", "mock.yaml"), cfg.ReverseProxy.Hosts[0].Routes[0].ResolvedOpenAPIFile())
+}
+
 func TestLoadConfig_RejectsReverseProxyHostWithoutScheme(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
@@ -393,6 +416,101 @@ users:
 	_, err = LoadConfig(configPath, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "require an https host")
+}
+
+func TestLoadConfig_RejectsReverseProxySPAFallbackWithoutStaticDir(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "http://app.localhost"
+      routes:
+        - path: "/"
+          target_url: "http://127.0.0.1:3000"
+          spa_fallback: true
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrReverseProxySPAFallbackRequiresStaticDir))
+}
+
+func TestLoadConfig_RejectsReverseProxyGatewayOnStaticRoute(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "http://app.localhost"
+      routes:
+        - path: "/"
+          static_dir: "./public"
+          gateway:
+            required_scopes:
+              - "read"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	_, err = LoadConfig(configPath, false)
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, ErrReverseProxyGatewayNotSupportedForStatic))
+}
+
+func TestLoadConfig_NormalizesReverseProxyGatewayRequiredClaims(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+reverse_proxy:
+  hosts:
+    - host: "http://app.localhost"
+      routes:
+        - path: "/api"
+          target_url: "http://127.0.0.1:3000"
+          gateway:
+            required:
+              scope: "User.Read"
+              aud: "test-client-id"
+            replay_authorization: false
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.True(t, cfg.ReverseProxy.Hosts[0].Routes[0].Gateway.Required.Enabled)
+	assert.Equal(t, "User.Read", cfg.ReverseProxy.Hosts[0].Routes[0].Gateway.Required.Claims["scope"])
+	assert.Equal(t, "test-client-id", cfg.ReverseProxy.Hosts[0].Routes[0].Gateway.Required.Claims["aud"])
+	assert.True(t, cfg.ReverseProxy.Hosts[0].Routes[0].Gateway.ReplayAuthorization != nil)
+	assert.False(t, *cfg.ReverseProxy.Hosts[0].Routes[0].Gateway.ReplayAuthorization)
+}
+
+func TestNormalizeReverseProxyGateway_PromotesDeprecatedFieldsToRequiredClaims(t *testing.T) {
+	gateway := normalizeReverseProxyGateway(&ReverseProxyGateway{
+		RequiredScopes:    []string{"read", "write"},
+		RequiredAudiences: []string{"demo-client"},
+	})
+
+	assert.True(t, gateway.Required.Enabled)
+	scopeClaims, ok := gateway.Required.Claims["scope"].([]string)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"read", "write"}, scopeClaims)
+	assert.Equal(t, "demo-client", gateway.Required.Claims["aud"].(string))
 }
 
 func TestLoadAndSaveConfig(t *testing.T) {

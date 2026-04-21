@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/assert/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/shibukawa/oidcld/internal/config"
 )
 
@@ -134,6 +135,395 @@ func TestReverseProxy_ServesStaticFilesWithSPAFallback(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, res.Code)
 	assert.Contains(t, res.Body.String(), "spa")
+}
+
+func TestReverseProxy_OpenAPIMockReturnsExamplesAndPreferSelections(t *testing.T) {
+	tempDir := t.TempDir()
+	specPath := filepath.Join(tempDir, "mock.yaml")
+	assert.NoError(t, os.WriteFile(specPath, []byte(`openapi: 3.0.3
+info:
+  title: Demo API
+  version: "1.0"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              examples:
+                success:
+                  value:
+                    items:
+                      - id: "one"
+        "404":
+          description: missing
+          content:
+            application/json:
+              examples:
+                missing:
+                  value:
+                    error: "missing"
+`), 0o644))
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:        "/api",
+					OpenAPIFile: specPath,
+					Mock: &config.ReverseProxyMockOptions{
+						PreferExamples: true,
+					},
+					RewritePathPrefix: "/",
+				}},
+			}},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/items", nil)
+	req.Host = "api.localhost"
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, "application/json", res.Header().Get("Content-Type"))
+	assert.Equal(t, `{"items":[{"id":"one"}]}`, res.Body.String())
+
+	preferReq := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/items", nil)
+	preferReq.Host = "api.localhost"
+	preferReq.Header.Set("Prefer", "code=404, example=missing")
+	preferRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(preferRes, preferReq)
+	assert.Equal(t, http.StatusNotFound, preferRes.Code)
+	assert.Equal(t, `{"error":"missing"}`, preferRes.Body.String())
+}
+
+func TestReverseProxy_OpenAPIMockSynthesizesSchemaResponse(t *testing.T) {
+	tempDir := t.TempDir()
+	specPath := filepath.Join(tempDir, "mock.yaml")
+	assert.NoError(t, os.WriteFile(specPath, []byte(`openapi: 3.0.3
+info:
+  title: Demo API
+  version: "1.0"
+paths:
+  /items/{id}:
+    get:
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, enabled]
+                properties:
+                  id:
+                    type: string
+                  enabled:
+                    type: boolean
+`), 0o644))
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:              "/api",
+					OpenAPIFile:       specPath,
+					RewritePathPrefix: "/",
+				}},
+			}},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/items/42", nil)
+	req.Host = "api.localhost"
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, `{"enabled":true,"id":"string"}`, res.Body.String())
+}
+
+func TestReverseProxy_GatewayRequiresValidJWTAndForwardsClaims(t *testing.T) {
+	var forwardedSub string
+	var forwardedScope string
+	var forwardedAuthorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwardedSub = r.Header.Get("X-Oidc-Sub")
+		forwardedScope = r.Header.Get("X-Oidc-Scope")
+		forwardedAuthorization = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:      "/api",
+					TargetURL: upstream.URL,
+					Gateway: &config.ReverseProxyGateway{
+						Required: config.ReverseProxyGatewayRequired{
+							Enabled: true,
+							Claims: map[string]any{
+								"scope": "read",
+								"aud":   "demo-client",
+							},
+						},
+						ForwardClaimsAsHeaders: map[string]string{
+							"sub":   "X-OIDC-Sub",
+							"scope": "X-OIDC-Scope",
+						},
+					},
+				}},
+			}},
+		},
+	})
+
+	unauthorizedReq := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/data", nil)
+	unauthorizedReq.Host = "api.localhost"
+	unauthorizedRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(unauthorizedRes, unauthorizedReq)
+	assert.Equal(t, http.StatusUnauthorized, unauthorizedRes.Code)
+
+	token, err := server.signJWT(jwt.MapClaims{
+		"iss":   "http://localhost:18888",
+		"sub":   "admin",
+		"aud":   []string{"demo-client"},
+		"scope": "read write",
+		"iat":   time.Now().Add(-time.Minute).Unix(),
+		"nbf":   time.Now().Add(-time.Minute).Unix(),
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	assert.NoError(t, err)
+
+	authorizedReq := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/data", nil)
+	authorizedReq.Host = "api.localhost"
+	authorizedReq.Header.Set("Authorization", "Bearer "+token)
+	authorizedRes := httptest.NewRecorder()
+	server.Handler().ServeHTTP(authorizedRes, authorizedReq)
+	assert.Equal(t, http.StatusOK, authorizedRes.Code)
+	assert.Equal(t, "admin", forwardedSub)
+	assert.Equal(t, "read write", forwardedScope)
+	assert.True(t, forwardedAuthorization != "")
+	assert.True(t, forwardedAuthorization != "Bearer "+token)
+}
+
+func TestReverseProxyGatewayEvaluateClaimsReportsMissingScope(t *testing.T) {
+	gateway := &compiledReverseProxyGateway{
+		requiredEnabled: true,
+		requiredClaims: map[string]any{
+			"scope": "User.Read",
+			"aud":   "test-client-id",
+		},
+	}
+
+	check := gateway.evaluateClaims(jwt.MapClaims{
+		"aud":       "test-client-id",
+		"client_id": "test-client-id",
+		"sub":       "admin",
+	})
+
+	assert.False(t, check.allowed())
+	audClaims, ok := check.tokenClaims["aud"].([]string)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"test-client-id"}, audClaims)
+	assert.Equal(t, []string{"User.Read"}, check.missingScopes)
+	assert.Equal(t, []string(nil), check.missingAudiences)
+}
+
+func TestReverseProxyGatewayEvaluateClaimsReportsMissingAudience(t *testing.T) {
+	gateway := &compiledReverseProxyGateway{
+		requiredEnabled: true,
+		requiredClaims: map[string]any{
+			"scope": "User.Read",
+			"aud":   "expected-client",
+		},
+	}
+
+	check := gateway.evaluateClaims(jwt.MapClaims{
+		"aud":   "other-client",
+		"scope": "User.Read",
+	})
+
+	assert.False(t, check.allowed())
+	scopeClaims, ok := check.tokenClaims["scope"].([]string)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"User.Read"}, scopeClaims)
+	audClaims, ok := check.tokenClaims["aud"].([]string)
+	assert.True(t, ok)
+	assert.Equal(t, []string{"other-client"}, audClaims)
+	assert.Equal(t, []string(nil), check.missingScopes)
+	assert.Equal(t, []string{"expected-client"}, check.missingAudiences)
+}
+
+func TestReverseProxy_GatewayCanDisableAuthorizationReplay(t *testing.T) {
+	var forwardedAuthorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwardedAuthorization = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	replayDisabled := false
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:      "/api",
+					TargetURL: upstream.URL,
+					Gateway: &config.ReverseProxyGateway{
+						Required: config.ReverseProxyGatewayRequired{
+							Enabled: true,
+							Claims: map[string]any{
+								"scope": "read",
+							},
+						},
+						ReplayAuthorization: &replayDisabled,
+					},
+				}},
+			}},
+		},
+	})
+
+	token, err := server.signJWT(jwt.MapClaims{
+		"iss":   "http://localhost:18888",
+		"sub":   "admin",
+		"aud":   []string{"demo-client"},
+		"scope": "read write",
+		"iat":   time.Now().Add(-time.Minute).Unix(),
+		"nbf":   time.Now().Add(-time.Minute).Unix(),
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/data", nil)
+	req.Host = "api.localhost"
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, "Bearer "+token, forwardedAuthorization)
+}
+
+func TestReverseProxy_ReplaysOIDCLDAuthorizationWithoutGateway(t *testing.T) {
+	var forwardedAuthorization string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwardedAuthorization = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:      "/api",
+					TargetURL: upstream.URL,
+				}},
+			}},
+		},
+	})
+
+	token, err := server.signJWT(jwt.MapClaims{
+		"iss":   "http://localhost:18888",
+		"sub":   "admin",
+		"aud":   []string{"demo-client"},
+		"scope": "read write",
+		"iat":   time.Now().Add(-time.Minute).Unix(),
+		"nbf":   time.Now().Add(-time.Minute).Unix(),
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/data", nil)
+	req.Host = "api.localhost"
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.True(t, forwardedAuthorization != "")
+	assert.True(t, forwardedAuthorization != "Bearer "+token)
+}
+
+func TestAdminHandler_ReverseProxyConfigIncludesMockAndGatewayMetadata(t *testing.T) {
+	tempDir := t.TempDir()
+	specPath := filepath.Join(tempDir, "mock.yaml")
+	assert.NoError(t, os.WriteFile(specPath, []byte(`openapi: 3.0.3
+info:
+  title: Demo API
+  version: "1.0"
+paths:
+  /items:
+    get:
+      responses:
+        "200":
+          description: ok
+`), 0o644))
+
+	server := createTestServer(&config.Config{
+		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
+		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:              "/api",
+					OpenAPIFile:       specPath,
+					RewritePathPrefix: "/",
+					Mock: &config.ReverseProxyMockOptions{
+						PreferExamples: true,
+						DefaultStatus:  "200",
+					},
+					Gateway: &config.ReverseProxyGateway{
+						Required: config.ReverseProxyGatewayRequired{
+							Enabled: true,
+							Claims: map[string]any{
+								"scope": "read",
+								"aud":   "demo-client",
+							},
+						},
+					},
+				}},
+			}},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/console/api/reverse-proxy", nil)
+	req.RemoteAddr = "127.0.0.1:41234"
+	res := httptest.NewRecorder()
+	server.AdminHandler().ServeHTTP(res, req)
+	assert.Equal(t, http.StatusOK, res.Code)
+
+	var payload adminReverseProxyResponse
+	assert.NoError(t, json.Unmarshal(res.Body.Bytes(), &payload))
+	assert.Equal(t, 1, len(payload.Hosts))
+	assert.Equal(t, 1, len(payload.Hosts[0].Routes))
+	assert.Equal(t, "mock", payload.Hosts[0].Routes[0].RouteType)
+	assert.Equal(t, specPath, payload.Hosts[0].Routes[0].Target)
+	assert.True(t, payload.Hosts[0].Routes[0].GatewayEnabled)
+	assert.Equal(t, map[string]any{"scope": "read", "aud": "demo-client"}, payload.Hosts[0].Routes[0].GatewayRequired)
+	assert.True(t, payload.Hosts[0].Routes[0].GatewayReplayAuthorization)
+	assert.True(t, payload.Hosts[0].Routes[0].MockPreferExamples)
+	assert.Equal(t, "200", payload.Hosts[0].Routes[0].MockDefaultStatus)
 }
 
 func TestReverseProxy_DoesNotShadowReservedOIDCPaths(t *testing.T) {

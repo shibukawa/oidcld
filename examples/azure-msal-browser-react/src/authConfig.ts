@@ -6,6 +6,14 @@ const defaultAuthority = "https://localhost:18888";
 const tenantId = "12345678-1234-1234-1234-123456789abc";
 const defaultRedirectUri = `${browserOrigin}/redirect.html`;
 const defaultPostLogoutRedirectUri = `${browserOrigin}/`;
+const defaultAppMode = "app";
+const defaultAPIBasePath = "/api";
+
+export const appMode = import.meta.env.VITE_APP_MODE || defaultAppMode;
+export const apiBasePath = import.meta.env.VITE_API_BASE_PATH || defaultAPIBasePath;
+export const peerAppURL = import.meta.env.VITE_PEER_APP_URL || "https://app2.localhost:8443/";
+export const appTitle = import.meta.env.VITE_APP_TITLE || "Azure MSAL Browser React Example";
+export const appDescription = import.meta.env.VITE_APP_DESCRIPTION || "OpenID Connect with oidcld Test Identity Provider";
 
 function buildAuthority(authorityValue: string | undefined, defaultTenantId: string): string {
     const configuredAuthority = (authorityValue || defaultAuthority).replace(/\/$/, "");
@@ -87,6 +95,10 @@ export const parsedScopes = envScopes && envScopes.length > 0
 
 export const loginRequest: RedirectRequest = {
     scopes: parsedScopes
+};
+
+export const logoutRequest = {
+    postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri || defaultPostLogoutRedirectUri,
 };
 
 export type DiscoveryDocument = {

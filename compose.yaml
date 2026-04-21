@@ -1,18 +1,51 @@
 services:
+  # Build the app2.localhost static SPA into a shared volume that OIDCLD serves directly.
+  app2-static-builder:
+    image: node:24.1.0-alpine
+    command:
+      - sh
+      - -lc
+      - |
+        rm -rf /tmp/src
+        mkdir -p /tmp/src
+        cp -R /src-ro/. /tmp/src
+        cd /tmp/src
+        npm ci
+        VITE_OIDC_AUTHORITY="https://oidc.localhost:8443" \
+        VITE_OIDC_CLIENT_ID="app2-client-id" \
+        VITE_OIDC_REDIRECT_URI="https://app2.localhost:8443/redirect.html" \
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI="https://app2.localhost:8443/" \
+        VITE_OIDC_SCOPES="openid,profile,email,offline_access,User.Read" \
+        VITE_APP_MODE="app2" \
+        VITE_API_BASE_PATH="/apimock" \
+        VITE_PEER_APP_URL="https://app.localhost:8443/" \
+        VITE_APP_TITLE="app2.localhost" \
+        VITE_APP_DESCRIPTION="Static hosting + OpenAPI mock + API Gateway" \
+        npm run build
+        rm -rf /out/*
+        cp -R dist/. /out/
+    volumes:
+      - ./examples/azure-msal-browser-react:/src-ro:ro
+      - app2-static-dist:/out
+
   # OIDCLD with managed self-signed TLS, reverse proxy, and persistent local CA storage
   oidc.localhost:
     # image: oidcld:local
     build: .
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "8443:443"      # HTTPS listener for oidc.localhost and app.localhost
+      - "8443:443"      # HTTPS listener for oidc.localhost, app.localhost, and app2.localhost
       - "18889:18889"   # Developer Console + HTTP metadata companion
     volumes:
       - ./examples/reverseproxy/config:/app/config:ro
+      - app2-static-dist:/app/app2-dist:ro
       - oidcld-managed-ca:/app/tls
     environment:
       - OIDCLD_CONFIG=/app/config/oidcld.yaml
     command: ["serve", "--config", "/app/config/oidcld.yaml", "--port", "443"]
+    depends_on:
+      app2-static-builder:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18889"]
       interval: 30s
@@ -21,29 +54,33 @@ services:
       retries: 3
     restart: unless-stopped
 
-  # Existing Azure MSAL Browser React Sample (built with nginx)
-  app.localhost:
+  app-frontend:
     build:
       context: ./examples/azure-msal-browser-react
       dockerfile: Dockerfile
       args:
         VITE_OIDC_AUTHORITY: "https://oidc.localhost:8443"
         VITE_OIDC_CLIENT_ID: "test-client-id"
-        VITE_OIDC_REDIRECT_URI: "https://app.localhost:8443/redirect"
-        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "https://app.localhost:8443/"  # Return to the sample app after logout
+        VITE_OIDC_REDIRECT_URI: "https://app.localhost:8443/redirect.html"
+        VITE_OIDC_POST_LOGOUT_REDIRECT_URI: "https://app.localhost:8443/"
         VITE_OIDC_SCOPES: "openid,profile,email,offline_access,User.Read"
+        VITE_APP_MODE: "app"
+        VITE_API_BASE_PATH: "/api"
+        VITE_PEER_APP_URL: "https://app2.localhost:8443/"
+        VITE_APP_TITLE: "app.localhost"
+        VITE_APP_DESCRIPTION: "Nginx upstream + Hono backend + API Gateway"
     depends_on:
       oidc.localhost:
         condition: service_healthy
     restart: unless-stopped
 
-  # Simple reverse-proxied demo API for GET/POST/DELETE log generation
-  api.localhost:
+  demo-api:
     build:
       context: ./examples/docker-demo-api
       dockerfile: Dockerfile
     restart: unless-stopped
 
 volumes:
+  app2-static-dist:
   oidcld-managed-ca:
     driver: local

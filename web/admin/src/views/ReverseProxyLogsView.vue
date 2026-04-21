@@ -100,6 +100,11 @@ const copiedKey = ref<string | null>(null)
 const savedRequestSets = ref<SavedRequestSet[]>([])
 const saveSetName = ref('')
 const savedSetsOpen = ref(false)
+const selectedTokenHeader = ref<{
+  key: string
+  values: string[]
+  claims: Record<string, unknown> | null
+} | null>(null)
 
 const seenEntryIds = new Set<number>()
 let eventSource: EventSource | null = null
@@ -244,6 +249,61 @@ function bodyPreview(body?: CapturedBody) {
 function formatHeaderValue(values?: string[]) {
   return values?.join(', ') ?? ''
 }
+
+function parseAccessTokenClaims(values?: string[]) {
+  const joined = formatHeaderValue(values)
+  if (!joined.toLowerCase().startsWith('bearer ')) {
+    return null
+  }
+  const token = joined.slice(7).trim()
+  const parts = token.split('.')
+  if (parts.length !== 3) {
+    return null
+  }
+
+  try {
+    const payload = parts[1]
+    if (!payload) {
+      return null
+    }
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const decoded = window.atob(padded)
+    return JSON.parse(decoded) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function isAccessTokenHeader(key: string, values?: string[]) {
+  return key.toLowerCase() === 'authorization' && formatHeaderValue(values).toLowerCase().startsWith('bearer ')
+}
+
+function maskedHeaderValue(key: string, values?: string[]) {
+  if (isAccessTokenHeader(key, values)) {
+    return t('accessLogs.accessTokenMasked')
+  }
+  return formatHeaderValue(values)
+}
+
+function openTokenClaims(key: string, values: string[]) {
+  selectedTokenHeader.value = {
+    key,
+    values,
+    claims: parseAccessTokenClaims(values),
+  }
+}
+
+function closeTokenClaims() {
+  selectedTokenHeader.value = null
+}
+
+const selectedTokenClaimsJSON = computed(() => {
+  if (!selectedTokenHeader.value?.claims) {
+    return ''
+  }
+  return JSON.stringify(selectedTokenHeader.value.claims, null, 2)
+})
 
 function sortedHeaderEntries(headers: Record<string, string[]>) {
   return Object.entries(headers).sort(([left], [right]) => left.localeCompare(right))
@@ -776,7 +836,15 @@ watch(
                       <div v-else class="header-list">
                         <div v-for="[key, values] in sortedHeaderEntries(detailOrThrow(entry.id).request.headers)" :key="`request-${key}`" class="header-row">
                           <span class="meta-label">{{ key }}</span>
-                          <code>{{ formatHeaderValue(values) }}</code>
+                          <button
+                            v-if="isAccessTokenHeader(key, values)"
+                            type="button"
+                            class="token-header-button"
+                            @click.stop="openTokenClaims(key, values)"
+                          >
+                            {{ maskedHeaderValue(key, values) }}
+                          </button>
+                          <code v-else>{{ maskedHeaderValue(key, values) }}</code>
                         </div>
                       </div>
                     </section>
@@ -810,6 +878,21 @@ watch(
               </div>
             </article>
           </div>
+        </div>
+
+        <div v-if="selectedTokenHeader" class="token-modal-backdrop" @click="closeTokenClaims">
+          <article class="token-modal" @click.stop>
+            <div class="token-modal-header">
+              <div>
+                <p class="table-label">{{ t('accessLogs.accessTokenTitle') }}</p>
+                <p class="table-helper">{{ selectedTokenHeader.key }}</p>
+              </div>
+              <button type="button" class="copy-button" @click="closeTokenClaims">{{ t('accessLogs.close') }}</button>
+            </div>
+            <p class="table-helper">{{ t('accessLogs.accessTokenRawHeader') }}: {{ t('accessLogs.accessTokenMasked') }}</p>
+            <pre v-if="selectedTokenClaimsJSON" class="code-surface token-claims-json">{{ selectedTokenClaimsJSON }}</pre>
+            <p v-else class="table-helper">{{ t('accessLogs.accessTokenClaimsUnavailable') }}</p>
+          </article>
         </div>
 
         <div v-if="selectedEntries.length > 0" class="proxy-log-selection-bar">
@@ -1265,6 +1348,52 @@ watch(
 
 .header-row code {
   overflow-wrap: anywhere;
+}
+
+.token-header-button {
+  justify-self: start;
+  min-height: 2.2rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(144, 205, 255, 0.28);
+  background: rgba(63, 127, 189, 0.18);
+  color: #d9efff;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.token-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(4, 8, 15, 0.72);
+}
+
+.token-modal {
+  width: min(42rem, 100%);
+  max-height: min(80vh, 42rem);
+  overflow: auto;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(18, 28, 42, 0.98), rgba(10, 16, 26, 0.98));
+  padding: 1rem;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.token-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.token-claims-json {
+  margin-top: 0.75rem;
 }
 
 .meta-grid {

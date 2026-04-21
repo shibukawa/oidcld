@@ -18,33 +18,35 @@ import (
 )
 
 var (
-	ErrAutocertDomainsRequired                = errors.New("autocert.domains is required when autocert is enabled")
-	ErrAutocertEmailRequired                  = errors.New("autocert.email is required when autocert is enabled")
-	ErrAutocertAgreeTOS                       = errors.New("autocert.agree_tos must be true when autocert is enabled")
-	ErrAutocertConflict                       = errors.New("autocert is enabled but TLS cert/key are also configured in oidc config; choose one method")
-	ErrAutocertIssuerHostNotCovered           = errors.New("oidc.iss host is not covered by autocert.domains")
-	ErrCertificateAuthorityDomainsRequired    = errors.New("certificate_authority.domains is required")
-	ErrLegacyOIDCLDConfig                     = errors.New("legacy top-level key 'oidcld' is no longer supported; use 'oidc', 'console', and 'certificate_authority'")
-	ErrLegacyCertificateAuthorityDomainSuffix = errors.New("legacy key 'certificate_authority.domain_suffix' is no longer supported; use 'certificate_authority.domains'")
-	ErrLegacyCertificateAuthorityServerNames  = errors.New("legacy key 'certificate_authority.server_names' is no longer supported; use 'certificate_authority.domains'")
-	ErrLegacyTopLevelCORS                     = errors.New("legacy top-level key 'cors' is no longer supported; use 'oidc.cors' or 'reverse_proxy.hosts[].cors'")
-	ErrAccessFilterNegativeMaxForwardedHops   = errors.New("access_filter.max_forwarded_hops must be >= 0")
-	ErrAccessFilterEmptyAllowedIPEntry        = errors.New("access_filter.extra_allowed_ips contains an empty entry")
-	ErrAccessFilterInvalidAllowedIPEntry      = errors.New("invalid access_filter.extra_allowed_ips entry")
-	ErrLoginUIInvalidAccentColor              = errors.New("oidc.login_ui.accent_color must be a hex color like #RRGGBB")
-	ErrReverseProxyMultipleDefaultHosts       = errors.New("reverse_proxy.hosts[] may contain at most one hostless default virtual host")
-	ErrReverseProxyRouteRequired              = errors.New("reverse_proxy.hosts[].routes must not be empty")
-	ErrReverseProxyRoutePathInvalid           = errors.New("reverse_proxy.hosts[].routes[].path must start with /")
-	ErrReverseProxyRouteTargetRequired        = errors.New("reverse_proxy.hosts[].routes[] must define exactly one of target_url or static_dir")
-	ErrReverseProxyRouteTargetInvalid         = errors.New("reverse_proxy.hosts[].routes[].target_url must be an absolute http/https URL")
-	ErrReverseProxyTLSCertificateKeyRequired  = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file must be provided together")
-	ErrReverseProxyDuplicateHost              = errors.New("reverse_proxy.hosts[].host must be unique")
-	ErrReverseProxyHostAuthorityInvalid       = errors.New("reverse_proxy.hosts[].host must be a valid http:// or https:// URL authority")
-	ErrReverseProxyHostSchemeInvalid          = errors.New("reverse_proxy.hosts[].host must start with http:// or https://")
-	ErrReverseProxyHostNameRequired           = errors.New("reverse_proxy.hosts[].host must include a hostname")
-	ErrReverseProxyHostExtraComponents        = errors.New("reverse_proxy.hosts[].host must not include path, query, fragment, or userinfo")
-	ErrReverseProxyTLSRequiresHTTPSHost       = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file require an https host")
-	ErrReverseProxyRewritePathPrefixInvalid   = errors.New("reverse_proxy.hosts[].routes[].rewrite_path_prefix must start with /")
+	ErrAutocertDomainsRequired                  = errors.New("autocert.domains is required when autocert is enabled")
+	ErrAutocertEmailRequired                    = errors.New("autocert.email is required when autocert is enabled")
+	ErrAutocertAgreeTOS                         = errors.New("autocert.agree_tos must be true when autocert is enabled")
+	ErrAutocertConflict                         = errors.New("autocert is enabled but TLS cert/key are also configured in oidc config; choose one method")
+	ErrAutocertIssuerHostNotCovered             = errors.New("oidc.iss host is not covered by autocert.domains")
+	ErrCertificateAuthorityDomainsRequired      = errors.New("certificate_authority.domains is required")
+	ErrLegacyOIDCLDConfig                       = errors.New("legacy top-level key 'oidcld' is no longer supported; use 'oidc', 'console', and 'certificate_authority'")
+	ErrLegacyCertificateAuthorityDomainSuffix   = errors.New("legacy key 'certificate_authority.domain_suffix' is no longer supported; use 'certificate_authority.domains'")
+	ErrLegacyCertificateAuthorityServerNames    = errors.New("legacy key 'certificate_authority.server_names' is no longer supported; use 'certificate_authority.domains'")
+	ErrLegacyTopLevelCORS                       = errors.New("legacy top-level key 'cors' is no longer supported; use 'oidc.cors' or 'reverse_proxy.hosts[].cors'")
+	ErrAccessFilterNegativeMaxForwardedHops     = errors.New("access_filter.max_forwarded_hops must be >= 0")
+	ErrAccessFilterEmptyAllowedIPEntry          = errors.New("access_filter.extra_allowed_ips contains an empty entry")
+	ErrAccessFilterInvalidAllowedIPEntry        = errors.New("invalid access_filter.extra_allowed_ips entry")
+	ErrLoginUIInvalidAccentColor                = errors.New("oidc.login_ui.accent_color must be a hex color like #RRGGBB")
+	ErrReverseProxyMultipleDefaultHosts         = errors.New("reverse_proxy.hosts[] may contain at most one hostless default virtual host")
+	ErrReverseProxyRouteRequired                = errors.New("reverse_proxy.hosts[].routes must not be empty")
+	ErrReverseProxyRoutePathInvalid             = errors.New("reverse_proxy.hosts[].routes[].path must start with /")
+	ErrReverseProxyRouteTargetRequired          = errors.New("reverse_proxy.hosts[].routes[] must define exactly one of target_url, static_dir, or openapi_file")
+	ErrReverseProxyRouteTargetInvalid           = errors.New("reverse_proxy.hosts[].routes[].target_url must be an absolute http/https URL")
+	ErrReverseProxyTLSCertificateKeyRequired    = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file must be provided together")
+	ErrReverseProxyDuplicateHost                = errors.New("reverse_proxy.hosts[].host must be unique")
+	ErrReverseProxyHostAuthorityInvalid         = errors.New("reverse_proxy.hosts[].host must be a valid http:// or https:// URL authority")
+	ErrReverseProxyHostSchemeInvalid            = errors.New("reverse_proxy.hosts[].host must start with http:// or https://")
+	ErrReverseProxyHostNameRequired             = errors.New("reverse_proxy.hosts[].host must include a hostname")
+	ErrReverseProxyHostExtraComponents          = errors.New("reverse_proxy.hosts[].host must not include path, query, fragment, or userinfo")
+	ErrReverseProxyTLSRequiresHTTPSHost         = errors.New("reverse_proxy.hosts[].tls_cert_file and tls_key_file require an https host")
+	ErrReverseProxyRewritePathPrefixInvalid     = errors.New("reverse_proxy.hosts[].routes[].rewrite_path_prefix must start with /")
+	ErrReverseProxySPAFallbackRequiresStaticDir = errors.New("reverse_proxy.hosts[].routes[].spa_fallback requires static_dir")
+	ErrReverseProxyGatewayNotSupportedForStatic = errors.New("reverse_proxy.hosts[].routes[].gateway is not supported for static_dir routes")
 )
 
 type autocertIssuerHostCoverageError struct {
@@ -1281,9 +1283,20 @@ reverse_proxy:
         - path: "{{.Path}}"{{if .Label}}
           label: "{{.Label}}"{{end}}{{if .TargetURL}}
           target_url: "{{.TargetURL}}"{{end}}{{if .StaticDir}}
-          static_dir: "{{.StaticDir}}"{{end}}
+          static_dir: "{{.StaticDir}}"{{end}}{{if .OpenAPIFile}}
+          openapi_file: "{{.OpenAPIFile}}"{{end}}
           spa_fallback: {{.SPAFallback}}{{if .RewritePathPrefix}}
-          rewrite_path_prefix: "{{.RewritePathPrefix}}"{{end}}{{end}}{{end}}
+          rewrite_path_prefix: "{{.RewritePathPrefix}}"{{end}}{{if .Gateway}}
+          gateway:{{if .Gateway.Required.Enabled}}
+            required:{{if .Gateway.Required.Claims}}{{range $claim, $value := .Gateway.Required.Claims}}
+              {{$claim}}: {{formatYAMLValue $value}}{{end}}{{else}} true{{end}}{{end}}{{if .Gateway.ForwardClaimsAsHeaders}}
+            forward_claims_as_headers:{{range $claim, $header := .Gateway.ForwardClaimsAsHeaders}}
+              {{$claim}}: "{{$header}}"{{end}}{{end}}{{if .Gateway.ReplayAuthorization}}
+            replay_authorization: {{formatBoolPtr .Gateway.ReplayAuthorization}}{{end}}{{end}}{{if .Mock}}
+          mock:
+            prefer_examples: {{.Mock.PreferExamples}}{{if .Mock.DefaultStatus}}
+            default_status: "{{.Mock.DefaultStatus}}"{{end}}{{if .Mock.FallbackContentType}}
+            fallback_content_type: "{{.Mock.FallbackContentType}}"{{end}}{{end}}{{end}}{{end}}
 {{else}}# reverse_proxy:
 #   log_retention: 200
 #   ignore_log_paths:
@@ -1295,10 +1308,18 @@ reverse_proxy:
 #         - path: "/api"
 #           label: "api"
 #           target_url: "http://127.0.0.1:3000"
+#           gateway:
+#             required:
+#               scope: "read"
 #         - path: "/"
 #           label: "frontend"
 #           static_dir: "./web/dist"
 #           spa_fallback: true
+#         - path: "/mock"
+#           label: "mock-api"
+#           openapi_file: "./openapi/mock.yaml"
+#           mock:
+#             prefer_examples: true
 #     -
 #       routes:
 #         - path: "/"
@@ -1315,7 +1336,10 @@ users:{{range $userID, $user := .Users}}
       {{$key}}: {{if eq (printf "%T" $value) "string"}}"{{$value}}"{{else}}{{$value}}{{end}}{{end}}{{end}}{{end}}
 `
 
-	t, err := template.New("config").Parse(tmpl)
+	t, err := template.New("config").Funcs(template.FuncMap{
+		"formatYAMLValue": formatYAMLValue,
+		"formatBoolPtr":   formatBoolPtr,
+	}).Parse(tmpl)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
@@ -1326,6 +1350,31 @@ users:{{range $userID, $user := .Users}}
 	}
 
 	return result.String(), nil
+}
+
+func formatYAMLValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strconv.Quote(typed)
+	case []string:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			parts = append(parts, strconv.Quote(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			parts = append(parts, strconv.Quote(fmt.Sprint(item)))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return strconv.Quote(fmt.Sprint(value))
+	}
+}
+
+func formatBoolPtr(value *bool) bool {
+	return value != nil && *value
 }
 
 // AddUser adds a new user to the configuration

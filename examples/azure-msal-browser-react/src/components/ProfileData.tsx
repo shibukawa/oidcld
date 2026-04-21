@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { InteractionRequiredAuthError } from "@azure/msal-browser";
-import { getV2DiscoveryDocument, loginRequest } from "../authConfig";
+import { getV2DiscoveryDocument, loginRequest, logoutRequest } from "../authConfig";
 
 interface UserInfo {
     sub?: string;
@@ -71,15 +71,14 @@ export const ProfileData = () => {
             setUserInfo(userData);
         } catch (error) {
             if (error instanceof InteractionRequiredAuthError) {
-                // If silent token acquisition fails, try interactive redirect
                 try {
-                    await instance.acquireTokenRedirect({
-                        ...loginRequest,
+                    await instance.logoutRedirect({
+                        ...logoutRequest,
                         account: targetAccount
                     });
                 } catch (redirectError) {
-                    console.error("Token acquisition failed:", redirectError);
-                    setError("Failed to acquire token");
+                    console.error("Logout redirect failed:", redirectError);
+                    setError("Failed to reset authentication session");
                 }
             } else {
                 console.error("Error fetching user info:", error);

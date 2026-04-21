@@ -71,6 +71,7 @@ oidc:
   - **Works well with Docker**: No database required; single config file.
   - **Fast login**: Just click a user name; no password.
   - **Custom JWT Claims**: YAML configuration supports additional information in JWT tokens
+  - **Edge/Web Gateway**: Virtual Host routing, reverse proxy, static hosting with SPA fallback, OpenAPI mock routes, and route-level JWT gatekeeping
 - **EntraID/AzureAD Compatibility**:
   - **Test with MSAL.js**
 
@@ -105,6 +106,8 @@ open http://localhost:18888/.well-known/openid-configuration
 Add HTTPS later by generating certs (mkcert) and starting with `--cert-file/--key-file`.
 
 For the managed local-development path, configure `certificate_authority` and `console` in [oidcld.yaml](oidcld.yaml). OIDCLD exposes the Developer Console on `http://127.0.0.1:18889/console/`, issues a local root CA under the configured `ca_dir`, and provides download endpoints for the root certificate plus install / uninstall scripts.
+
+The same runtime can also act as a lightweight edge/web gateway for local environments. `reverse_proxy.hosts[]` works like a Virtual Host table, and each route can proxy to an upstream, serve static files with `spa_fallback`, or return OpenAPI-backed mock responses. Route-level gateway rules can require self-issued Bearer tokens with claim-based checks such as `scope` and `aud`, and OIDCLD-issued tokens can be replayed upstream with refreshed signature and timestamps.
 
 For local frontend work, use the VS Code `dev` task. It starts the backend with the usual `serve` flow and runs the Vite dev server with `/console/api/*` proxied to the Developer Console listener, so Vue changes are reflected immediately. For release-style builds, use the `build` task to build `web/admin`, sync the generated files into the backend embed directory, and then compile the Go binary.
 

@@ -69,6 +69,7 @@ oidc:
   - Docker との相性良好: DB などの永続ストレージ不要。単一の設定ファイルで動作
   - 迅速なログイン: ユーザー名をクリックするだけ (パスワード不要)
   - カスタム JWT クレーム: YAML で追加クレームを付与可能
+  - Edge/Web Gateway: Virtual Host ルーティング、reverse proxy、SPA フォールバック付き静的配信、OpenAPI モック、route 単位の JWT 認可
 - EntraID/AzureAD 互換:
   - MSAL.js でのテストに対応
 
@@ -103,6 +104,8 @@ open http://localhost:18888/.well-known/openid-configuration
 HTTPS は後から mkcert で証明書を作成し、`--cert-file/--key-file` で指定して有効化できます。
 
 ローカル開発向けの managed モードを使う場合は、[oidcld.yaml](oidcld.yaml) の `certificate_authority` と `console` を設定します。OIDCLD は `http://127.0.0.1:18889/console/` に Developer Console を出し、設定された `ca_dir` 配下にローカル root CA を作成し、root 証明書と install / uninstall script のダウンロードを提供します。
+
+同じ runtime でローカル向けの edge/web gateway としても使えます。`reverse_proxy.hosts[]` は Virtual Host テーブルとして動作し、各 route は upstream proxy、`spa_fallback` 付き静的配信、または OpenAPI ベースのモック応答を選べます。さらに route ごとに `scope` や `aud` などの claim 条件で self-issued Bearer token を検証する gateway ルールを設定でき、OIDCLD 発行 token は署名と日時を付け直して upstream へ replay できます。
 
 frontend をローカルで触るときは VS Code の `dev` タスクを使います。通常の `serve` フローで backend を起動しつつ、Vite dev server が `/console/api/*` を Developer Console listener に proxy するため、Vue の変更がすぐ反映されます。配布向けに近い build を行うときは `build` タスクを使い、`web/admin` をビルドして backend の embed 用ディレクトリへ同期し、その後で Go バイナリをビルドします。
 

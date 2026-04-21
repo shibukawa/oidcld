@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { InteractionRequiredAuthError } from "@azure/msal-browser";
+import { useMsal } from "@azure/msal-react";
 import { createItem, deleteItem, getHealth, getItems, type DemoHealthResponse, type DemoItem, type DemoRequestResult } from "../api/demoApi";
+import { apiBasePath, loginRequest, logoutRequest } from "../authConfig";
 
 function formatTimestamp(value: string): string {
     const parsed = new Date(value);
@@ -10,6 +13,7 @@ function formatTimestamp(value: string): string {
 }
 
 export const ApiDemoPanel = () => {
+    const { instance, accounts } = useMsal();
     const [items, setItems] = useState<DemoItem[]>([]);
     const [health, setHealth] = useState<DemoHealthResponse | null>(null);
     const [requestSummary, setRequestSummary] = useState<DemoRequestResult | null>(null);
@@ -17,12 +21,39 @@ export const ApiDemoPanel = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [initialized, setInitialized] = useState(false);
+    const account = accounts[0];
+
+    const getAccessToken = async () => {
+        if (!account) {
+            throw new Error("Sign in to call the protected API");
+        }
+
+        try {
+            const response = await instance.acquireTokenSilent({
+                ...loginRequest,
+                account,
+            });
+            return response.accessToken;
+        } catch (error) {
+            if (error instanceof InteractionRequiredAuthError) {
+                await instance.logoutRedirect({
+                    ...logoutRequest,
+                    account,
+                });
+            }
+            throw error;
+        }
+    };
 
     const loadState = async () => {
         setLoading(true);
         setError(null);
         try {
-            const [healthResponse, itemsResponse] = await Promise.all([getHealth(), getItems()]);
+            const accessToken = await getAccessToken();
+            const [healthResponse, itemsResponse] = await Promise.all([
+                getHealth({ accessToken }),
+                getItems({ accessToken }),
+            ]);
             setHealth(healthResponse.data);
             setItems(itemsResponse.data.items);
             setRequestSummary(itemsResponse.result);
@@ -35,11 +66,11 @@ export const ApiDemoPanel = () => {
     };
 
     useEffect(() => {
-        if (initialized) {
+        if (initialized || !account) {
             return;
         }
         void loadState();
-    }, [initialized]);
+    }, [account, initialized]);
 
     const handleCreate = async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -52,10 +83,14 @@ export const ApiDemoPanel = () => {
         setLoading(true);
         setError(null);
         try {
-            const created = await createItem(title);
-            const refreshed = await getHealth();
-            setItems((current) => [created.data, ...current]);
-            setHealth(refreshed.data);
+            const accessToken = await getAccessToken();
+            const created = await createItem(title, { accessToken });
+            const [refreshedHealth, refreshedItems] = await Promise.all([
+                getHealth({ accessToken }),
+                getItems({ accessToken }),
+            ]);
+            setItems(refreshedItems.data.items);
+            setHealth(refreshedHealth.data);
             setRequestSummary(created.result);
             setDraftTitle("");
         } catch (err) {
@@ -69,10 +104,14 @@ export const ApiDemoPanel = () => {
         setLoading(true);
         setError(null);
         try {
-            const deleted = await deleteItem(id);
-            const refreshed = await getHealth();
-            setItems((current) => current.filter((item) => item.id !== id));
-            setHealth(refreshed.data);
+            const accessToken = await getAccessToken();
+            const deleted = await deleteItem(id, { accessToken });
+            const [refreshedHealth, refreshedItems] = await Promise.all([
+                getHealth({ accessToken }),
+                getItems({ accessToken }),
+            ]);
+            setItems(refreshedItems.data.items);
+            setHealth(refreshedHealth.data);
             setRequestSummary(deleted.result);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Failed to delete item");
@@ -91,7 +130,7 @@ export const ApiDemoPanel = () => {
                 <div>
                     <h3 className="text-2xl font-bold text-blue-600">API Access Demo</h3>
                     <p className="text-gray-700 mt-2">
-                        This panel calls the reverse-proxied demo service mounted at <code>/api</code>.
+                        This panel calls the reverse-proxied demo service mounted at <code>{apiBasePath}</code> and attaches a Bearer token acquired through MSAL.
                     </p>
                 </div>
                 <button
@@ -102,7 +141,7 @@ export const ApiDemoPanel = () => {
                     }}
                     type="button"
                 >
-                    {loading ? "Loading..." : "Refresh GET /api/items"}
+                    {loading ? "Loading..." : `Refresh GET ${apiBasePath}/items`}
                 </button>
             </div>
 
@@ -129,7 +168,7 @@ export const ApiDemoPanel = () => {
             <form className="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-3" onSubmit={handleCreate}>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="demo-item-title">
-                        POST /api/items
+                        {`POST ${apiBasePath}/items`}
                     </label>
                     <div className="flex flex-col gap-3 md:flex-row">
                         <input
@@ -182,7 +221,7 @@ export const ApiDemoPanel = () => {
                                         }}
                                         type="button"
                                     >
-                                        DELETE /api/items/{item.id}
+                                        {`DELETE ${apiBasePath}/items/${item.id}`}
                                     </button>
                                 </div>
                             ))}

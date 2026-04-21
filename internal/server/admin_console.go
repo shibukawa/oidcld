@@ -99,12 +99,17 @@ type adminReverseProxyHost struct {
 }
 
 type adminReverseProxyRoute struct {
-	Path              string `json:"path"`
-	Label             string `json:"label"`
-	RouteType         string `json:"routeType"`
-	Target            string `json:"target"`
-	SPAFallback       bool   `json:"spaFallback"`
-	RewritePathPrefix string `json:"rewritePathPrefix,omitempty"`
+	Path                       string         `json:"path"`
+	Label                      string         `json:"label"`
+	RouteType                  string         `json:"routeType"`
+	Target                     string         `json:"target"`
+	SPAFallback                bool           `json:"spaFallback"`
+	RewritePathPrefix          string         `json:"rewritePathPrefix,omitempty"`
+	GatewayEnabled             bool           `json:"gatewayEnabled"`
+	GatewayRequired            map[string]any `json:"gatewayRequired,omitempty"`
+	GatewayReplayAuthorization bool           `json:"gatewayReplayAuthorization"`
+	MockPreferExamples         bool           `json:"mockPreferExamples"`
+	MockDefaultStatus          string         `json:"mockDefaultStatus,omitempty"`
 }
 
 type adminReverseProxyLogsResponse struct {
@@ -290,18 +295,34 @@ func (s *Server) handleAdminReverseProxy(w http.ResponseWriter, _ *http.Request)
 			for _, route := range host.Routes {
 				target := route.TargetURL
 				routeType := "proxy"
+				gatewayRequired := map[string]any(nil)
+				gatewayReplayAuthorization := false
+				if route.Gateway != nil {
+					gatewayRequired = cloneClaimsMap(route.Gateway.Required.Claims)
+					gatewayReplayAuthorization = route.Gateway.ReplayAuthorization == nil || *route.Gateway.ReplayAuthorization
+				}
 				if route.StaticDir != "" {
 					target = route.ResolvedStaticDir()
 					routeType = "static"
+				} else if route.OpenAPIFile != "" {
+					target = route.ResolvedOpenAPIFile()
+					routeType = "mock"
 				}
 				item.Routes = append(item.Routes, adminReverseProxyRoute{
-					Path:              route.Path,
-					Label:             route.ResolvedLabel(),
-					RouteType:         routeType,
-					Target:            target,
-					SPAFallback:       route.SPAFallback,
-					RewritePathPrefix: route.RewritePathPrefix,
+					Path:                       route.Path,
+					Label:                      route.ResolvedLabel(),
+					RouteType:                  routeType,
+					Target:                     target,
+					SPAFallback:                route.SPAFallback,
+					RewritePathPrefix:          route.RewritePathPrefix,
+					GatewayEnabled:             route.Gateway != nil,
+					GatewayRequired:            gatewayRequired,
+					GatewayReplayAuthorization: gatewayReplayAuthorization,
+					MockPreferExamples:         route.Mock != nil && route.Mock.PreferExamples,
 				})
+				if route.Mock != nil {
+					item.Routes[len(item.Routes)-1].MockDefaultStatus = route.Mock.DefaultStatus
+				}
 			}
 			response.Hosts = append(response.Hosts, item)
 		}

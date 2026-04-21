@@ -1,3 +1,5 @@
+import { apiBasePath } from "../authConfig";
+
 export interface DemoItem {
     id: string;
     title: string;
@@ -24,6 +26,10 @@ export interface DemoRequestResult {
     body: unknown;
 }
 
+type RequestAuth = {
+    accessToken?: string;
+};
+
 export class DemoApiError extends Error {
     status: number;
 
@@ -34,12 +40,13 @@ export class DemoApiError extends Error {
     }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<{ data: T; result: DemoRequestResult }> {
+async function request<T>(path: string, init?: RequestInit, auth?: RequestAuth): Promise<{ data: T; result: DemoRequestResult }> {
     const method = init?.method ?? "GET";
-    const response = await fetch(`/api${path}`, {
+    const response = await fetch(`${apiBasePath}${path}`, {
         ...init,
         headers: {
             "Content-Type": "application/json",
+            ...(auth?.accessToken ? { Authorization: `Bearer ${auth.accessToken}` } : {}),
             ...(init?.headers ?? {}),
         },
     });
@@ -58,30 +65,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<{ data: T; 
         data: body as T,
         result: {
             method,
-            path: `/api${path}`,
+            path: `${apiBasePath}${path}`,
             status: response.status,
             body,
         },
     };
 }
 
-export async function getHealth() {
-    return request<DemoHealthResponse>("/health");
+export async function getHealth(auth?: RequestAuth) {
+    return request<DemoHealthResponse>("/health", undefined, auth);
 }
 
-export async function getItems() {
-    return request<DemoItemsResponse>("/items");
+export async function getItems(auth?: RequestAuth) {
+    return request<DemoItemsResponse>("/items", undefined, auth);
 }
 
-export async function createItem(title: string) {
+export async function createItem(title: string, auth?: RequestAuth) {
     return request<DemoItem>("/items", {
         method: "POST",
         body: JSON.stringify({ title }),
-    });
+    }, auth);
 }
 
-export async function deleteItem(id: string) {
+export async function deleteItem(id: string, auth?: RequestAuth) {
     return request<DemoDeleteResponse>(`/items/${id}`, {
         method: "DELETE",
-    });
+    }, auth);
 }

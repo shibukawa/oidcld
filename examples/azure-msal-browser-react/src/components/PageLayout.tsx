@@ -4,7 +4,7 @@ import { SignInButton } from "./SignInButton";
 import { SignOutButton } from "./SignOutButton";
 import { ProfileData } from "./ProfileData";
 import { ApiDemoPanel } from "./ApiDemoPanel";
-import { msalConfig, loginRequest, parsedScopes } from "../authConfig";
+import { apiBasePath, appDescription, appMode, appTitle, msalConfig, peerAppURL, loginRequest, parsedScopes } from "../authConfig";
 
 /**
  * Renders the navbar component with a sign-in or sign-out button depending on whether or not a user is authenticated
@@ -13,6 +13,10 @@ import { msalConfig, loginRequest, parsedScopes } from "../authConfig";
 export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
     const { accounts } = useMsal();
     const [activeTab, setActiveTab] = useState<"user" | "api">("user");
+    const peerLabel = appMode === "app" ? "app2.localhost" : "app.localhost";
+    const runtimeMode = appMode === "app"
+        ? "Nginx upstream + Hono backend + API Gateway"
+        : "Static hosting + OpenAPI mock + API Gateway";
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -20,9 +24,9 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center py-4">
                         <div className="flex-shrink-0">
-                            <h2 className="text-xl font-bold">Azure MSAL Browser React Example</h2>
+                            <h2 className="text-xl font-bold">{appTitle}</h2>
                             <p className="text-sm text-blue-100 mt-1">
-                                OpenID Connect with oidcld Test Identity Provider (EntraID v2.0 Compatible)
+                                {appDescription}
                             </p>
                         </div>
                         <div className="flex items-center space-x-4">
@@ -41,6 +45,23 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
             </nav>
             
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <p className="text-sm font-semibold text-blue-600">Current mode</p>
+                            <p className="text-gray-900 font-medium">{runtimeMode}</p>
+                            <p className="text-sm text-gray-600 mt-1">
+                                API base path: <code>{apiBasePath}</code>
+                            </p>
+                        </div>
+                        <a
+                            className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                            href={peerAppURL}
+                        >
+                            Open {peerLabel}
+                        </a>
+                    </div>
+                </div>
                 <AuthenticatedTemplate>
                     <div className="space-y-6">
                         <div className="bg-white rounded-lg shadow-sm p-4">
@@ -79,10 +100,10 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                 <UnauthenticatedTemplate>
                     <div className="bg-white rounded-lg shadow-sm p-8 mb-8">
                         <h3 className="text-2xl font-bold text-blue-600 mb-4">
-                            Welcome to the Azure MSAL Browser React Example
+                            Welcome to {appTitle}
                         </h3>
                         <p className="text-gray-700 mb-4">
-                            This example demonstrates how to use Azure MSAL Browser library with React and TypeScript 
+                            This example demonstrates how to use Azure MSAL Browser library with React and TypeScript
                             to authenticate with an OpenID Connect provider configured in EntraID v2.0 compatible mode.
                         </p>
                         <p className="text-gray-700 mb-8">
@@ -90,6 +111,7 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                         </p>
                         <p className="text-gray-700 mb-8">
                             After sign-in, you can also switch to an API demo tab that exercises GET, POST, and DELETE requests through the reverse proxy.
+                            This build runs in <strong>{runtimeMode}</strong>.
                         </p>
                         
                         <div className="grid md:grid-cols-2 gap-8">
@@ -152,7 +174,11 @@ export const PageLayout: React.FC<{ children?: React.ReactNode }> = ({ children 
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">Mode:</span>
-                                        <span className="text-blue-600 font-semibold">EntraID v2.0 Compatible</span>
+                                        <span className="text-blue-600 font-semibold">{runtimeMode}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="font-medium text-gray-600">Peer link:</span>
+                                        <a className="text-gray-900 underline" href={peerAppURL}>{peerLabel}</a>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="font-medium text-gray-600">PKCE:</span>

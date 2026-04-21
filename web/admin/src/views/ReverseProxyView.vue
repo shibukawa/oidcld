@@ -9,6 +9,11 @@ type ReverseProxyRoute = {
   target: string
   spaFallback: boolean
   rewritePathPrefix?: string
+  gatewayEnabled: boolean
+  gatewayRequired?: Record<string, unknown>
+  gatewayReplayAuthorization: boolean
+  mockPreferExamples: boolean
+  mockDefaultStatus?: string
 }
 
 type ReverseProxyHost = {
@@ -36,7 +41,19 @@ function routeTypeLabel(value: string) {
   if (value === 'static') {
     return t('common.static')
   }
+  if (value === 'mock') {
+    return t('common.mock')
+  }
   return value
+}
+
+function formatGatewayRequired(required?: Record<string, unknown>) {
+  if (!required) {
+    return ''
+  }
+  return Object.entries(required)
+    .map(([key, value]) => `${key}=${Array.isArray(value) ? value.join(', ') : String(value)}`)
+    .join(' / ')
 }
 
 async function loadPage() {
@@ -94,6 +111,15 @@ onMounted(() => {
                     {{ routeTypeLabel(route.routeType) }}
                     <span v-if="route.spaFallback"> / {{ t('reverseProxy.spaFallback') }}</span>
                     <span v-if="route.rewritePathPrefix"> / {{ t('reverseProxy.rewriteTo', { prefix: route.rewritePathPrefix }) }}</span>
+                    <span v-if="route.gatewayEnabled"> / {{ t('reverseProxy.gateway') }}</span>
+                    <span v-if="route.mockPreferExamples"> / {{ t('reverseProxy.examplesPreferred') }}</span>
+                    <span v-if="route.mockDefaultStatus"> / {{ t('reverseProxy.defaultStatus', { status: route.mockDefaultStatus }) }}</span>
+                  </p>
+                  <p v-if="route.gatewayRequired && Object.keys(route.gatewayRequired).length > 0" class="proxy-route-meta">
+                    {{ t('reverseProxy.requiredClaims', { claims: formatGatewayRequired(route.gatewayRequired) }) }}
+                  </p>
+                  <p v-if="route.gatewayEnabled" class="proxy-route-meta">
+                    {{ t('reverseProxy.replayAuthorization', { enabled: route.gatewayReplayAuthorization ? t('common.active') : t('common.disabled') }) }}
                   </p>
                 </div>
                 <code class="proxy-target">{{ route.target }}</code>

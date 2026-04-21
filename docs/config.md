@@ -116,7 +116,48 @@ oidc:
 
 `cors: true` is shorthand for permissive browser-friendly defaults. The detailed object form supports `origins`, `methods`, and `headers`.
 
-#### 6. Automatic HTTPS Certificates (`autocert`)
+#### 6. Reverse Proxy / Edge Routing (`reverse_proxy`)
+
+```yaml
+reverse_proxy:
+  log_retention: 200
+  ignore_log_paths:
+    - "/health"
+  hosts:
+    - host: "https://app.dev.localhost"
+      routes:
+        - path: "/api"
+          target_url: "http://127.0.0.1:3000"
+          gateway:
+            required:
+              scope: "read"
+              aud: "demo-client"
+            forward_claims_as_headers:
+              sub: "X-OIDC-Sub"
+              scope: "X-OIDC-Scope"
+            replay_authorization: true
+        - path: "/"
+          static_dir: "./web/dist"
+          spa_fallback: true
+        - path: "/mock"
+          openapi_file: "./openapi/mock.yaml"
+          rewrite_path_prefix: "/"
+          mock:
+            prefer_examples: true
+            default_status: "200"
+            fallback_content_type: "application/json"
+```
+
+Notes:
+- `hosts[]` acts as a Virtual Host table; omit `host` once to define a default virtual host fallback
+- each route must define exactly one of `target_url`, `static_dir`, or `openapi_file`
+- `spa_fallback` is valid only with `static_dir`
+- `gateway.required: true` accepts any valid self-issued Bearer JWT; `gateway.required` can also be a claim map such as `scope` / `aud`
+- `gateway` is valid on `target_url` and `openapi_file` routes and can replay OIDCLD-issued JWTs with refreshed signature and timestamps before proxying upstream
+- `openapi_file` is resolved relative to the config file, loaded at startup, and validated with `kin-openapi`
+- `mock.prefer_examples` prefers named / inline examples; schema synthesis is used only when examples are unavailable
+
+#### 7. Automatic HTTPS Certificates (`autocert`)
 
 The internal YAML field names match the generated template. (Note: the field is `acme_server`, not `acme_directory_url`). Only a subset is exposed via the init wizard; advanced fields can be added manually.
 
@@ -147,7 +188,7 @@ autocert:
 Not shown in the generated template (but supported internally):
 - `insecure_skip_verify` (bool) – can be toggled via environment overrides (used mainly for local/dev ACME servers); settable only through env at present.
 
-#### 5. User Definitions (`users`)
+#### 8. User Definitions (`users`)
 
 ```yaml
 users:
