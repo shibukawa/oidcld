@@ -89,7 +89,47 @@ oidc:
   #   headers: ["Content-Type", "Authorization"]
 ```
 
-#### 6. 自動証明書 (`autocert`)
+#### 6. Reverse Proxy / Edge Routing (`reverse_proxy`)
+```yaml
+reverse_proxy:
+  log_retention: 200
+  ignore_log_paths:
+    - "/health"
+  hosts:
+    - host: "https://app.dev.localhost"
+      routes:
+        - path: "/api"
+          target_url: "http://127.0.0.1:3000"
+          gateway:
+            required:
+              scope: "read"
+              aud: "demo-client"
+            forward_claims_as_headers:
+              sub: "X-OIDC-Sub"
+              scope: "X-OIDC-Scope"
+            replay_authorization: true
+        - path: "/"
+          static_dir: "./web/dist"
+          spa_fallback: true
+        - path: "/mock"
+          openapi_file: "./openapi/mock.yaml"
+          rewrite_path_prefix: "/"
+          mock:
+            prefer_examples: true
+            default_status: "200"
+            fallback_content_type: "application/json"
+```
+
+ポイント:
+- `hosts[]` は Virtual Host テーブルとして扱われ、`host` を省略した 1 件だけ default virtual host にできます
+- 各 route は `target_url`、`static_dir`、`openapi_file` のいずれか 1 つだけを持ちます
+- `spa_fallback` は `static_dir` と組み合わせる場合のみ有効です
+- `gateway.required: true` は有効な self-issued Bearer JWT があれば通し、`gateway.required` に `scope` や `aud` などの claim 条件も書けます
+- `gateway` は `target_url` と `openapi_file` route の前段で self-issued Bearer JWT を検証し、proxy 時に OIDCLD 発行 JWT を再署名して upstream に渡せます
+- `openapi_file` は設定ファイル相対で解決し、起動時に `kin-openapi` で読み込み・検証します
+- `mock.prefer_examples` が true の場合は example を優先し、example がない場合だけ schema から最小レスポンスを生成します
+
+#### 7. 自動証明書 (`autocert`)
 ```yaml
 autocert:
   enabled: true
@@ -115,7 +155,7 @@ autocert:
 ```
 `insecure_skip_verify` はテンプレートには出力しません (ローカル ACME 用途向け内部フラグ)。
 
-#### 5. ユーザー (`users`)
+#### 8. ユーザー (`users`)
 EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, groups, app_displayname` を自動追加。
 
 ## CLI フラグ

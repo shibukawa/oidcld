@@ -169,7 +169,7 @@ func TestGenerateDeviceFlowTokens_UsesConfiguredAudienceClaimFormat(t *testing.T
 	}
 }
 
-func TestRewriteJWTTokenAudience_SingleAudienceArrayToString(t *testing.T) {
+func TestRewriteTokenResponseJWT_SingleAudienceArrayToString(t *testing.T) {
 	server := newAudienceClaimTestServer(t, &config.Config{
 		OIDC: config.OIDCConfig{
 			Issuer:              "https://issuer.example.com",
@@ -178,7 +178,7 @@ func TestRewriteJWTTokenAudience_SingleAudienceArrayToString(t *testing.T) {
 	})
 
 	original := signAudienceClaimTestJWT(t, server.privateKey, []string{"test-client-id"})
-	rewritten, err := server.rewriteJWTTokenAudience(original)
+	rewritten, err := server.rewriteTokenResponseJWT("id_token", original, map[string]any{})
 	assert.NoError(t, err)
 
 	claims := decodeJWTPayload(t, rewritten)
@@ -198,6 +198,7 @@ func TestNormalizeTokenResponsePayload_RewritesProviderIssuedJWTs(t *testing.T) 
 		"access_token":  providerStyleToken,
 		"id_token":      providerStyleToken,
 		"refresh_token": providerStyleToken,
+		"scope":         "openid profile User.Read",
 		"token_type":    "Bearer",
 	}
 
@@ -210,5 +211,11 @@ func TestNormalizeTokenResponsePayload_RewritesProviderIssuedJWTs(t *testing.T) 
 
 		claims := decodeJWTPayload(t, token)
 		assert.Equal(t, "test-client-id", claims["aud"])
+		if field == "access_token" {
+			assert.Equal(t, "openid profile User.Read", claims["scope"])
+		} else {
+			_, exists := claims["scope"]
+			assert.False(t, exists)
+		}
 	}
 }

@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: Reverse Proxy Sample Mock API
+  version: "1.0.0"
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              examples:
+                ok:
+                  value:
+                    status: "ok"
+                    gateway: true
+                    mode: "openapi-mock"
+  /items:
+    get:
+      summary: List items
+      responses:
+        "200":
+          description: Item list
+          content:
+            application/json:
+              examples:
+                default:
+                  value:
+                    items:
+                      - id: "demo-1"
+                        title: "Mocked Item"
+                        createdAt: "2026-04-20T00:00:00Z"
+                      - id: "demo-2"
+                        title: "Gateway Protected"
+                        createdAt: "2026-04-20T00:05:00Z"
+    post:
+      summary: Create item
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+      responses:
+        "200":
+          description: Created item
+          content:
+            application/json:
+              examples:
+                created:
+                  value:
+                    id: "demo-created"
+                    title: "Created by mock"
+                    createdAt: "2026-04-20T00:10:00Z"
+  /items/{id}:
+    delete:
+      summary: Delete item
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted item
+          content:
+            application/json:
+              examples:
+                deleted:
+                  value:
+                    deletedId: "demo-1"

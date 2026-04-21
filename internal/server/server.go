@@ -1267,7 +1267,7 @@ func normalizeAudienceClaimValue(value any, format string) (any, bool) {
 	return value, false
 }
 
-func (s *Server) rewriteJWTTokenAudience(token string) (string, error) {
+func (s *Server) rewriteTokenResponseJWT(field string, token string, payload map[string]any) (string, error) {
 	if token == "" || strings.Count(token, ".") != 2 {
 		return token, nil
 	}
@@ -1278,12 +1278,24 @@ func (s *Server) rewriteJWTTokenAudience(token string) (string, error) {
 		return "", fmt.Errorf("failed to parse JWT: %w", err)
 	}
 
-	normalizedAudience, changed := normalizeAudienceClaimValue(claims["aud"], s.config.OIDC.NormalizedAudienceClaimFormat())
+	changed := false
+	normalizedAudience, audienceChanged := normalizeAudienceClaimValue(claims["aud"], s.config.OIDC.NormalizedAudienceClaimFormat())
+	if audienceChanged {
+		claims["aud"] = normalizedAudience
+		changed = true
+	}
+
+	if field == "access_token" {
+		if scopeValue, ok := payload["scope"].(string); ok && strings.TrimSpace(scopeValue) != "" {
+			if _, exists := claims["scope"]; !exists {
+				claims["scope"] = strings.TrimSpace(scopeValue)
+				changed = true
+			}
+		}
+	}
 	if !changed {
 		return token, nil
 	}
-
-	claims["aud"] = normalizedAudience
 
 	rewrittenToken := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	for key, value := range parsedToken.Header {
@@ -1306,7 +1318,7 @@ func (s *Server) normalizeTokenResponsePayload(payload map[string]any) error {
 			continue
 		}
 
-		rewrittenToken, err := s.rewriteJWTTokenAudience(tokenValue)
+		rewrittenToken, err := s.rewriteTokenResponseJWT(field, tokenValue, payload)
 		if err != nil {
 			return fmt.Errorf("failed to rewrite %s: %w", field, err)
 		}

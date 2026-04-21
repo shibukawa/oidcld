@@ -1,4 +1,5 @@
 import { useMsal } from "@azure/msal-react";
+import { logoutRequest } from "../authConfig";
 
 /**
  * Renders a button which, when selected, will redirect for logout
@@ -7,9 +8,7 @@ export const SignOutButton = () => {
     const { instance } = useMsal();
 
     const handleLogout = () => {
-        instance.logoutRedirect({
-            postLogoutRedirectUri: "/",
-        });
+        instance.logoutRedirect(logoutRequest);
     }
 
     return (

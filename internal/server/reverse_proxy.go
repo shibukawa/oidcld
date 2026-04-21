@@ -41,12 +41,15 @@ type compiledReverseProxyRoute struct {
 	path              string
 	targetURL         *neturl.URL
 	staticDir         string
+	openapiFile       string
 	spaFallback       bool
 	rewritePathPrefix string
 	targetLabel       string
 	label             string
 	routeType         string
 	proxy             *httputil.ReverseProxy
+	mock              *compiledOpenAPIMockRoute
+	gateway           *compiledReverseProxyGateway
 }
 
 type reverseProxyRouteMatch struct {
@@ -103,9 +106,11 @@ func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) 
 			compiledRoute := compiledReverseProxyRoute{
 				path:              route.Path,
 				staticDir:         route.ResolvedStaticDir(),
+				openapiFile:       route.ResolvedOpenAPIFile(),
 				spaFallback:       route.SPAFallback,
 				rewritePathPrefix: route.RewritePathPrefix,
 				label:             route.ResolvedLabel(),
+				gateway:           newCompiledReverseProxyGateway(route.Gateway),
 			}
 			if route.TargetURL != "" {
 				targetURL, err := neturl.Parse(route.TargetURL)
@@ -116,6 +121,14 @@ func newCompiledReverseProxy(cfg *config.Config) (*compiledReverseProxy, error) 
 				compiledRoute.routeType = "proxy"
 				compiledRoute.targetLabel = route.TargetURL
 				compiledRoute.proxy = newSingleHostReverseProxy(targetURL, route.Path, route.RewritePathPrefix)
+			} else if route.OpenAPIFile != "" {
+				mock, err := newCompiledOpenAPIMockRoute(route.ResolvedOpenAPIFile(), route.Mock)
+				if err != nil {
+					return nil, err
+				}
+				compiledRoute.routeType = "mock"
+				compiledRoute.targetLabel = route.ResolvedOpenAPIFile()
+				compiledRoute.mock = mock
 			} else {
 				compiledRoute.routeType = "static"
 				compiledRoute.targetLabel = compiledRoute.staticDir
@@ -221,8 +234,16 @@ func (s *Server) reverseProxyMiddleware(next http.Handler) http.Handler {
 		if handleCORS(w, r, match.host.cors) {
 			return
 		}
+		if !s.authorizeReverseProxyRoute(w, r, match.route.gateway) {
+			return
+		}
 		if match.route.routeType == "proxy" {
+			s.maybeReplayReverseProxyAuthorization(r, match.route.gateway)
 			match.route.proxy.ServeHTTP(w, r)
+			return
+		}
+		if match.route.routeType == "mock" {
+			s.serveOpenAPIMockRoute(w, r, match.route)
 			return
 		}
 		s.serveStaticReverseProxyRoute(w, r, match.route)

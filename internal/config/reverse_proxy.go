@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/goccy/go-yaml"
 )
 
 const DefaultReverseProxyLogRetention = 200
@@ -35,15 +37,60 @@ type ReverseProxyHost struct {
 }
 
 type ReverseProxyRoute struct {
-	Path              string `yaml:"path,omitempty"`
-	Label             string `yaml:"label,omitempty"`
-	TargetURL         string `yaml:"target_url,omitempty"`
-	StaticDir         string `yaml:"static_dir,omitempty"`
-	SPAFallback       bool   `yaml:"spa_fallback,omitempty"`
-	RewritePathPrefix string `yaml:"rewrite_path_prefix,omitempty"`
+	Path              string                   `yaml:"path,omitempty"`
+	Label             string                   `yaml:"label,omitempty"`
+	TargetURL         string                   `yaml:"target_url,omitempty"`
+	StaticDir         string                   `yaml:"static_dir,omitempty"`
+	OpenAPIFile       string                   `yaml:"openapi_file,omitempty"`
+	SPAFallback       bool                     `yaml:"spa_fallback,omitempty"`
+	RewritePathPrefix string                   `yaml:"rewrite_path_prefix,omitempty"`
+	Gateway           *ReverseProxyGateway     `yaml:"gateway,omitempty"`
+	Mock              *ReverseProxyMockOptions `yaml:"mock,omitempty"`
 
-	resolvedStaticDir string `yaml:"-"`
-	resolvedLabel     string `yaml:"-"`
+	resolvedStaticDir   string `yaml:"-"`
+	resolvedOpenAPIFile string `yaml:"-"`
+	resolvedLabel       string `yaml:"-"`
+}
+
+type ReverseProxyGateway struct {
+	Required               ReverseProxyGatewayRequired `yaml:"required,omitempty"`
+	RequiredScopes         []string                    `yaml:"required_scopes,omitempty"`
+	RequiredAudiences      []string                    `yaml:"required_audiences,omitempty"`
+	ForwardClaimsAsHeaders map[string]string           `yaml:"forward_claims_as_headers,omitempty"`
+	ReplayAuthorization    *bool                       `yaml:"replay_authorization,omitempty"`
+}
+
+type ReverseProxyGatewayRequired struct {
+	Enabled bool           `yaml:"-"`
+	Claims  map[string]any `yaml:"-"`
+}
+
+func (r *ReverseProxyGatewayRequired) UnmarshalYAML(b []byte) error {
+	if r == nil {
+		return nil
+	}
+
+	var enabled bool
+	if err := yaml.Unmarshal(b, &enabled); err == nil {
+		r.Enabled = enabled
+		r.Claims = nil
+		return nil
+	}
+
+	var claims map[string]any
+	if err := yaml.Unmarshal(b, &claims); err != nil {
+		return err
+	}
+
+	r.Enabled = true
+	r.Claims = claims
+	return nil
+}
+
+type ReverseProxyMockOptions struct {
+	PreferExamples      bool   `yaml:"prefer_examples,omitempty"`
+	DefaultStatus       string `yaml:"default_status,omitempty"`
+	FallbackContentType string `yaml:"fallback_content_type,omitempty"`
 }
 
 func (c *Config) ReverseProxyUsesHTTPS() bool {
@@ -205,6 +252,7 @@ func normalizeReverseProxyRoute(route ReverseProxyRoute, sourceDir string) (Reve
 	route.Label = strings.TrimSpace(route.Label)
 	route.TargetURL = strings.TrimSpace(route.TargetURL)
 	route.StaticDir = strings.TrimSpace(route.StaticDir)
+	route.OpenAPIFile = strings.TrimSpace(route.OpenAPIFile)
 	route.RewritePathPrefix = strings.TrimSpace(route.RewritePathPrefix)
 
 	if route.Path == "" {
@@ -236,8 +284,28 @@ func normalizeReverseProxyRoute(route ReverseProxyRoute, sourceDir string) (Reve
 		}
 		route.resolvedStaticDir = filepath.Clean(resolved)
 	}
+	if route.OpenAPIFile != "" {
+		targetCount++
+		resolved, err := resolveConfigRelativePath(sourceDir, route.OpenAPIFile)
+		if err != nil {
+			return ReverseProxyRoute{}, fmt.Errorf("failed to resolve reverse_proxy.hosts[].routes[].openapi_file: %w", err)
+		}
+		route.resolvedOpenAPIFile = filepath.Clean(resolved)
+	}
 	if targetCount != 1 {
 		return ReverseProxyRoute{}, ErrReverseProxyRouteTargetRequired
+	}
+	if route.SPAFallback && route.StaticDir == "" {
+		return ReverseProxyRoute{}, ErrReverseProxySPAFallbackRequiresStaticDir
+	}
+	if route.Gateway != nil && route.StaticDir != "" {
+		return ReverseProxyRoute{}, ErrReverseProxyGatewayNotSupportedForStatic
+	}
+	if route.Gateway != nil {
+		route.Gateway = normalizeReverseProxyGateway(route.Gateway)
+	}
+	if route.Mock != nil {
+		route.Mock = normalizeReverseProxyMock(route.Mock)
 	}
 	route.resolvedLabel = deriveReverseProxyRouteLabel(route)
 
@@ -266,10 +334,134 @@ func deriveReverseProxyRouteLabel(route ReverseProxyRoute) string {
 			return base
 		}
 	}
+	if route.OpenAPIFile != "" {
+		base := filepath.Base(route.OpenAPIFile)
+		if base != "." && base != string(filepath.Separator) && base != "" {
+			return strings.TrimSuffix(base, filepath.Ext(base))
+		}
+	}
 	if route.Path == "/" {
 		return "root"
 	}
 	return strings.TrimPrefix(route.Path, "/")
+}
+
+func normalizeReverseProxyGateway(gateway *ReverseProxyGateway) *ReverseProxyGateway {
+	if gateway == nil {
+		return nil
+	}
+	normalized := &ReverseProxyGateway{
+		Required: ReverseProxyGatewayRequired{
+			Enabled: gateway.Required.Enabled,
+			Claims:  map[string]any{},
+		},
+		RequiredScopes:         make([]string, 0, len(gateway.RequiredScopes)),
+		RequiredAudiences:      make([]string, 0, len(gateway.RequiredAudiences)),
+		ForwardClaimsAsHeaders: map[string]string{},
+		ReplayAuthorization:    gateway.ReplayAuthorization,
+	}
+	for claim, value := range gateway.Required.Claims {
+		claim = strings.TrimSpace(claim)
+		if claim == "" {
+			continue
+		}
+		if normalizedValue, ok := normalizeReverseProxyGatewayRequiredValue(value); ok {
+			normalized.Required.Claims[claim] = normalizedValue
+		}
+	}
+	for _, scope := range gateway.RequiredScopes {
+		scope = strings.TrimSpace(scope)
+		if scope != "" {
+			normalized.RequiredScopes = append(normalized.RequiredScopes, scope)
+		}
+	}
+	for _, audience := range gateway.RequiredAudiences {
+		audience = strings.TrimSpace(audience)
+		if audience != "" {
+			normalized.RequiredAudiences = append(normalized.RequiredAudiences, audience)
+		}
+	}
+	for claim, header := range gateway.ForwardClaimsAsHeaders {
+		claim = strings.TrimSpace(claim)
+		header = strings.TrimSpace(header)
+		if claim == "" || header == "" {
+			continue
+		}
+		normalized.ForwardClaimsAsHeaders[claim] = header
+	}
+	if len(normalized.RequiredScopes) > 0 {
+		normalized.Required.Enabled = true
+		if _, exists := normalized.Required.Claims["scope"]; !exists {
+			if len(normalized.RequiredScopes) == 1 {
+				normalized.Required.Claims["scope"] = normalized.RequiredScopes[0]
+			} else {
+				normalized.Required.Claims["scope"] = append([]string(nil), normalized.RequiredScopes...)
+			}
+		}
+	}
+	if len(normalized.RequiredAudiences) > 0 {
+		normalized.Required.Enabled = true
+		if _, exists := normalized.Required.Claims["aud"]; !exists {
+			if len(normalized.RequiredAudiences) == 1 {
+				normalized.Required.Claims["aud"] = normalized.RequiredAudiences[0]
+			} else {
+				normalized.Required.Claims["aud"] = append([]string(nil), normalized.RequiredAudiences...)
+			}
+		}
+	}
+	if len(normalized.Required.Claims) > 0 {
+		normalized.Required.Enabled = true
+	}
+	return normalized
+}
+
+func normalizeReverseProxyGatewayRequiredValue(value any) (any, bool) {
+	switch typed := value.(type) {
+	case string:
+		typed = strings.TrimSpace(typed)
+		return typed, typed != ""
+	case []string:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				result = append(result, item)
+			}
+		}
+		if len(result) == 0 {
+			return nil, false
+		}
+		return result, true
+	case []any:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text != "" {
+				result = append(result, text)
+			}
+		}
+		if len(result) == 0 {
+			return nil, false
+		}
+		return result, true
+	default:
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text == "" || text == "<nil>" {
+			return nil, false
+		}
+		return text, true
+	}
+}
+
+func normalizeReverseProxyMock(mock *ReverseProxyMockOptions) *ReverseProxyMockOptions {
+	if mock == nil {
+		return nil
+	}
+	return &ReverseProxyMockOptions{
+		PreferExamples:      mock.PreferExamples,
+		DefaultStatus:       strings.TrimSpace(mock.DefaultStatus),
+		FallbackContentType: strings.TrimSpace(mock.FallbackContentType),
+	}
 }
 
 func (h ReverseProxyHost) ResolvedTLSCertFile() string {
@@ -356,11 +548,18 @@ func (r ReverseProxyRoute) ResolvedStaticDir() string {
 	return r.StaticDir
 }
 
+func (r ReverseProxyRoute) ResolvedOpenAPIFile() string {
+	if r.resolvedOpenAPIFile != "" {
+		return r.resolvedOpenAPIFile
+	}
+	return r.OpenAPIFile
+}
+
 func (r ReverseProxyRoute) ResolvedLabel() string {
 	if r.resolvedLabel != "" {
 		return r.resolvedLabel
 	}
-	return r.Label
+	return deriveReverseProxyRouteLabel(r)
 }
 
 func (h ReverseProxyHost) IsDefaultVirtualHost() bool {
