@@ -104,6 +104,74 @@ func TestReverseProxy_DefaultVirtualHostMatchesUnconfiguredHostname(t *testing.T
 	assert.Equal(t, upstream.Listener.Addr().String(), upstreamHost)
 }
 
+func TestSplitHandlers_OIDCHandlerDoesNotServeReverseProxyRoutes(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("proxied"))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "http://oidc.localhost:18888",
+		},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "http://app.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/", TargetURL: upstream.URL},
+					},
+				},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://app.localhost/", nil)
+	req.Host = "app.localhost"
+	res := httptest.NewRecorder()
+
+	server.OIDCHandler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusNotFound, res.Code)
+	assert.NotContains(t, res.Body.String(), "proxied")
+}
+
+func TestSplitHandlers_ReverseProxyHandlerDoesNotReserveOIDCPaths(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("authorize-proxied"))
+	}))
+	defer upstream.Close()
+
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{
+			Issuer: "https://oidc.localhost:18443",
+		},
+		CertificateAuthority: &config.CertificateAuthorityConfig{
+			Domains: []string{"app.localhost"},
+		},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{
+				{
+					Host: "https://app.localhost",
+					Routes: []config.ReverseProxyRoute{
+						{Path: "/authorize", TargetURL: upstream.URL},
+					},
+				},
+			},
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "https://app.localhost/authorize", nil)
+	req.Host = "app.localhost"
+	req.TLS = &tls.ConnectionState{}
+	res := httptest.NewRecorder()
+
+	server.ReverseProxyHandler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusOK, res.Code)
+	assert.Equal(t, "authorize-proxied", res.Body.String())
+}
+
 func TestReverseProxy_ServesStaticFilesWithSPAFallback(t *testing.T) {
 	tempDir := t.TempDir()
 	assert.NoError(t, os.WriteFile(filepath.Join(tempDir, "index.html"), []byte("<html>spa</html>"), 0o644))

@@ -210,11 +210,19 @@ func rewriteMatchedPath(requestPath, matchPath, rewritePrefix string) string {
 }
 
 func (s *Server) reverseProxyMiddleware(next http.Handler) http.Handler {
+	return s.reverseProxyMiddlewareWithOptions(next, true)
+}
+
+func (s *Server) reverseProxyOnlyMiddleware(next http.Handler) http.Handler {
+	return s.reverseProxyMiddlewareWithOptions(next, false)
+}
+
+func (s *Server) reverseProxyMiddlewareWithOptions(next http.Handler, reserveOIDCPaths bool) http.Handler {
 	if s == nil || s.reverseProxy == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.isReservedOIDCPath(r.URL.Path) {
+		if reserveOIDCPaths && s.isReservedOIDCPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -223,31 +231,49 @@ func (s *Server) reverseProxyMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		annotateReverseProxyLog(w, reverseProxyLogMeta{
-			RouteType:         match.route.routeType,
-			RouteHost:         match.host.displayHost,
-			RoutePath:         match.route.path,
-			RouteLabel:        match.route.label,
-			Target:            match.route.targetLabel,
-			RewritePathPrefix: match.route.rewritePathPrefix,
-		})
-		if handleCORS(w, r, match.host.cors) {
-			return
-		}
-		if !s.authorizeReverseProxyRoute(w, r, match.route.gateway) {
-			return
-		}
-		if match.route.routeType == "proxy" {
-			s.maybeReplayReverseProxyAuthorization(r, match.route.gateway)
-			match.route.proxy.ServeHTTP(w, r)
-			return
-		}
-		if match.route.routeType == "mock" {
-			s.serveOpenAPIMockRoute(w, r, match.route)
-			return
-		}
-		s.serveStaticReverseProxyRoute(w, r, match.route)
+		s.serveMatchedReverseProxyRoute(w, r, match)
 	})
+}
+
+func (s *Server) serveMatchedReverseProxyRoute(w http.ResponseWriter, r *http.Request, match reverseProxyRouteMatch) {
+	if s == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !annotateAndAuthorizeReverseProxyRoute(s, w, r, match) {
+		return
+	}
+	if match.route.routeType == "proxy" {
+		s.maybeReplayReverseProxyAuthorization(r, match.route.gateway)
+		match.route.proxy.ServeHTTP(w, r)
+		return
+	}
+	if match.route.routeType == "mock" {
+		s.serveOpenAPIMockRoute(w, r, match.route)
+		return
+	}
+	s.serveStaticReverseProxyRoute(w, r, match.route)
+}
+
+func annotateAndAuthorizeReverseProxyRoute(s *Server, w http.ResponseWriter, r *http.Request, match reverseProxyRouteMatch) bool {
+	if s == nil {
+		return false
+	}
+	annotateReverseProxyLog(w, reverseProxyLogMeta{
+		RouteType:         match.route.routeType,
+		RouteHost:         match.host.displayHost,
+		RoutePath:         match.route.path,
+		RouteLabel:        match.route.label,
+		Target:            match.route.targetLabel,
+		RewritePathPrefix: match.route.rewritePathPrefix,
+	})
+	if handleCORS(w, r, match.host.cors) {
+		return false
+	}
+	if !s.authorizeReverseProxyRoute(w, r, match.route.gateway) {
+		return false
+	}
+	return true
 }
 
 func (c *compiledReverseProxy) match(r *http.Request) (reverseProxyRouteMatch, bool) {

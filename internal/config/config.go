@@ -759,8 +759,9 @@ func (c *Config) ApplyHealthOptions(opts *HealthOptions) {
 // ServeOptions contains parameters used by the serve command to prepare the
 // configuration before starting the server.
 type ServeOptions struct {
-	Port    string
-	Verbose bool
+	Port      string
+	ProxyPort string
+	Verbose   bool
 }
 
 // PrepareForServe applies serve-time defaults to the configuration and returns

@@ -39,9 +39,7 @@ certificate_authority:
   ca_dir: "/app/tls"
   domains:
     - "localhost"
-    - "oidc.localhost"
-    - "app.localhost"
-    - "app2.localhost"
+    - "*.localhost"
   ca_cert_ttl: "87600h"
   leaf_cert_ttl: "720h"
 

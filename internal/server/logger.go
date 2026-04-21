@@ -12,6 +12,7 @@ import (
 type startupSummary struct {
 	DeveloperConsoleURL string
 	OIDC                startupOIDCSummary
+	ReverseProxy        *startupReverseProxySummary
 	MetadataCompanion   *startupMetadataSummary
 }
 
@@ -22,6 +23,14 @@ type startupOIDCSummary struct {
 	AccessFilter string
 	Endpoints    entraIDStartupDisplay
 	Tenants      []string
+	Port         string
+}
+
+type startupReverseProxySummary struct {
+	Enabled    bool
+	TLSEnabled bool
+	TLSSource  string
+	Port       string
 }
 
 type startupMetadataSummary struct {
@@ -82,6 +91,9 @@ func (l *Logger) ServerStarting(summary startupSummary) {
 	} else {
 		l.printKeyValue("TLS", "off")
 	}
+	if summary.OIDC.Port != "" {
+		l.printKeyValue("Port", summary.OIDC.Port)
+	}
 	l.printKeyValue("Access Filter", summary.OIDC.AccessFilter)
 
 	fmt.Println()
@@ -107,6 +119,19 @@ func (l *Logger) ServerStarting(summary startupSummary) {
 		l.printEndpoint("JWKS", summary.MetadataCompanion.JWKS)
 		if len(summary.MetadataCompanion.Tenants) > 0 {
 			l.printKeyValue("Tenant", strings.Join(summary.MetadataCompanion.Tenants, ", ")+" (or omitted)")
+		}
+	}
+
+	if summary.ReverseProxy != nil && summary.ReverseProxy.Enabled {
+		fmt.Println()
+		l.info.Println("🧭 Reverse Proxy")
+		if summary.ReverseProxy.TLSEnabled {
+			l.printKeyValue("TLS", fmt.Sprintf("on (%s)", summary.ReverseProxy.TLSSource))
+		} else {
+			l.printKeyValue("TLS", "off")
+		}
+		if summary.ReverseProxy.Port != "" {
+			l.printKeyValue("Port", summary.ReverseProxy.Port)
 		}
 	}
 

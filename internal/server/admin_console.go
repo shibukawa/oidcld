@@ -32,6 +32,7 @@ type adminStatusResponse struct {
 	HTTPSExpected        bool                        `json:"httpsExpected"`
 	AutocertEnabled      bool                        `json:"autocertEnabled"`
 	ReverseProxyEnabled  bool                        `json:"reverseProxyEnabled"`
+	BrowserListeners     *adminBrowserListeners      `json:"browserListeners,omitempty"`
 	AdminConsole         *adminConsoleStatusResponse `json:"adminConsole,omitempty"`
 	OIDC                 *adminOIDCStatusResponse    `json:"oidc,omitempty"`
 	SelfSignedTLS        *selfSignedTLSStatus        `json:"selfSignedTls,omitempty"`
@@ -43,6 +44,16 @@ type adminStatusResponse struct {
 type adminConsoleStatusResponse struct {
 	Port        string `json:"port"`
 	BindAddress string `json:"bindAddress"`
+}
+
+type adminBrowserListeners struct {
+	OIDC         *adminBrowserListenerStatus `json:"oidc,omitempty"`
+	ReverseProxy *adminBrowserListenerStatus `json:"reverseProxy,omitempty"`
+}
+
+type adminBrowserListenerStatus struct {
+	Scheme string `json:"scheme"`
+	Port   string `json:"port"`
 }
 
 type adminOIDCStatusResponse struct {
@@ -231,6 +242,32 @@ func (s *Server) handleAdminStatus(w http.ResponseWriter, _ *http.Request) {
 		response.AdminConsole = &adminConsoleStatusResponse{
 			Port:        cfg.Port,
 			BindAddress: cfg.BindAddress,
+		}
+	}
+	oidcScheme, _, oidcPort, ok := config.IssuerURLParts(s.config.OIDC.Issuer)
+	if ok {
+		response.BrowserListeners = &adminBrowserListeners{
+			OIDC: &adminBrowserListenerStatus{
+				Scheme: oidcScheme,
+				Port:   oidcPort,
+			},
+		}
+	}
+	if scheme, err := s.config.ReverseProxyListenerScheme(); err == nil && scheme != "" {
+		if response.BrowserListeners == nil {
+			response.BrowserListeners = &adminBrowserListeners{}
+		}
+		response.BrowserListeners.ReverseProxy = &adminBrowserListenerStatus{
+			Scheme: scheme,
+		}
+		for _, host := range s.config.ReverseProxy.Hosts {
+			if host.IsDefaultVirtualHost() {
+				continue
+			}
+			if port := host.Port(); port != "" {
+				response.BrowserListeners.ReverseProxy.Port = port
+				break
+			}
 		}
 	}
 	if cfg := s.config.CertificateAuthority; cfg != nil {

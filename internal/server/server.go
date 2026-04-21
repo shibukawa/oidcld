@@ -216,6 +216,25 @@ func (s *Server) createProvider() (op.OpenIDProvider, error) {
 
 // Handler returns the HTTP handler for the OIDC server
 func (s *Server) Handler() http.Handler {
+	oidcHandler := s.oidcHandler()
+	combined := s.reverseProxyMiddleware(oidcHandler)
+	combined = s.decorateBrowserHandler(combined)
+	return s.wrapIssuerPrefix(combined)
+}
+
+func (s *Server) OIDCHandler() http.Handler {
+	handler := s.decorateBrowserHandler(s.oidcHandler())
+	return s.wrapIssuerPrefix(handler)
+}
+
+func (s *Server) ReverseProxyHandler() http.Handler {
+	notFound := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	})
+	return s.decorateBrowserHandler(s.reverseProxyOnlyMiddleware(notFound))
+}
+
+func (s *Server) oidcHandler() http.Handler {
 	mux := http.NewServeMux()
 
 	// Add custom discovery handler for pretty-printed JSON
@@ -280,12 +299,22 @@ func (s *Server) Handler() http.Handler {
 		oidcHandler = s.entraIDRouteMiddleware(oidcHandler)
 	}
 	oidcHandler = createCORSMiddleware(s.config.OIDC.CORS)(oidcHandler)
-	baseHandler := s.reverseProxyMiddleware(oidcHandler)
+	return oidcHandler
+}
 
-	// Apply middleware in correct order so denied requests are still logged and get CORS headers.
-	handler := s.accessFilterMiddleware(baseHandler)
+func (s *Server) decorateBrowserHandler(handler http.Handler) http.Handler {
+	if handler == nil {
+		return nil
+	}
+	handler = s.accessFilterMiddleware(handler)
 	handler = s.loggingMiddleware(handler)
+	return handler
+}
 
+func (s *Server) wrapIssuerPrefix(handler http.Handler) http.Handler {
+	if handler == nil {
+		return nil
+	}
 	prefix := config.IssuerPathPrefix(s.config.OIDC.Issuer)
 	if prefix == "" {
 		return handler
@@ -668,15 +697,18 @@ func getEmailFromClaims(claims map[string]any) string {
 
 // Start starts the OIDC server
 func (s *Server) Start(port string) error {
-	addr := fmt.Sprintf(":%s", port)
-
-	server := &http.Server{
-		Addr:    addr,
-		Handler: s.Handler(),
-	}
-
 	s.prettyLog.ServerStarting(s.startupSummary(false, "none"))
-	return server.ListenAndServe()
+	return s.startHTTP(port, s.Handler())
+}
+
+func (s *Server) StartOIDC(port string) error {
+	s.prettyLog.ServerStarting(s.startupSummaryForSplitListener(port, false, "none", "", false, ""))
+	return s.startHTTP(port, s.OIDCHandler())
+}
+
+func (s *Server) StartReverseProxy(port string) error {
+	s.prettyLog.ServerStarting(s.startupSummaryForSplitListener("", false, "", port, false, "none"))
+	return s.startHTTP(port, s.ReverseProxyHandler())
 }
 
 // StartTLS starts the OIDC server with TLS
@@ -684,12 +716,24 @@ func (s *Server) StartTLS(port, certFile, keyFile string) error {
 	return s.startTLS(port, certFile, keyFile, true)
 }
 
+func (s *Server) StartTLSOIDC(port, certFile, keyFile string) error {
+	return s.startTLSWithHandler(port, certFile, keyFile, true, s.OIDCHandler(), s.startupSummaryForSplitListener(port, true, tlsSourceLabel(certFile, keyFile, s.autocertManager != nil), "", false, ""))
+}
+
+func (s *Server) StartTLSReverseProxy(port, certFile, keyFile string) error {
+	return s.startTLSWithHandler(port, certFile, keyFile, true, s.ReverseProxyHandler(), s.startupSummaryForSplitListener("", false, "", port, true, tlsSourceLabel(certFile, keyFile, false)))
+}
+
 func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error {
+	return s.startTLSWithHandler(port, certFile, keyFile, logStartup, s.Handler(), s.startupSummary(true, tlsSourceLabel(certFile, keyFile, s.autocertManager != nil)))
+}
+
+func (s *Server) startTLSWithHandler(port, certFile, keyFile string, logStartup bool, handler http.Handler, summary startupSummary) error {
 	addr := fmt.Sprintf(":%s", port)
 
 	server := &http.Server{
 		Addr:    addr,
-		Handler: s.Handler(),
+		Handler: handler,
 	}
 
 	// If autocert manager is configured, prefer it when no cert/key provided.
@@ -700,7 +744,7 @@ func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error
 		}
 
 		if logStartup {
-			s.prettyLog.ServerStarting(s.startupSummary(true, "acme"))
+			s.prettyLog.ServerStarting(summary)
 		}
 
 		// Use autocert TLSConfig and let the standard library's ListenAndServeTLS
@@ -726,7 +770,7 @@ func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error
 		}
 		server.TLSConfig = tlsConfig
 		if logStartup {
-			s.prettyLog.ServerStarting(s.startupSummary(true, "self-signed"))
+			s.prettyLog.ServerStarting(summary)
 		}
 		return server.ListenAndServeTLS("", "")
 	}
@@ -738,28 +782,50 @@ func (s *Server) startTLS(port, certFile, keyFile string, logStartup bool) error
 	server.TLSConfig = tlsConfig
 
 	if logStartup {
-		s.prettyLog.ServerStarting(s.startupSummary(true, "manual"))
+		s.prettyLog.ServerStarting(summary)
 	}
 
 	return server.ListenAndServeTLS("", "")
 }
 
+func (s *Server) startHTTP(port string, handler http.Handler) error {
+	addr := fmt.Sprintf(":%s", port)
+	server := &http.Server{
+		Addr:    addr,
+		Handler: handler,
+	}
+	return server.ListenAndServe()
+}
+
 func (s *Server) startupSummary(tlsEnabled bool, tlsSource string) startupSummary {
+	return s.startupSummaryForSplitListener("", tlsEnabled, tlsSource, "", false, "")
+}
+
+func (s *Server) startupSummaryForSplitListener(oidcPort string, oidcTLSEnabled bool, oidcTLSSource string, proxyPort string, proxyTLSEnabled bool, proxyTLSSource string) startupSummary {
 	endpoints, tenants := startupEndpointsForIssuer(s.config.OIDC.Issuer, s.config.EntraID)
 	summary := startupSummary{
 		OIDC: startupOIDCSummary{
 			Mode:         startupModeLabel(s.config.EntraID),
-			TLSEnabled:   tlsEnabled,
-			TLSSource:    tlsSource,
+			TLSEnabled:   oidcTLSEnabled,
+			TLSSource:    oidcTLSSource,
 			AccessFilter: formatAccessFilterStartupInfo(s.access.startupInfo()),
 			Endpoints:    endpoints,
 			Tenants:      tenants,
+			Port:         strings.TrimSpace(oidcPort),
 		},
+	}
+	if strings.TrimSpace(proxyPort) != "" {
+		summary.ReverseProxy = &startupReverseProxySummary{
+			Enabled:    true,
+			TLSEnabled: proxyTLSEnabled,
+			TLSSource:  proxyTLSSource,
+			Port:       strings.TrimSpace(proxyPort),
+		}
 	}
 
 	if s.config.Console != nil {
 		summary.DeveloperConsoleURL = ConsoleURL(s.config.Console.BindAddress, s.config.Console.Port)
-		if tlsEnabled {
+		if oidcTLSEnabled {
 			httpMetadataAddr := fmt.Sprintf(":%s", strings.TrimSpace(s.config.Console.Port))
 			if metadataIssuer := config.HTTPMetadataIssuer(s.config.OIDC.Issuer, httpMetadataAddr); metadataIssuer != "" {
 				metadataEndpoints, metadataTenants := startupEndpointsForIssuer(metadataIssuer, s.config.EntraID)
@@ -773,6 +839,16 @@ func (s *Server) startupSummary(tlsEnabled bool, tlsSource string) startupSummar
 	}
 
 	return summary
+}
+
+func tlsSourceLabel(certFile, keyFile string, autocertEnabled bool) string {
+	if autocertEnabled && certFile == "" && keyFile == "" {
+		return "acme"
+	}
+	if certFile != "" || keyFile != "" {
+		return "manual"
+	}
+	return "self-signed"
 }
 
 func startupModeLabel(entraid *config.EntraIDConfig) string {

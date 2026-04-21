@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	neturl "net/url"
 	"path/filepath"
@@ -13,6 +14,15 @@ import (
 const DefaultReverseProxyLogRetention = 200
 
 var DefaultReverseProxyIgnoreLogPaths = []string{"/health"}
+
+var (
+	ErrReverseProxyMixedListenerSchemes        = errors.New("reverse_proxy.hosts[] must use a single scheme when split listener mode is enabled")
+	ErrReverseProxySplitPortRequiresHosts      = errors.New("--proxy-port requires at least one reverse_proxy host")
+	ErrReverseProxySplitHostPortMismatch       = errors.New("reverse_proxy.hosts[].host explicit port must match --proxy-port in split listener mode")
+	ErrReverseProxySplitSchemeCannotBeInferred = errors.New("reverse proxy listener scheme cannot be inferred from a default virtual host alone")
+	ErrReverseProxySplitOIDCPortConflict       = errors.New("oidc listener port conflicts with --proxy-port")
+	ErrReverseProxySplitConsolePortConflict    = errors.New("console port conflicts with --proxy-port")
+)
 
 type ReverseProxyConfig struct {
 	Hosts          []ReverseProxyHost `yaml:"hosts,omitempty"`
@@ -106,6 +116,77 @@ func (c *Config) ReverseProxyUsesHTTPS() bool {
 		}
 	}
 	return false
+}
+
+func (c *Config) ReverseProxyListenerScheme() (string, error) {
+	if c == nil || c.ReverseProxy == nil || len(c.ReverseProxy.Hosts) == 0 {
+		return "", nil
+	}
+
+	resolvedScheme := ""
+	hasExplicitHost := false
+	for _, host := range c.ReverseProxy.Hosts {
+		if host.IsDefaultVirtualHost() {
+			continue
+		}
+		hasExplicitHost = true
+		scheme := strings.ToLower(strings.TrimSpace(host.Scheme()))
+		if scheme == "" {
+			continue
+		}
+		if resolvedScheme == "" {
+			resolvedScheme = scheme
+			continue
+		}
+		if resolvedScheme != scheme {
+			return "", ErrReverseProxyMixedListenerSchemes
+		}
+	}
+
+	if resolvedScheme != "" {
+		return resolvedScheme, nil
+	}
+	if hasExplicitHost {
+		return "", nil
+	}
+
+	issuerScheme, _, _, ok := IssuerURLParts(c.OIDC.Issuer)
+	if ok && issuerScheme != "" {
+		return strings.ToLower(issuerScheme), nil
+	}
+	return "", ErrReverseProxySplitSchemeCannotBeInferred
+}
+
+func (c *Config) ValidateSplitListenerPorts(oidcPort, proxyPort, consolePort string) error {
+	oidcPort = strings.TrimSpace(oidcPort)
+	proxyPort = strings.TrimSpace(proxyPort)
+	consolePort = strings.TrimSpace(consolePort)
+
+	if proxyPort == "" {
+		return nil
+	}
+	if c == nil || c.ReverseProxy == nil || len(c.ReverseProxy.Hosts) == 0 {
+		return ErrReverseProxySplitPortRequiresHosts
+	}
+	if oidcPort != "" && oidcPort == proxyPort {
+		return fmt.Errorf("%w: %q", ErrReverseProxySplitOIDCPortConflict, proxyPort)
+	}
+	if consolePort != "" && consolePort == proxyPort {
+		return fmt.Errorf("%w: %q", ErrReverseProxySplitConsolePortConflict, proxyPort)
+	}
+
+	if _, err := c.ReverseProxyListenerScheme(); err != nil {
+		return err
+	}
+	for _, host := range c.ReverseProxy.Hosts {
+		if host.IsDefaultVirtualHost() {
+			continue
+		}
+		if host.Port() != "" && host.Port() != proxyPort {
+			return fmt.Errorf("%w: %q", ErrReverseProxySplitHostPortMismatch, host.DisplayHost())
+		}
+	}
+	return nil
 }
 
 func normalizeReverseProxyConfig(cfg *ReverseProxyConfig, sourceDir string) (*ReverseProxyConfig, error) {
