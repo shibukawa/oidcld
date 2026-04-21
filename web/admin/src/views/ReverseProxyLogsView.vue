@@ -227,6 +227,10 @@ function formatBytes(value: number) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function formatLatencyMetric(entry: LogSummary) {
+  return `${entry.durationMs}ms / ${formatBytes(entry.bytes).split(' ').join('')}`
+}
+
 function bodyPreview(body?: CapturedBody) {
   if (!body) {
     return t('common.unavailable')
@@ -796,8 +800,7 @@ watch(
                   {{ entry.statusCode }}
                 </span>
                 <span class="proxy-log-type-pill">{{ entry.contentTypeLabel || '-' }}</span>
-                <span class="proxy-log-metric">{{ entry.durationMs }} ms</span>
-                <span class="proxy-log-metric">{{ formatBytes(entry.bytes) }}</span>
+                <span class="proxy-log-metric">{{ formatLatencyMetric(entry) }}</span>
                 <label class="proxy-log-select-cell" @click.stop>
                   <input
                     :checked="selectedIds.includes(entry.id)"
@@ -1139,16 +1142,21 @@ watch(
 
 .proxy-log-summary-row {
   display: grid;
-  grid-template-columns: 7rem 5rem minmax(18rem, 2.2fr) minmax(8rem, 1fr) 5rem 5.5rem 6rem 6rem 2.6rem;
+  grid-template-columns: 6.5rem 4.5rem minmax(0, 2.25fr) minmax(6.5rem, 1fr) 4.5rem 5.5rem minmax(7.5rem, auto) 2.6rem;
   gap: 0.7rem;
   align-items: center;
   padding: 1rem 0;
+}
+
+.proxy-log-summary-row > * {
+  min-width: 0;
 }
 
 .proxy-log-select-cell {
   display: flex;
   align-items: center;
   justify-content: center;
+  justify-self: end;
 }
 
 .proxy-log-row-checkbox {
@@ -1161,6 +1169,10 @@ watch(
 .proxy-log-path,
 .proxy-log-metric {
   font-size: 0.88rem;
+}
+
+.proxy-log-metric {
+  white-space: nowrap;
 }
 
 .proxy-log-method,
@@ -1441,18 +1453,17 @@ watch(
 
 @media (max-width: 1280px) {
   .proxy-log-summary-row {
-    grid-template-columns: 6.5rem 4.5rem minmax(14rem, 2fr) minmax(8rem, 1fr) 4.5rem 4.5rem 5.5rem 5.5rem 2.6rem;
+    grid-template-columns: 6rem 4.25rem minmax(0, 2fr) minmax(6rem, 0.9fr) 4.25rem 5rem minmax(7rem, auto) 2.6rem;
   }
 }
 
 @media (max-width: 1080px) {
   .proxy-log-summary-row {
-    grid-template-columns: 6.5rem 4.5rem minmax(12rem, 2fr) 5rem 5rem 5rem 2.6rem;
+    grid-template-columns: 6rem 4.25rem minmax(0, 2fr) 4.5rem minmax(7rem, auto) 2.6rem;
   }
 
   .proxy-log-route-pill,
-  .proxy-log-type-pill,
-  .proxy-log-metric:last-child {
+  .proxy-log-type-pill {
     display: none;
   }
 
