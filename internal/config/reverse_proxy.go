@@ -20,6 +20,8 @@ var (
 	ErrReverseProxySplitPortRequiresHosts      = errors.New("--proxy-port requires at least one reverse_proxy host")
 	ErrReverseProxySplitHostPortMismatch       = errors.New("reverse_proxy.hosts[].host explicit port must match --proxy-port in split listener mode")
 	ErrReverseProxySplitSchemeCannotBeInferred = errors.New("reverse proxy listener scheme cannot be inferred from a default virtual host alone")
+	ErrReverseProxySplitOIDCPortConflict       = errors.New("oidc listener port conflicts with --proxy-port")
+	ErrReverseProxySplitConsolePortConflict    = errors.New("console port conflicts with --proxy-port")
 )
 
 type ReverseProxyConfig struct {
@@ -167,10 +169,10 @@ func (c *Config) ValidateSplitListenerPorts(oidcPort, proxyPort, consolePort str
 		return ErrReverseProxySplitPortRequiresHosts
 	}
 	if oidcPort != "" && oidcPort == proxyPort {
-		return fmt.Errorf("oidc listener port %q conflicts with --proxy-port", proxyPort)
+		return fmt.Errorf("%w: %q", ErrReverseProxySplitOIDCPortConflict, proxyPort)
 	}
 	if consolePort != "" && consolePort == proxyPort {
-		return fmt.Errorf("console port %q conflicts with --proxy-port", proxyPort)
+		return fmt.Errorf("%w: %q", ErrReverseProxySplitConsolePortConflict, proxyPort)
 	}
 
 	if _, err := c.ReverseProxyListenerScheme(); err != nil {
