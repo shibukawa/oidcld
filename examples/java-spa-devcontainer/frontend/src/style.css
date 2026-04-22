@@ -1,0 +1,262 @@
+:root {
+  color-scheme: light;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.22), transparent 35%),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 28%),
+    linear-gradient(180deg, #f5f7f4 0%, #eef4f1 100%);
+  color: #10261f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+code {
+  font-family: "SFMono-Regular", "SF Mono", "Consolas", monospace;
+}
+
+.page-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.hero-card,
+.panel {
+  border: 1px solid rgba(16, 38, 31, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 22px 50px rgba(16, 38, 31, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.hero-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px;
+  border-radius: 28px;
+  margin-bottom: 24px;
+}
+
+.hero-copy h1,
+.panel-header h2,
+.item-heading h3 {
+  margin: 0;
+  font-family: "Georgia", "Iowan Old Style", serif;
+  font-weight: 700;
+}
+
+.hero-copy h1 {
+  font-size: clamp(2.2rem, 4vw, 4.2rem);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  max-width: 12ch;
+}
+
+.eyebrow,
+.panel-label {
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.76rem;
+  color: #0f766e;
+}
+
+.summary,
+.muted,
+.item-notes,
+.item-owner {
+  color: #3f5751;
+}
+
+.summary {
+  max-width: 60ch;
+  margin-top: 16px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+}
+
+.primary-button,
+.secondary-button,
+.ghost-button,
+.ghost-danger {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  cursor: pointer;
+  transition: transform 140ms ease, opacity 140ms ease, background 140ms ease;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #0f766e, #0b4b5d);
+  color: #f8fcfb;
+}
+
+.secondary-button {
+  background: #10261f;
+  color: #f8fcfb;
+}
+
+.ghost-button {
+  background: rgba(16, 38, 31, 0.08);
+  color: #10261f;
+}
+
+.ghost-danger {
+  background: rgba(190, 24, 93, 0.08);
+  color: #9d174d;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.grid-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.panel {
+  border-radius: 24px;
+  padding: 24px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.panel-header,
+.item-heading,
+.item-actions,
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pill,
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.pill.ok {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.pill.idle,
+.status-chip {
+  background: rgba(16, 38, 31, 0.08);
+  color: #29433c;
+}
+
+.claims-list,
+.item-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.claim-row,
+.item-card {
+  border: 1px solid rgba(16, 38, 31, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.claim-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.claim-row span {
+  color: #5b726d;
+}
+
+.item-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.item-form input,
+.item-form select,
+.item-form textarea {
+  border: 1px solid rgba(16, 38, 31, 0.12);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.item-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.item-card {
+  padding: 18px;
+}
+
+.error-banner {
+  margin-top: 20px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(190, 24, 93, 0.1);
+  color: #9d174d;
+}
+
+@media (max-width: 900px) {
+  .hero-card,
+  .grid-layout,
+  .item-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-card,
+  .panel-header,
+  .item-heading,
+  .item-actions,
+  .form-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

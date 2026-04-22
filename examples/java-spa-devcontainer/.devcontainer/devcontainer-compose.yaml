@@ -1,0 +1,53 @@
+services:
+  oidcld:
+    build:
+      context: ../../..
+      dockerfile: Dockerfile
+    ports:
+      - "8443:443"
+      - "8888:8888"
+    volumes:
+      - ../oidcld.yaml:/app/config/oidcld.yaml:ro
+      - oidcld-managed-ca:/app/tls
+    environment:
+      - OIDCLD_CONFIG=/app/config/oidcld.yaml
+      - CONSOLE_PORT=8888
+    command: ["serve", "--config", "/app/config/oidcld.yaml"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:8888"]
+      interval: 30s
+      timeout: 10s
+      start_period: 5s
+      retries: 3
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "55432:5432"
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  workspace:
+    image: mcr.microsoft.com/devcontainers/base:bookworm
+    command: sleep infinity
+    ports:
+      - "5173:5173"
+      - "8080:8080"
+    volumes:
+      - ../../..:/workspaces/oidcld:cached
+    working_dir: /workspaces/oidcld
+
+volumes:
+  oidcld-managed-ca:
+  postgres-data:
