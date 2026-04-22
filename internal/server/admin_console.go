@@ -240,7 +240,7 @@ func (s *Server) handleAdminStatus(w http.ResponseWriter, _ *http.Request) {
 
 	if cfg := s.config.Console; cfg != nil {
 		response.AdminConsole = &adminConsoleStatusResponse{
-			Port:        cfg.Port,
+			Port:        s.consolePort,
 			BindAddress: cfg.BindAddress,
 		}
 	}
@@ -842,7 +842,11 @@ func adminDistCandidates(sourceDir string) []string {
 
 func (s *Server) adminLocalOnlyMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.consoleRequiresLoopbackClient() {
+		bindAddress := "127.0.0.1"
+		if s != nil && s.config.Console != nil && strings.TrimSpace(s.config.Console.BindAddress) != "" {
+			bindAddress = strings.TrimSpace(s.config.Console.BindAddress)
+		}
+		if !consoleRequiresLoopbackClient(bindAddress) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -852,19 +856,18 @@ func (s *Server) adminLocalOnlyMiddleware(next http.Handler) http.Handler {
 		}
 		ip := net.ParseIP(strings.Trim(host, "[]"))
 		if ip == nil || !ip.IsLoopback() {
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			writeDiagnosticError(w, r, http.StatusForbidden, "admin_local_only_peer_not_allowed", "peer_not_allowed", "The Developer Console is restricted to loopback clients because console.bind_address is configured for local-only access.", map[string]any{
+				"remote_addr":   r.RemoteAddr,
+				"console_bind":  bindAddress,
+				"loopback_only": true,
+			}, "Bind the console to 0.0.0.0 or :: if you intentionally want remote clients to access it.")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (s *Server) consoleRequiresLoopbackClient() bool {
-	bindAddress := "127.0.0.1"
-	if s != nil && s.config.Console != nil && strings.TrimSpace(s.config.Console.BindAddress) != "" {
-		bindAddress = strings.TrimSpace(s.config.Console.BindAddress)
-	}
-
+func consoleRequiresLoopbackClient(bindAddress string) bool {
 	switch bindAddress {
 	case "0.0.0.0", "::", "[::]":
 		return false

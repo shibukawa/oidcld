@@ -139,13 +139,15 @@ func (r *ComposeTemplateResource) Content(_ context.Context) ([]byte, error) {
     image: ghcr.io/shibukawa/oidcld:latest
     container_name: oidcld
     ports:
-      - "18888:18888"
+      - "80:80"
+      - "8888:8888"
     volumes:
       - ./oidcld.yaml:/app/oidcld.yaml:ro
     environment:
-      - PORT=18888
+      - OIDCLD_CONTAINER=1
+      - CONSOLE_PORT=8888
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:18888/health"]
+      test: ["CMD", "/usr/local/bin/oidcld", "health"]
       interval: 10s
       timeout: 5s
       retries: 3

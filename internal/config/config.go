@@ -15,6 +15,7 @@ import (
 	"text/template"
 
 	"github.com/goccy/go-yaml"
+	"github.com/shibukawa/incontainer"
 )
 
 var (
@@ -80,6 +81,8 @@ type Config struct {
 	Users                map[string]User             `yaml:"users"`
 
 	sourceDir string `yaml:"-"`
+
+	accessFilterExplicit bool `yaml:"-"`
 }
 
 // OIDCConfig represents the core OpenID Connect configuration.
@@ -105,8 +108,8 @@ type OIDCConfig struct {
 const (
 	AudienceClaimFormatString = "string"
 	AudienceClaimFormatArray  = "array"
-	DefaultHTTPPort           = "18888"
-	DefaultHTTPSPort          = "18443"
+	DefaultHTTPPort           = "8080"
+	DefaultHTTPSPort          = "8443"
 )
 
 func normalizeAudienceClaimFormat(format string) string {
@@ -128,6 +131,14 @@ func DefaultAccessFilterConfig() *AccessFilterConfig {
 		ExtraAllowedIPs:  []string{},
 		MaxForwardedHops: 0,
 	}
+}
+
+func IsContainerRuntime() bool {
+	if raw, ok := os.LookupEnv("OIDCLD_CONTAINER"); ok {
+		value := strings.TrimSpace(strings.ToLower(raw))
+		return value == "1" || value == "true" || value == "yes"
+	}
+	return incontainer.IsInContainer()
 }
 
 func DefaultServePort(useHTTPS bool) string {
@@ -234,7 +245,6 @@ type LoginUIConfig struct {
 
 // ConsoleConfig configures the HTTP developer console listener.
 type ConsoleConfig struct {
-	Port        string `yaml:"port,omitempty"`
 	BindAddress string `yaml:"bind_address,omitempty"`
 }
 
@@ -252,7 +262,6 @@ func (c *LoginUIConfig) HasEnvironmentBanner() bool {
 
 func DefaultConsoleConfig() *ConsoleConfig {
 	return &ConsoleConfig{
-		Port:        "18889",
 		BindAddress: "127.0.0.1",
 	}
 }
@@ -361,6 +370,11 @@ func loadConfig(configPath string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+	_, config.accessFilterExplicit = raw["access_filter"]
 
 	if err := config.setSourceDir(configPath); err != nil {
 		return nil, err
@@ -624,7 +638,7 @@ func createDefaultConfig(mode Mode) *Config {
 
 	switch mode {
 	case ModeStandard:
-		config.OIDC.Issuer = "http://localhost:18888"
+		config.OIDC.Issuer = "http://localhost:8080"
 	case ModeEntraIDv1:
 		config.OIDC.Issuer = "https://login.microsoftonline.com/common"
 		config.OIDC.NonceRequired = true
@@ -640,7 +654,7 @@ func createDefaultConfig(mode Mode) *Config {
 			Version:  "v2",
 		}
 	default:
-		config.OIDC.Issuer = "http://localhost:18888"
+		config.OIDC.Issuer = "http://localhost:8080"
 	}
 
 	if err := config.Normalize(); err != nil {
@@ -842,9 +856,6 @@ func normalizeConsoleConfig(cfg *ConsoleConfig) *ConsoleConfig {
 	if cfg == nil {
 		return normalized
 	}
-	if value := strings.TrimSpace(cfg.Port); value != "" {
-		normalized.Port = value
-	}
 	if value := strings.TrimSpace(cfg.BindAddress); value != "" {
 		normalized.BindAddress = value
 	}
@@ -955,7 +966,9 @@ func (c *Config) SourceDir() string {
 
 func normalizeAccessFilterConfig(cfg *AccessFilterConfig) (*AccessFilterConfig, error) {
 	normalized := DefaultAccessFilterConfig()
-	if cfg != nil {
+	if cfg == nil {
+		normalized.Enabled = !IsContainerRuntime()
+	} else {
 		normalized.Enabled = cfg.Enabled
 		normalized.ExtraAllowedIPs = append([]string{}, cfg.ExtraAllowedIPs...)
 		normalized.MaxForwardedHops = cfg.MaxForwardedHops
@@ -972,6 +985,13 @@ func normalizeAccessFilterConfig(cfg *AccessFilterConfig) (*AccessFilterConfig, 
 	normalized.ExtraAllowedIPs = entries
 
 	return normalized, nil
+}
+
+func (c *Config) AccessFilterExplicit() bool {
+	if c == nil {
+		return false
+	}
+	return c.accessFilterExplicit
 }
 
 func normalizeAllowedIPEntries(entries []string) ([]string, error) {
@@ -1179,7 +1199,7 @@ access_filter:
 # OpenID Connect IdP settings
 oidc:{{if .OIDC.Issuer}}
   iss: "{{.OIDC.Issuer}}"{{else}}
-  # iss: "http://localhost:18888"{{end}}
+  # iss: "http://localhost:8080"{{end}}
   pkce_required: {{.OIDC.PKCERequired}}
   nonce_required: {{.OIDC.NonceRequired}}
   expired_in: {{.OIDC.ExpiredIn}}  # Token expiration in seconds
@@ -1212,10 +1232,8 @@ oidc:{{if .OIDC.Issuer}}
 
 {{if .Console}}# Developer Console listener
 console:
-  port: "{{.Console.Port}}"
   bind_address: "{{.Console.BindAddress}}"
 {{else}}# console:
-#   port: "18889"
 #   bind_address: "127.0.0.1"
 {{end}}
 

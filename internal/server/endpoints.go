@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/shibukawa/oidcld/internal/config"
@@ -65,6 +66,30 @@ func discoveryRequestInfo(entraid *config.EntraIDConfig, requestInfo entraIDRequ
 
 func discoveryEndpointsForRequest(issuer string, entraid *config.EntraIDConfig, requestInfo entraIDRequestInfo) oidcEndpointSet {
 	return oidcEndpointsForRequest(issuer, entraid, discoveryRequestInfo(entraid, requestInfo))
+}
+
+func publicIssuerForRequest(r *http.Request, configuredIssuer string) string {
+	configuredIssuer = strings.TrimSpace(configuredIssuer)
+	if r == nil {
+		return configuredIssuer
+	}
+
+	scheme := "http"
+	if forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwardedProto != "" {
+		scheme = strings.ToLower(strings.TrimSpace(strings.Split(forwardedProto, ",")[0]))
+	} else if r.TLS != nil {
+		scheme = "https"
+	}
+
+	host := strings.TrimSpace(r.Host)
+	if forwardedHost := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); forwardedHost != "" {
+		host = strings.TrimSpace(strings.Split(forwardedHost, ",")[0])
+	}
+	if host == "" {
+		return configuredIssuer
+	}
+
+	return scheme + "://" + host + config.IssuerPathPrefix(configuredIssuer)
 }
 
 func startupDisplayFromEndpoints(endpoints oidcEndpointSet, tenants []string) entraIDStartupDisplay {

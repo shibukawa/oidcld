@@ -129,7 +129,7 @@ OpenIDLD is a fake OpenID Connect Identity Provider designed specifically for te
 │  │         oidcld binary           │ │
 │  │  ┌─────────────────────────────┐ │ │
 │  │  │      HTTP Server            │ │ │
-│  │  │    (Port 18888)             │ │ │
+│  │  │    (Port 8080)              │ │ │
 │  │  └─────────────────────────────┘ │ │
 │  │  ┌─────────────────────────────┐ │ │
 │  │  │    Configuration            │ │ │

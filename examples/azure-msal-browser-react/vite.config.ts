@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   // loadEnv works in both dev and build and doesn't require node typings
   const env = loadEnv(mode, '.', '')
-  const VITE_OIDC_AUTHORITY = env.VITE_OIDC_AUTHORITY || 'https://localhost:18888'
+  const VITE_OIDC_AUTHORITY = env.VITE_OIDC_AUTHORITY || 'https://localhost:8443'
 
   return {
     plugins: [react(), tailwindcss()],

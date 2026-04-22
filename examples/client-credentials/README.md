@@ -41,11 +41,11 @@ A simple example demonstrating the OAuth 2.0 Client Credentials flow using the O
 2. **Run with oidcld server:**
    ```bash
    # Start oidcld server first
-   docker run -d --name oidcld -p 18888:18888 ghcr.io/shibukawa/oidcld:latest
+   docker run -d --name oidcld -p 8080:80 ghcr.io/shibukawa/oidcld:latest
    
    # Run the example
    docker run --rm --network container:oidcld client-credentials-example \
-     --idp-host http://localhost:18888 --client-id my-client-app
+     --idp-host http://localhost:8080 --client-id my-client-app
    ```
 
 ### Docker Features
@@ -84,19 +84,19 @@ A simple example demonstrating the OAuth 2.0 Client Credentials flow using the O
 ./client-credentials-example --client-id my-client-app
 
 # Combined usage
-./client-credentials-example --idp-host http://localhost:18888 --client-id my-client-app
+./client-credentials-example --idp-host http://localhost:8080 --client-id my-client-app
 ```
 
 ### Command Line Options
 
-- `--idp-host`: OIDC server URL (default: http://localhost:18888)
+- `--idp-host`: OIDC server URL (default: http://localhost:8080)
 - `--client-id`: OAuth 2.0 Client ID (default: my-client-app)
 
 ### Example Output
 
 ```bash
 $ ./client-credentials-example --client-id my-client-app
-Using OIDC server: http://localhost:18888
+Using OIDC server: http://localhost:8080
 Client ID: my-client-app
 Requesting token...
 Success!

@@ -98,22 +98,22 @@ const endpointRows = computed(() => [
   {
     key: 'https-discovery',
     label: t('openidConnect.httpsDiscovery'),
-    value: 'https://localhost:18443/.well-known/openid-configuration',
+    value: 'https://localhost:8443/.well-known/openid-configuration',
   },
   {
     key: 'https-jwks',
     label: t('openidConnect.httpsJwks'),
-    value: 'https://localhost:18443/keys',
+    value: 'https://localhost:8443/keys',
   },
   {
     key: 'http-discovery',
     label: t('openidConnect.httpDiscovery'),
-    value: 'http://localhost:18889/.well-known/openid-configuration',
+    value: 'http://localhost:8888/.well-known/openid-configuration',
   },
   {
     key: 'http-jwks',
     label: t('openidConnect.httpJwks'),
-    value: 'http://localhost:18889/keys',
+    value: 'http://localhost:8888/keys',
   },
 ])
 

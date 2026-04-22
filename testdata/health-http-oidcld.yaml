@@ -1,2 +1,2 @@
 oidc:
-  iss: "http://oidc.localhost:18888"
+  iss: "http://oidc.localhost:8080"

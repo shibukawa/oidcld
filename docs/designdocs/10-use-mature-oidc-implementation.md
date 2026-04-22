@@ -151,7 +151,7 @@ func (rb *ResponseBuilder) buildFragmentResponse(redirectURL *url.URL) string {
 const msalConfig = {
   auth: {
     clientId: 'test-client',
-    authority: 'https://localhost:18888',
+    authority: 'https://localhost:8443',
     redirectUri: 'https://localhost:3000/callback'
   }
 };
@@ -195,13 +195,13 @@ func TestCertifiedClientIntegration(t *testing.T) {
 #### ✅ Discovery Endpoint
 ```json
 {
-  "issuer": "https://localhost:18888",
-  "authorization_endpoint": "https://localhost:18888/authorize",
-  "token_endpoint": "https://localhost:18888/token",
-  "userinfo_endpoint": "https://localhost:18888/userinfo",
-  "jwks_uri": "https://localhost:18888/keys",
-  "end_session_endpoint": "https://localhost:18888/end_session",
-  "device_authorization_endpoint": "https://localhost:18888/device",
+  "issuer": "https://localhost:8443",
+  "authorization_endpoint": "https://localhost:8443/authorize",
+  "token_endpoint": "https://localhost:8443/token",
+  "userinfo_endpoint": "https://localhost:8443/userinfo",
+  "jwks_uri": "https://localhost:8443/keys",
+  "end_session_endpoint": "https://localhost:8443/end_session",
+  "device_authorization_endpoint": "https://localhost:8443/device",
   "response_types_supported": ["code"],
   "response_modes_supported": ["query", "fragment"],
   "grant_types_supported": [

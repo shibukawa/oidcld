@@ -106,13 +106,13 @@ Client → /token (refresh token grant)
 **Response includes:**
 ```json
 {
-  "issuer": "https://localhost:18888",
-  "authorization_endpoint": "https://localhost:18888/authorize",
-  "token_endpoint": "https://localhost:18888/token",
-  "userinfo_endpoint": "https://localhost:18888/userinfo",
-  "jwks_uri": "https://localhost:18888/keys",
-  "end_session_endpoint": "https://localhost:18888/end_session",
-  "device_authorization_endpoint": "https://localhost:18888/device",
+  "issuer": "https://localhost:8443",
+  "authorization_endpoint": "https://localhost:8443/authorize",
+  "token_endpoint": "https://localhost:8443/token",
+  "userinfo_endpoint": "https://localhost:8443/userinfo",
+  "jwks_uri": "https://localhost:8443/keys",
+  "end_session_endpoint": "https://localhost:8443/end_session",
+  "device_authorization_endpoint": "https://localhost:8443/device",
   "response_types_supported": ["code"],
   "response_modes_supported": ["query", "fragment"],
   "grant_types_supported": ["authorization_code", "client_credentials", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
@@ -187,7 +187,7 @@ Client → /token (refresh token grant)
     "kid": "key-id"
   },
   "payload": {
-    "iss": "https://localhost:18888",
+    "iss": "https://localhost:8443",
     "sub": "user-id",
     "aud": "client-id",
     "exp": 1640995200,
@@ -233,7 +233,7 @@ entraid:
 const msalConfig = {
   auth: {
     clientId: 'your-client-id',
-    authority: 'https://localhost:18888',
+    authority: 'https://localhost:8443',
     redirectUri: 'https://localhost:3000/callback'
   }
 };
@@ -345,7 +345,7 @@ users:
 ### Standard OIDC Client
 ```javascript
 const config = {
-  authority: 'https://localhost:18888',
+  authority: 'https://localhost:8443',
   client_id: 'test-client',
   redirect_uri: 'https://localhost:3000/callback',
   response_type: 'code',
@@ -355,7 +355,7 @@ const config = {
 
 ### Client Credentials
 ```bash
-curl -X POST https://localhost:18888/token \
+curl -X POST https://localhost:8443/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=service-client&client_secret=secret&scope=read write"
 ```
@@ -363,12 +363,12 @@ curl -X POST https://localhost:18888/token \
 ### Device Flow
 ```bash
 # Step 1: Initiate device flow
-curl -X POST https://localhost:18888/device \
+curl -X POST https://localhost:8443/device \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "client_id=device-client&scope=openid profile"
 
 # Step 2: Poll for token
-curl -X POST https://localhost:18888/token \
+curl -X POST https://localhost:8443/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=DEVICE_CODE&client_id=device-client"
 ```

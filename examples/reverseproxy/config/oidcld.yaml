@@ -31,7 +31,6 @@ entraid:
 
 # Developer Console and metadata companion
 console:
-  port: "18889"
   bind_address: "0.0.0.0"
 
 # Managed development CA persisted in the Docker volume mounted at /app/tls

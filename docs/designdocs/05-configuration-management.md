@@ -48,7 +48,7 @@ The configuration management system provides flexible, YAML-based configuration 
 # OpenID Connect Identity Provider Configuration
 openidld:
   # Core OpenID Connect settings
-  iss: "http://localhost:18888"
+  iss: "http://localhost:8080"
   pkce_required: true
   nonce_required: false
   expired_in: 3600
@@ -80,7 +80,7 @@ users:
 ```yaml
 openidld:
   # Issuer identifier (REQUIRED)
-  iss: "http://localhost:18888"
+  iss: "http://localhost:8080"
   
   # PKCE requirement (OPTIONAL, default: false)
   pkce_required: true
@@ -719,7 +719,7 @@ func applyConfigUpdate(config *Config, key string, value interface{}) error {
 ```yaml
 # Standard OpenID Connect Configuration Template
 openidld:
-  iss: "http://localhost:18888"
+  iss: "http://localhost:8080"
   pkce_required: true
   nonce_required: false
   expired_in: 3600
@@ -861,5 +861,4 @@ func validateFilePermissions(configPath string) error {
 - **Atomic Operations**: Atomic configuration updates
 - **Copy-on-Write**: Efficient configuration sharing
 - **Lock-Free Reads**: Optimized read operations
-
 

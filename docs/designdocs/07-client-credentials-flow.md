@@ -165,7 +165,7 @@ func (c *ClientCredentialsClient) ValidateScope(scopes []string) error {
     "kid": "key-id"
   },
   "payload": {
-    "iss": "https://localhost:18888",
+    "iss": "https://localhost:8443",
     "sub": "service-client",
     "aud": ["service-client"],
     "exp": 1640995200,
@@ -246,12 +246,12 @@ The discovery endpoint includes client credentials support:
 ### 5.1 cURL Example
 ```bash
 # Using form-based authentication
-curl -X POST http://localhost:18888/token \
+curl -X POST http://localhost:8080/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=service-client&client_secret=secret&scope=read+write"
 
 # Using HTTP Basic authentication
-curl -X POST http://localhost:18888/token \
+curl -X POST http://localhost:8080/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -H "Authorization: Basic $(echo -n 'service-client:secret' | base64)" \
   -d "grant_type=client_credentials&scope=read+write"
@@ -277,7 +277,7 @@ type TokenResponse struct {
 }
 
 func getClientCredentialsToken() (*TokenResponse, error) {
-    tokenURL := "http://localhost:18888/token"
+    tokenURL := "http://localhost:8080/token"
     
     data := url.Values{}
     data.Set("grant_type", "client_credentials")
@@ -313,7 +313,7 @@ func getClientCredentialsToken() (*TokenResponse, error) {
 const axios = require('axios');
 
 async function getClientCredentialsToken() {
-    const tokenUrl = 'http://localhost:18888/token';
+    const tokenUrl = 'http://localhost:8080/token';
     
     const params = new URLSearchParams();
     params.append('grant_type', 'client_credentials');
@@ -370,7 +370,7 @@ func TestOIDCServerClientCredentialsFlow(t *testing.T) {
 ./oidcld serve
 
 # Test client credentials flow
-curl -X POST http://localhost:18888/token \
+curl -X POST http://localhost:8080/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials&client_id=test-client&client_secret=test-secret&scope=read+write"
 ```

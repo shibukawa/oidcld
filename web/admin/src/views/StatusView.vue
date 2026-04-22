@@ -34,7 +34,7 @@ async function loadStatus() {
         title: t('status.listenerTitle'),
         copy: t('status.configuredBind', {
           address: payload.adminConsole?.bindAddress ?? '127.0.0.1',
-          port: payload.adminConsole?.port ?? '18889',
+          port: payload.adminConsole?.port ?? '8888',
         }),
         state: payload.staticAssetsResolved ? t('status.servingSpaAssets') : t('status.fallbackResponse'),
       },

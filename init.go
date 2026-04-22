@@ -73,7 +73,7 @@ func promptCertificateMethod(reader *bufio.Reader, cmd *InitCmd) error {
 		fmt.Println("Self-signed managed certificate configuration selected.")
 		fmt.Println("OIDCLD will generate a local root CA, manage leaf certificates, and enable the Developer Console.")
 		fmt.Println("Default development domain suffix: dev.localhost")
-		fmt.Println("Default Developer Console port: 18889")
+		fmt.Println("Default Developer Console port: 8888")
 	default:
 		fmt.Println("Invalid choice, defaulting to manual certificates.")
 		fmt.Println("You will need to provide certificate files when starting the server.")
@@ -165,7 +165,7 @@ func (cmd *InitCmd) Run() error {
 		fmt.Println("  (For a custom ACME like 'myencrypt', set --acme-server URL appropriately.)")
 	} else if cmd.SelfSignedTLS {
 		fmt.Println("  Managed self-signed TLS: enabled")
-		fmt.Println("  Developer Console: enabled on http://127.0.0.1:18889/console/")
+		fmt.Println("  Developer Console: enabled on http://127.0.0.1:8888/console/")
 		fmt.Println("  Default root CA storage: ./tls")
 	} else if cmd.HTTPS {
 		fmt.Println()

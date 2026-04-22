@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -22,7 +23,8 @@ var (
 // ServeCmd represents the command to start the OpenID Connect server
 type ServeCmd struct {
 	Config           string `short:"c" help:"Configuration file path" default:"oidcld.yaml"`
-	Port             string `short:"p" help:"Port to listen on (default: 18888 for HTTP, 18443 for HTTPS)" default:""`
+	Port             string `short:"p" help:"Port to listen on (default: 8080 for HTTP, 8443 for HTTPS)" default:""`
+	ConsolePort      string `name:"console-port" help:"Developer Console listener port" default:""`
 	ProxyPort        string `name:"proxy-port" help:"Optional dedicated reverse proxy listener port. When omitted, OIDC and reverse proxy share the main listener." default:""`
 	HTTPReadOnlyPort string `name:"http-readonly-port" help:"Deprecated. HTTP metadata companion now shares the Developer Console listener." default:""`
 	Watch            bool   `short:"w" help:"Watch configuration file for changes and reload automatically"`
@@ -40,12 +42,23 @@ func (cmd *ServeCmd) Run() error {
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
+	if config.IsContainerRuntime() {
+		if cfg.AccessFilterExplicit() {
+			color.Yellow("⚠ access_filter is explicitly configured while container runtime was detected; keeping enabled=%v", cfg.AccessFilter.Enabled)
+		} else if cfg.AccessFilter != nil && !cfg.AccessFilter.Enabled {
+			color.Cyan("ℹ access_filter defaulted to disabled because container runtime was detected")
+		}
+	}
 
-	splitProxy := strings.TrimSpace(cmd.ProxyPort) != ""
-	effectivePort := resolveServePort(cmd.Port, shouldUseOIDCHTTPSByDefault(cfg, cmd.CertFile, cmd.KeyFile))
+	effectiveProxyPort := resolveProxyPort(cmd.ProxyPort)
+	splitProxy := effectiveProxyPort != ""
+	useHTTPSDefault := shouldUseOIDCHTTPSByDefault(cfg, cmd.CertFile, cmd.KeyFile)
+	effectivePort := resolveServePort(cmd.Port, useHTTPSDefault)
 
 	// Let config package prepare serve-time defaults (autocert may force HTTPS)
-	useHTTPS, _ := cfg.PrepareForServe(&config.ServeOptions{Port: effectivePort, ProxyPort: strings.TrimSpace(cmd.ProxyPort), Verbose: cmd.Verbose})
+	useHTTPS, _ := cfg.PrepareForServe(&config.ServeOptions{Port: effectivePort, ProxyPort: effectiveProxyPort, Verbose: cmd.Verbose})
+	effectivePort = resolveServePort(cmd.Port, useHTTPS)
+	adminPort := resolveConsolePort(cmd.ConsolePort)
 
 	// Auto-enable HTTPS if explicit cert files provided (both) and not already enabled via autocert
 	if !useHTTPS && cmd.CertFile != "" && cmd.KeyFile != "" {
@@ -63,17 +76,16 @@ func (cmd *ServeCmd) Run() error {
 	}
 
 	adminEnabled := cfg.Console != nil
-	adminPort := ""
 	adminBindAddress := ""
 	if adminEnabled {
-		adminPort = cfg.Console.Port
 		adminBindAddress = cfg.Console.BindAddress
+		srv.SetConsolePort(adminPort)
 	}
 	if splitProxy {
-		if adminEnabled && adminPort != "" && adminPort == strings.TrimSpace(cmd.ProxyPort) {
+		if adminEnabled && adminPort != "" && adminPort == effectiveProxyPort {
 			return ErrProxyPortConflict
 		}
-		if err := cfg.ValidateSplitListenerPorts(effectivePort, strings.TrimSpace(cmd.ProxyPort), adminPort); err != nil {
+		if err := cfg.ValidateSplitListenerPorts(effectivePort, effectiveProxyPort, adminPort); err != nil {
 			return err
 		}
 	}
@@ -85,7 +97,7 @@ func (cmd *ServeCmd) Run() error {
 		}
 	}
 
-	proxyUseHTTPS, err := shouldUseReverseProxyHTTPS(cfg, strings.TrimSpace(cmd.ProxyPort))
+	proxyUseHTTPS, err := shouldUseReverseProxyHTTPS(cfg, effectiveProxyPort)
 	if err != nil {
 		return err
 	}
@@ -205,11 +217,11 @@ func (cmd *ServeCmd) Run() error {
 
 	if proxyUseHTTPS {
 		listeners = append(listeners, func() error {
-			return srv.StartTLSReverseProxy(strings.TrimSpace(cmd.ProxyPort), manualCertFile, manualKeyFile)
+			return srv.StartTLSReverseProxy(effectiveProxyPort, manualCertFile, manualKeyFile)
 		})
 	} else {
 		listeners = append(listeners, func() error {
-			return srv.StartReverseProxy(strings.TrimSpace(cmd.ProxyPort))
+			return srv.StartReverseProxy(effectiveProxyPort)
 		})
 	}
 	if adminEnabled {
@@ -293,7 +305,48 @@ func resolveServePort(cliPort string, useHTTPS bool) string {
 	if strings.TrimSpace(cliPort) != "" {
 		return strings.TrimSpace(cliPort)
 	}
+	if value := strings.TrimSpace(os.Getenv("PORT")); value != "" {
+		return value
+	}
+	return defaultServePort(useHTTPS)
+}
+
+func resolveConsolePort(cliPort string) string {
+	if strings.TrimSpace(cliPort) != "" {
+		return strings.TrimSpace(cliPort)
+	}
+	if value := strings.TrimSpace(os.Getenv("CONSOLE_PORT")); value != "" {
+		return value
+	}
+	return defaultConsolePort()
+}
+
+func resolveProxyPort(cliPort string) string {
+	if strings.TrimSpace(cliPort) != "" {
+		return strings.TrimSpace(cliPort)
+	}
+	if value := strings.TrimSpace(os.Getenv("PROXY_PORT")); value != "" {
+		return value
+	}
+	return ""
+}
+
+func defaultServePort(useHTTPS bool) string {
+	if isContainerRuntime() {
+		if useHTTPS {
+			return "443"
+		}
+		return "80"
+	}
 	return config.DefaultServePort(useHTTPS)
+}
+
+func defaultConsolePort() string {
+	return "8888"
+}
+
+func isContainerRuntime() bool {
+	return config.IsContainerRuntime()
 }
 
 // setupConfigWatcher sets up file system watching for configuration changes

@@ -21,6 +21,9 @@ func createTestServer(cfg *config.Config) *Server {
 	if err != nil {
 		panic(err)
 	}
+	if cfg.Console != nil {
+		server.SetConsolePort("8888")
+	}
 	return server
 }
 

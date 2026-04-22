@@ -5,7 +5,7 @@ import { useAuth } from './authService';
 const { isAuthenticated } = useAuth();
 
 // Expose build/runtime configuration to template via Vite env
-const AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:18888';
+const AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:8080';
 const CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID || 'vue-demo-app';
 const REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI || 'http://localhost:5173/callback';
 </script>

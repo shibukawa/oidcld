@@ -56,8 +56,10 @@ COPY --from=builder /usr/local/bin/oidcld /usr/local/bin/oidcld
 # Use nonroot user (already set in base image)
 # USER nonroot:nonroot
 
+ENV OIDCLD_CONTAINER=1
+
 # Expose default runtime ports
-EXPOSE 18888 18443
+EXPOSE 80 443 8888
 
 # Health check using the built-in health command
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

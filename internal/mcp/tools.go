@@ -81,7 +81,7 @@ func (t *InitTool) InputSchema() map[string]any {
 		"port": map[string]any{
 			"type":        "string",
 			"description": "Port number for issuer URL",
-			"default":     "18888",
+			"default":     "8080",
 		},
 	})
 }
@@ -100,7 +100,7 @@ func (t *InitTool) Execute(ctx context.Context, args map[string]any) (any, error
 	tenantID, _ := args["tenant_id"].(string)
 	port, _ := args["port"].(string)
 	if port == "" {
-		port = "18888"
+		port = "8080"
 	}
 
 	// Convert string mode to Mode
@@ -458,13 +458,15 @@ func (t *GenerateComposeTool) Execute(ctx context.Context, args map[string]any) 
     image: ghcr.io/shibukawa/oidcld:latest
     container_name: oidcld
     ports:
-      - "18888:18888"
+      - "80:80"
+      - "8888:8888"
     volumes:
       - ./` + filepath.Base(configPath) + `:/app/oidcld.yaml:ro
     environment:
-      - PORT=18888
+      - OIDCLD_CONTAINER=1
+      - CONSOLE_PORT=8888
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:18888/health"]
+      test: ["CMD", "/usr/local/bin/oidcld", "health"]
       interval: 10s
       timeout: 5s
       retries: 3

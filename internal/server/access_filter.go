@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -87,13 +88,27 @@ func (s *Server) accessFilterMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		decision := s.evaluateAccess(r)
 		if !decision.Allowed {
+			headerDetails := accessFilterHeaderDetails(r)
 			s.logger.Warn("Access filter denied request",
 				"reason", decision.Reason,
 				"method", r.Method,
 				"path", r.URL.Path,
 				"remote_addr", r.RemoteAddr,
+				"forwarded", headerDetails["forwarded"],
+				"x_forwarded_for", headerDetails["x_forwarded_for"],
+				"x_forwarded_host", headerDetails["x_forwarded_host"],
+				"x_forwarded_proto", headerDetails["x_forwarded_proto"],
 			)
-			http.Error(w, s.accessDeniedMessage(decision), http.StatusForbidden)
+			writeDiagnosticError(
+				w,
+				r,
+				http.StatusForbidden,
+				"access_filter_"+decision.Reason,
+				decision.Reason,
+				s.accessDeniedMessage(decision),
+				s.accessDeniedDetails(r, decision),
+				s.accessDeniedSuggestion(decision),
+			)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -142,16 +157,88 @@ func (s *Server) accessDeniedMessage(decision accessDecision) string {
 	case "forwarded_hops_exceeded":
 		effectiveHops := max(decision.ForwardedHops, decision.XForwardedForHops)
 		return fmt.Sprintf(
-			"Forbidden\n\nOIDCLD access_filter denied this request because the forwarded hop count exceeded the configured limit.\n\nConfigured max_forwarded_hops: %d\nObserved effective hops: %d\nForwarded header hops: %d\nX-Forwarded-For hops: %d\n\nAdjust access_filter.max_forwarded_hops if this proxy chain is expected.",
+			"OIDCLD access_filter denied this request because the forwarded hop count exceeded the configured limit.\n\nConfigured max_forwarded_hops: %d\nObserved effective hops: %d\nForwarded header hops: %d\nX-Forwarded-For hops: %d\n\nAdjust access_filter.max_forwarded_hops if this proxy chain is expected.",
 			decision.MaxForwardedHops,
 			effectiveHops,
 			decision.ForwardedHops,
 			decision.XForwardedForHops,
 		)
 	case "malformed_forward_header":
-		return "Forbidden\n\nOIDCLD access_filter denied this request because the forwarded headers were malformed."
+		return "OIDCLD access_filter denied this request because the forwarded headers were malformed."
+	case "peer_not_allowed":
+		return "OIDCLD access_filter denied this request because the client IP is not in the allowed local/private ranges."
 	default:
 		return http.StatusText(http.StatusForbidden)
+	}
+}
+
+func (s *Server) accessDeniedDetails(r *http.Request, decision accessDecision) map[string]any {
+	details := map[string]any{}
+	if r != nil {
+		details["remote_addr"] = r.RemoteAddr
+		if peerIP, err := remotePeerIP(r.RemoteAddr); err == nil {
+			details["peer_ip"] = peerIP.String()
+		}
+		maps.Copy(details, accessFilterHeaderDetails(r))
+	}
+	switch decision.Reason {
+	case "forwarded_hops_exceeded":
+		details["configured_max_forwarded_hops"] = decision.MaxForwardedHops
+		details["forwarded_hops"] = decision.ForwardedHops
+		details["x_forwarded_for_hops"] = decision.XForwardedForHops
+		details["effective_hops"] = max(decision.ForwardedHops, decision.XForwardedForHops)
+	case "peer_not_allowed":
+		details["allowed_default_networks"] = []string{"127.0.0.0/8", "::1/128", "fc00::/7", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+		if s != nil && s.access != nil {
+			extra := make([]string, 0, len(s.access.extraAllowedNets))
+			for _, network := range s.access.extraAllowedNets {
+				if network != nil {
+					extra = append(extra, network.String())
+				}
+			}
+			details["extra_allowed_ips"] = extra
+		}
+	}
+	return details
+}
+
+func accessFilterHeaderDetails(r *http.Request) map[string]any {
+	if r == nil {
+		return map[string]any{
+			"forwarded":         "(request missing)",
+			"x_forwarded_for":   "(request missing)",
+			"x_forwarded_host":  "(request missing)",
+			"x_forwarded_proto": "(request missing)",
+		}
+	}
+
+	return map[string]any{
+		"forwarded":         headerValueOrUnset(r.Header, "Forwarded"),
+		"x_forwarded_for":   headerValueOrUnset(r.Header, "X-Forwarded-For"),
+		"x_forwarded_host":  headerValueOrUnset(r.Header, "X-Forwarded-Host"),
+		"x_forwarded_proto": headerValueOrUnset(r.Header, "X-Forwarded-Proto"),
+	}
+}
+
+func headerValueOrUnset(header http.Header, key string) string {
+	if header == nil {
+		return "(header map missing)"
+	}
+	value := strings.TrimSpace(header.Get(key))
+	if value == "" {
+		return "(not set)"
+	}
+	return value
+}
+
+func (s *Server) accessDeniedSuggestion(decision accessDecision) string {
+	switch decision.Reason {
+	case "forwarded_hops_exceeded":
+		return "Increase access_filter.max_forwarded_hops if this proxy chain is expected."
+	case "peer_not_allowed":
+		return "Use a local/private source address, add the source to access_filter.extra_allowed_ips, or disable access_filter for this sample."
+	default:
+		return "Inspect the request path and listener configuration."
 	}
 }
 

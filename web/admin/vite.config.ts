@@ -11,7 +11,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/console/api': {
-        target: process.env.OIDCLD_ADMIN_PROXY_TARGET ?? 'http://127.0.0.1:18889',
+        target: process.env.OIDCLD_ADMIN_PROXY_TARGET ?? 'http://127.0.0.1:8888',
         changeOrigin: false,
       },
     },

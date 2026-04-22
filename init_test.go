@@ -31,7 +31,7 @@ func TestInitCmdRun_GeneratesConfigFileWithTemplate(t *testing.T) {
 		t.Fatalf("generated config is empty")
 	}
 
-	if !strings.Contains(string(content), `iss: "http://localhost:18888"`) {
+	if !strings.Contains(string(content), `iss: "http://localhost:8080"`) {
 		t.Fatalf("generated config does not contain standard issuer")
 	}
 }

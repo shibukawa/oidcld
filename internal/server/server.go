@@ -66,6 +66,7 @@ type Server struct {
 	autocertCancel  context.CancelFunc
 	reverseProxy    *compiledReverseProxy
 	reverseProxyLog *reverseProxyLogStore
+	consolePort     string
 }
 
 // SupportsAutocert reports whether this Server was built with autocert support
@@ -192,7 +193,7 @@ func (s *Server) createProvider() (op.OpenIDProvider, error) {
 	// Determine issuer URL
 	issuer := s.config.OIDC.Issuer
 	if issuer == "" {
-		issuer = "http://localhost:18888" // Default for development
+		issuer = "http://localhost:8080" // Default for development
 	}
 
 	// Create the provider with options
@@ -823,10 +824,10 @@ func (s *Server) startupSummaryForSplitListener(oidcPort string, oidcTLSEnabled 
 		}
 	}
 
-	if s.config.Console != nil {
-		summary.DeveloperConsoleURL = ConsoleURL(s.config.Console.BindAddress, s.config.Console.Port)
+	if s.config.Console != nil && strings.TrimSpace(s.consolePort) != "" {
+		summary.DeveloperConsoleURL = ConsoleURL(s.config.Console.BindAddress, s.consolePort)
 		if oidcTLSEnabled {
-			httpMetadataAddr := fmt.Sprintf(":%s", strings.TrimSpace(s.config.Console.Port))
+			httpMetadataAddr := fmt.Sprintf(":%s", strings.TrimSpace(s.consolePort))
 			if metadataIssuer := config.HTTPMetadataIssuer(s.config.OIDC.Issuer, httpMetadataAddr); metadataIssuer != "" {
 				metadataEndpoints, metadataTenants := startupEndpointsForIssuer(metadataIssuer, s.config.EntraID)
 				summary.MetadataCompanion = &startupMetadataSummary{
@@ -839,6 +840,13 @@ func (s *Server) startupSummaryForSplitListener(oidcPort string, oidcTLSEnabled 
 	}
 
 	return summary
+}
+
+func (s *Server) SetConsolePort(port string) {
+	if s == nil {
+		return
+	}
+	s.consolePort = strings.TrimSpace(port)
 }
 
 func tlsSourceLabel(certFile, keyFile string, autocertEnabled bool) string {
@@ -1089,10 +1097,15 @@ func (rw *responseWriter) Push(target string, opts *http.PushOptions) error {
 
 // handleDiscovery provides a custom discovery endpoint with pretty-printed JSON
 func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
-	// Get the discovery configuration from the provider
-	issuer := s.provider.IssuerFromRequest(r)
+	// Keep issuer stable for token validation, but render public endpoints using
+	// the request host so browser and container clients both get reachable URLs.
+	issuer := strings.TrimSpace(s.config.OIDC.Issuer)
+	if issuer == "" {
+		issuer = s.provider.IssuerFromRequest(r)
+	}
+	publicIssuer := publicIssuerForRequest(r, issuer)
 	requestInfo := entraIDRequestInfoFromRequest(r)
-	endpoints := discoveryEndpointsForRequest(issuer, s.config.EntraID, requestInfo)
+	endpoints := discoveryEndpointsForRequest(publicIssuer, s.config.EntraID, requestInfo)
 
 	// Create the discovery document
 	discovery := map[string]any{

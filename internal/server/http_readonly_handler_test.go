@@ -53,6 +53,7 @@ func TestReadOnlyHTTPHandler_AllowsMetadataAndRejectsInteractiveEndpoints(t *tes
 	assert.Equal(t, http.StatusMethodNotAllowed, res.Code)
 
 	discoveryReq := httptest.NewRequest(http.MethodGet, "/.well-known/openid-configuration", nil)
+	discoveryReq.Host = "oidcld:8888"
 	discoveryRes := httptest.NewRecorder()
 	handler.ServeHTTP(discoveryRes, discoveryReq)
 	assert.Equal(t, http.StatusOK, discoveryRes.Code)
@@ -61,7 +62,8 @@ func TestReadOnlyHTTPHandler_AllowsMetadataAndRejectsInteractiveEndpoints(t *tes
 	err := json.Unmarshal(discoveryRes.Body.Bytes(), &discovery)
 	assert.NoError(t, err)
 	assert.Equal(t, "https://localhost:8443", discovery["issuer"])
-	assert.Equal(t, "https://localhost:8443/keys", discovery["jwks_uri"])
+	assert.Equal(t, "http://oidcld:8888/keys", discovery["jwks_uri"])
+	assert.Equal(t, "http://oidcld:8888/authorize", discovery["authorization_endpoint"])
 }
 
 func TestReadOnlyHTTPHandler_AllowsEntraIDMetadataAliases(t *testing.T) {
@@ -91,4 +93,23 @@ func TestReadOnlyHTTPHandler_AllowsEntraIDMetadataAliases(t *testing.T) {
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 	assert.Equal(t, http.StatusNotFound, res.Code)
+}
+
+func TestDiscovery_UsesRequestHostForPublicEndpointsAndFixedIssuer(t *testing.T) {
+	cfg := newHTTPReadOnlyTestConfig()
+	server := createTestServer(cfg)
+
+	req := httptest.NewRequest(http.MethodGet, "https://oidc.localhost:8443/.well-known/openid-configuration", nil)
+	req.Host = "oidc.localhost:8443"
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+	assert.Equal(t, http.StatusOK, res.Code)
+
+	var discovery map[string]any
+	err := json.Unmarshal(res.Body.Bytes(), &discovery)
+	assert.NoError(t, err)
+	assert.Equal(t, "https://localhost:8443", discovery["issuer"])
+	assert.Equal(t, "https://oidc.localhost:8443/authorize", discovery["authorization_endpoint"])
+	assert.Equal(t, "https://oidc.localhost:8443/keys", discovery["jwks_uri"])
 }

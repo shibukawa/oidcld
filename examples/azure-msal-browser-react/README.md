@@ -88,7 +88,7 @@ The application is configured in `src/authConfig.ts`:
 export const msalConfig: Configuration = {
     auth: {
         clientId: "my-client-app",
-    authority: "https://localhost:18888/12345678-1234-1234-1234-123456789abc",
+    authority: "https://localhost:8443/12345678-1234-1234-1234-123456789abc",
         redirectUri: "http://localhost:5173/redirect.html",
         postLogoutRedirectUri: "http://localhost:5173/"
     },
@@ -184,7 +184,7 @@ Works with EntraID v2.0 compatible configuration:
 ```yaml
 # EntraID v2.0 compatible mode
 oidc:
-  iss: "https://localhost:18888"
+  iss: "https://localhost:8443"
   pkce_required: true
   nonce_required: true
 
@@ -302,7 +302,7 @@ This example demonstrates:
 1. **Authority URI Insecure Errors**: The example is configured with `knownAuthorities` and `protocolMode: "OIDC"` to allow HTTP authorities for development
 2. **Token Errors**: Check that scopes match oidcld configuration
 3. **Redirect Issues**: Verify redirect URIs match exactly
-4. **Network Errors**: Confirm oidcld server is running on port 18888
+4. **Network Errors**: Confirm oidcld server is running on port 8443
 
 ### Debug Mode
 
