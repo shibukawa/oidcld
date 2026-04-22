@@ -1,0 +1,37 @@
+{
+  "name": "Java SPA Example",
+  "dockerComposeFile": "devcontainer-compose.yaml",
+  "service": "workspace",
+  "runServices": ["oidcld", "postgres", "workspace"],
+  "workspaceFolder": "/workspaces/oidcld/examples/java-spa-devcontainer",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21",
+      "installMaven": true
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "forwardPorts": [
+    5173,
+    8080,
+    8443,
+    8888,
+    55432
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "redhat.java",
+        "vscjava.vscode-java-pack",
+        "redhat.vscode-quarkus",
+        "Vue.volar",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}
