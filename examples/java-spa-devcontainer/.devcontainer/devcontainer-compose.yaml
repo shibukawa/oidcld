@@ -1,8 +1,6 @@
 services:
   oidcld:
-    build:
-      context: ../../..
-      dockerfile: Dockerfile
+    image: ghcr.io/shibukawa/oidcld:v0.2.0
     ports:
       - "8443:443"
       - "8888:8888"

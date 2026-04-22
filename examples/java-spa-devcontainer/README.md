@@ -27,7 +27,7 @@ Open this example in a dev container. The dev container starts:
 - `postgres`
 - `workspace`
 
-It uses [`.devcontainer/devcontainer-compose.yaml`](/Users/shibukawayoshiki/.codex/worktrees/896f/oidcld/examples/java-spa-devcontainer/.devcontainer/devcontainer-compose.yaml), which builds `oidcld` from the repository root [Dockerfile](/Users/shibukawayoshiki/.codex/worktrees/896f/oidcld/Dockerfile) instead of relying on a pushed registry image.
+It uses [`.devcontainer/devcontainer-compose.yaml`](/Users/shibukawayoshiki/.codex/worktrees/896f/oidcld/examples/java-spa-devcontainer/.devcontainer/devcontainer-compose.yaml) and pulls `ghcr.io/shibukawa/oidcld:v0.2.0`.
 
 Inside the dev container, install dependencies and start both app processes:
 
