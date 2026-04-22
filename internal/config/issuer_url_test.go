@@ -22,8 +22,8 @@ func TestIssuerPathPrefix(t *testing.T) {
 }
 
 func TestHTTPMetadataIssuer(t *testing.T) {
-	issuer := HTTPMetadataIssuer("https://oidc.localhost:8443/tenant/v2.0", ":18888")
-	assert.Equal(t, "http://oidc.localhost:18888/tenant/v2.0", issuer)
+	issuer := HTTPMetadataIssuer("https://oidc.localhost:8443/tenant/v2.0", ":8080")
+	assert.Equal(t, "http://oidc.localhost:8080/tenant/v2.0", issuer)
 
 	invalid := HTTPMetadataIssuer("https://oidc.localhost:8443", "")
 	assert.Equal(t, "", invalid)

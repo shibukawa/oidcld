@@ -40,6 +40,7 @@ require (
 	github.com/oasdiff/yaml3 v0.0.9 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/rs/cors v1.11.1 // indirect
+	github.com/shibukawa/incontainer v0.1.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	github.com/zitadel/logging v0.7.0 // indirect

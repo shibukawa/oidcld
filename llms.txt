@@ -36,9 +36,9 @@ Compact guidance for AI systems working with this repository.
   - Generates `oidcld.yaml` from `standard`, `entraid-v1`, or `entraid-v2` templates.
 
 - `oidcld serve`
-  - Default HTTP port: `18888`
-  - Default HTTPS port: `18443`
-  - In HTTPS mode, `--http-readonly-port` defaults to `18888` and exposes discovery, JWKS, and health only.
+  - Default HTTP port: `8080`
+  - Default HTTPS port: `8443`
+  - In HTTPS mode, `--http-readonly-port` defaults to `8080` and exposes discovery, JWKS, and health only.
   - `--proxy-port` optionally splits reverse-proxy traffic onto a dedicated browser-facing listener.
 
 - `oidcld health`
@@ -106,7 +106,6 @@ oidc:
   cors: true
 
 console:
-  port: "18889"
   bind_address: "127.0.0.1"
 
 certificate_authority:
@@ -186,9 +185,9 @@ The repository root `compose.yaml` defines a full integrated sample:
   - Mounts `app2-static-dist` for static hosting
   - Mounts `oidcld-managed-ca` for persistent local CA state
   - Exposes `8443:443` for the shared HTTPS listener used by `oidc.localhost`, `app.localhost`, and `app2.localhost`
-  - Exposes `18889:18889` for the Developer Console and HTTP metadata companion listener
+  - Exposes `8888:8888` for the Developer Console and HTTP metadata companion listener
   - Starts with `serve --config /app/config/oidcld.yaml --port 443`
-  - Health check uses `oidcld health --url http://localhost:18889`
+  - Health check uses `oidcld health --url http://localhost:8888`
 
 - `app-frontend`
   - Sample frontend container built from `examples/azure-msal-browser-react`
@@ -202,7 +201,7 @@ The repository root `compose.yaml` defines a full integrated sample:
   - `https://app.localhost:8443` for the reverse-proxied frontend and `/api/*`
   - `https://app2.localhost:8443` for static hosting and `/apimock/*`
 
-- Plain HTTP on `http://localhost:18889` is the Developer Console plus metadata companion, not a full plaintext app surface
+- Plain HTTP on `http://localhost:8888` is the Developer Console plus metadata companion, not a full plaintext app surface
 
 ## Environment
 

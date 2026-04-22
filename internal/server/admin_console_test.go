@@ -27,7 +27,6 @@ func TestAdminHandler_StatusEndpointReturnsConfigSummary(t *testing.T) {
 			EndSessionEnabled:   true,
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		CertificateAuthority: &config.CertificateAuthorityConfig{
@@ -55,7 +54,7 @@ func TestAdminHandler_StatusEndpointReturnsConfigSummary(t *testing.T) {
 	assert.Equal(t, "https://localhost:18443", payload.Issuer)
 	assert.True(t, payload.HTTPSExpected)
 	assert.Equal(t, 1, payload.UsersCount)
-	assert.Equal(t, "18889", payload.AdminConsole.Port)
+	assert.Equal(t, "8888", payload.AdminConsole.Port)
 	assert.Equal(t, "oidc", payload.OIDC.Mode)
 	assert.Equal(t, "self-signed", payload.OIDC.TLSSource)
 	assert.Equal(t, false, payload.OIDC.PKCERequired)
@@ -80,7 +79,6 @@ func TestAdminHandler_CertificatesReturnsEmptyLeafsOutsideSelfSigned(t *testing.
 			EndSessionEnabled: true,
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 	})
@@ -107,7 +105,6 @@ func TestAdminHandler_CertificatesIncludeReverseProxyManagedHosts(t *testing.T) 
 			ValidScopes: []string{"openid"},
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		CertificateAuthority: &config.CertificateAuthorityConfig{
@@ -165,7 +162,6 @@ func TestAdminHandler_OpenIDConnectUsersReturnsConfiguredClaims(t *testing.T) {
 			Issuer: "https://localhost:18443",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		Users: map[string]config.User{
@@ -205,7 +201,6 @@ func TestAdminHandler_RejectsNonLoopbackClients(t *testing.T) {
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 	})
@@ -217,6 +212,7 @@ func TestAdminHandler_RejectsNonLoopbackClients(t *testing.T) {
 	server.AdminHandler().ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusForbidden, res.Code)
+	assert.Contains(t, res.Body.String(), "Developer Console is restricted to loopback clients")
 }
 
 func TestAdminHandler_RejectsNonLoopbackClientsForOpenIDConnectUsers(t *testing.T) {
@@ -225,7 +221,6 @@ func TestAdminHandler_RejectsNonLoopbackClientsForOpenIDConnectUsers(t *testing.
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		Users: map[string]config.User{
@@ -248,7 +243,6 @@ func TestAdminHandler_AllowsNonLoopbackClientsWhenConsoleBindsPublicly(t *testin
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "0.0.0.0",
 		},
 	})
@@ -269,7 +263,6 @@ func TestAdminHandler_IssueCertificateReturnsZipForWildcardDomain(t *testing.T) 
 			Issuer: "https://localhost:18443",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		CertificateAuthority: &config.CertificateAuthorityConfig{
@@ -335,7 +328,6 @@ func TestAdminHandler_IssueCertificateRejectsInvalidInput(t *testing.T) {
 			Issuer: "https://localhost:18443",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		CertificateAuthority: &config.CertificateAuthorityConfig{
@@ -369,7 +361,6 @@ func TestAdminHandler_IssueCertificateRejectsMissingWildcardDomain(t *testing.T)
 			Issuer: "https://localhost:18443",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		CertificateAuthority: &config.CertificateAuthorityConfig{
@@ -397,7 +388,6 @@ func TestAdminHandler_ServesFallbackWhenAssetsMissing(t *testing.T) {
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 	})
@@ -422,7 +412,6 @@ func TestAdminHandler_RedirectsRootToConsole(t *testing.T) {
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 	})
@@ -443,7 +432,6 @@ func TestAdminHandler_ServesReadOnlyMetadataOnConsoleListenerForHTTPS(t *testing
 			Issuer: "https://localhost:18443",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 	})

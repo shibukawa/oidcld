@@ -8,7 +8,7 @@
 ./oidcld init                        # 対話ウィザード
 ./oidcld init --template entraid-v2  # 非対話テンプレート
 ./oidcld --watch                     # 設定ファイル変更をホットリロード
-./oidcld                             # HTTP は 18888、HTTPS は 18443 を既定として起動
+./oidcld                             # HTTP は 8080、HTTPS は 8443 を既定として起動
 ```
 
 ## 設定ファイル構造
@@ -24,7 +24,7 @@
 #### 1. OIDC 基本設定 (`oidc`)
 ```yaml
 oidc:
-  iss: "http://localhost:18888"          # モードとHTTPS有無で初期値変化
+  iss: "http://localhost:8080"           # モードとHTTPS有無で初期値変化
   pkce_required: false
   nonce_required: false
   expired_in: 3600                        # アクセストークン有効秒数
@@ -53,7 +53,6 @@ oidc:
 #### 2. Developer Console (`console`)
 ```yaml
 console:
-  port: "18889"
   bind_address: "127.0.0.1"
 ```
 
@@ -67,8 +66,9 @@ certificate_authority:
   ca_cert_ttl: "87600h"
   leaf_cert_ttl: "720h"
 ```
-標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。`access_filter.enabled` は `serve` listener で既定 `true` です。`Forwarded` / `X-Forwarded-For` が無い場合は loopback / ローカル私設アドレス (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`) のみ許可します。`extra_allowed_ips` は単一 IP と CIDR の両方を受け付け、単一 IP は内部で `/32` または `/128` に正規化されます。`max_forwarded_hops` は既定 `0` なので、forward 系ヘッダー付きリクエストは明示設定がない限り拒否されます。
+標準スコープ `openid, profile, email, offline_access` (EntraID 以外では address, phone も) は自動付与。RSA-2048 鍵は起動時にオンメモリ生成されます。`aud_claim_format` は単一 audience の JWT `aud` クレームを文字列にするか配列にするかを制御し、複数 audience の場合は常に配列になります。EntraID 互換用途では既定の `string` を推奨します。`access_filter.enabled` は host では既定 `true` です。`access_filter` セクションを省略したまま container runtime が検知された場合、runtime default は `false` になります。明示設定した `access_filter` はそのまま尊重されます。`Forwarded` / `X-Forwarded-For` が無い場合は loopback / ローカル私設アドレス (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`) のみ許可します。`extra_allowed_ips` は単一 IP と CIDR の両方を受け付け、単一 IP は内部で `/32` または `/128` に正規化されます。`max_forwarded_hops` は既定 `0` なので、forward 系ヘッダー付きリクエストは明示設定がない限り拒否されます。
 `login_ui.env_title` と `login_ui.info_markdown_file` は `/login` のみへ適用され、device や logout の画面は変更しません。`login_ui.accent_color` は `#RRGGBB` のみ受け付けます。未指定で `env_title` がある場合は、視認性を意識した色をタイトルから決定的に自動生成します。`info_markdown_file` は設定ファイルの位置基準で解決され、`/login` へのアクセスごとに再読み込みされます。
+discovery の `issuer` は `oidc.iss` に固定されますが、返却する公開 endpoint URL (`authorization_endpoint`、`token_endpoint`、`jwks_uri` など) はリクエスト時の host に追従します。これにより、browser 向けと container 内向けの metadata access を両立できます。
 
 #### 4. EntraID 互換設定 (`entraid`)
 ```yaml
@@ -128,9 +128,9 @@ reverse_proxy:
 - `gateway` は `target_url` と `openapi_file` route の前段で self-issued Bearer JWT を検証し、proxy 時に OIDCLD 発行 JWT を再署名して upstream に渡せます
 - `openapi_file` は設定ファイル相対で解決し、起動時に `kin-openapi` で読み込み・検証します
 - `mock.prefer_examples` が true の場合は example を優先し、example がない場合だけ schema から最小レスポンスを生成します
-- `oidcld serve --proxy-port <port>` を使うと、browser-facing の reverse-proxy listener を OIDC listener から分離できます
+- `oidcld serve --proxy-port <port>` または `PROXY_PORT` を使うと、browser-facing の reverse-proxy listener を OIDC listener から分離できます
 - split listener mode では、明示された `reverse_proxy.hosts[].host` はすべて同じ scheme である必要があります
-- split listener mode では、`reverse_proxy.hosts[].host` に明示portを書く場合は `--proxy-port` と一致している必要があります。port を省略した host は fallback として扱われます
+- split listener mode では、`reverse_proxy.hosts[].host` に明示portを書く場合は `--proxy-port` / `PROXY_PORT` の優先順位で解決された proxy listener port と一致している必要があります。port を省略した host は fallback として扱われます
 
 #### 7. 自動証明書 (`autocert`)
 ```yaml
@@ -164,15 +164,18 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 ## CLI フラグ
 `init`, `serve`, `health` コマンドは README を参照。
 
-- `oidcld serve --proxy-port <port>` を指定すると、OIDC listener と reverse-proxy listener を別ポートで起動します
-- `--port` は引き続き OIDC listener、`--proxy-port` は reverse-proxy listener、`console.port` は Developer Console / metadata companion listener を表します
+- `oidcld serve --proxy-port <port>` または `PROXY_PORT` を指定すると、OIDC listener と reverse-proxy listener を別ポートで起動します
+- `--port` または `PORT` は引き続き OIDC listener、`--proxy-port` または `PROXY_PORT` は reverse-proxy listener、`--console-port` または `CONSOLE_PORT` は Developer Console / metadata companion listener を表します
 
 ## 環境変数
 | 変数 | 説明 | 現在の実装状況 |
 |------|------|------------------|
 | OIDCLD_VERBOSE | `serve` の詳細ログを有効化 | `serve` コマンドの env binding で実装済み |
+| OIDCLD_CONTAINER | container / non-container 実行を明示する | listener port や暗黙の `access_filter` default など、container 向け runtime default の自動判定を上書き |
 | OIDCLD_CONFIG | コンテナ / health 系で使う設定ファイルパス | 実行時の慣例と health 自動判定で利用 |
-| PORT | ポート上書き | 現在の Go エントリポイントでは直接読んでいない。確実に制御したい場合は `oidcld serve --port ...` を使う |
+| PORT | main listener port 上書き | 実装済み。`--port` の次に解決される |
+| CONSOLE_PORT | Developer Console port 上書き | 実装済み。`--console-port` の次に解決される |
+| PROXY_PORT | reverse proxy split listener port 上書き | 実装済み。`--proxy-port` の次に解決され、未設定時は main listener 共有 |
 | OIDCLD_ENV_TITLE | `oidc.login_ui.env_title` を上書き | `/login` に環境バナーを表示 |
 | OIDCLD_ENV_COLOR | `oidc.login_ui.accent_color` を上書き | `#RRGGBB` のみ。未設定なら env_title から自動色生成可 |
 | OIDCLD_ENV_MARKDOWN_FILE | `oidc.login_ui.info_markdown_file` を上書き | 相対パスは設定ファイル基準で解決 |
@@ -205,18 +208,19 @@ EntraID テンプレート時は `oid, tid, preferred_username, upn, roles, grou
 ## HTTPS モード
 | モード | 用途 | メモ |
 |--------|------|------|
-| HTTP | 最速試行 | 18888 |
+| HTTP | 最速試行 | 8080 |
 | 手動 HTTPS | SPA セキュアオリジン | cert/key 指定 |
 | mkcert | ブラウザ信頼 | 手動 HTTPS の一形態 |
 | ACME | ライフサイクル再現 | autocert + env |
 
 ## Split Listener Mode
 
-OIDC と reverse proxy を別ポートでブラウザ公開したい場合は `oidcld serve --proxy-port <port>` を使います。
+OIDC と reverse proxy を別ポートでブラウザ公開したい場合は `oidcld serve --proxy-port <port>` または `PROXY_PORT` を使います。
 
-- `--port` は引き続き OIDC listener
-- `--proxy-port` は reverse-proxy listener
-- `console.port` は Developer Console / metadata companion listener
+- `--port` または `PORT` は引き続き OIDC listener
+- `--proxy-port` または `PROXY_PORT` は reverse-proxy listener
+- `--console-port` または `CONSOLE_PORT` は Developer Console / metadata companion listener
+- `--proxy-port` と `PROXY_PORT` の両方が無い場合、reverse proxy は main listener を共有
 - OIDC 側の scheme は `oidc.iss` と manual TLS / autocert 設定から決まります
 - reverse proxy 側の scheme は `reverse_proxy.hosts[].host` から決まります
 - OIDC HTTP + proxy HTTP、OIDC HTTPS + proxy HTTP、OIDC HTTP + proxy HTTPS、OIDC HTTPS + proxy HTTPS を選べます

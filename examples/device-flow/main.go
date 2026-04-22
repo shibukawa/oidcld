@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultIssuer   = "http://localhost:18888"
+	defaultIssuer   = "http://localhost:8080"
 	defaultClientID = "device-flow"
 	defaultScope    = "openid profile email"
 )

@@ -22,9 +22,9 @@ This project is still for development and testing only. Do not use it in product
 
 ![OIDCLD full stack topology](docs/oidcld-components.svg)
 
-The diagram shows the full 0.2 shape: browser traffic reaches OIDCLD as both an identity provider and an edge router, OIDC-issued tokens can be validated at reverse-proxy routes, and the managed local CA covers the browser-facing hosts. In the integrated Compose sample, `oidc.localhost`, `app.localhost`, and `app2.localhost` share the HTTPS listener on container port `443`, exposed as host port `8443`, while the Developer Console and metadata companion use a separate listener on `18889`.
+The diagram shows the full 0.2 shape: browser traffic reaches OIDCLD as both an identity provider and an edge router, OIDC-issued tokens can be validated at reverse-proxy routes, and the managed local CA covers the browser-facing hosts. In the integrated Compose sample, `oidc.localhost`, `app.localhost`, and `app2.localhost` share the HTTPS listener on container port `443`, exposed as host port `8443`, while the Developer Console and metadata companion use a separate listener on `8888`.
 
-If you enable split listener mode with `--proxy-port`, the same topology still applies logically, but OIDC and reverse-proxy traffic are exposed on separate browser-facing ports instead of sharing one listener.
+If you enable split listener mode with `--proxy-port` or `PROXY_PORT`, the same topology still applies logically, but OIDC and reverse-proxy traffic are exposed on separate browser-facing ports instead of sharing one listener.
 
 ## What OIDCLD Is Now
 
@@ -62,14 +62,16 @@ Use the binary directly when you only need a local IdP.
 ```bash
 ./oidcld init
 ./oidcld
-open http://localhost:18888/.well-known/openid-configuration
+open http://localhost:8080/.well-known/openid-configuration
 ```
 
-By default this starts the HTTP listener on `18888`. Add `--cert-file` / `--key-file` later if you want manual HTTPS.
+By default this starts the HTTP listener on `8080`. Add `--cert-file` / `--key-file` later if you want manual HTTPS.
 
 ### Managed local TLS + developer console
 
-Use `certificate_authority` and `console` in `oidcld.yaml` when you want OIDCLD to manage local certificates and expose console tooling.
+Use `certificate_authority` and `console` in `oidcld.yaml` when you want OIDCLD to manage local certificates and expose console tooling. Listener ports are controlled at runtime with `--port`, `PORT`, `--console-port`, and `CONSOLE_PORT`. When `access_filter` is omitted, OIDCLD defaults it to `true` on the host and `false` in detected container runtimes; explicit `access_filter` settings are preserved.
+
+Discovery keeps `issuer` fixed to `oidc.iss`, but the public endpoint URLs it returns follow the request host. That lets browsers use `https://oidc.localhost:8443` while container clients can consume metadata from `http://oidcld:8888`.
 
 ```yaml
 access_filter:
@@ -84,7 +86,6 @@ oidc:
   cors: true
 
 console:
-  port: "18889"
   bind_address: "127.0.0.1"
 
 certificate_authority:
@@ -102,7 +103,7 @@ This mode is the basis for the full-stack sample described below.
 The repository root [`compose.yaml`](/Users/shibukawayoshiki/.codex/worktrees/7974/oidcld/compose.yaml) and [`examples/reverseproxy/config/oidcld.yaml`](/Users/shibukawayoshiki/.codex/worktrees/7974/oidcld/examples/reverseproxy/config/oidcld.yaml) demonstrate the 0.2 integrated topology:
 
 - One HTTPS listener on container port `443`, exposed as `https://*.localhost:8443`
-- One separate Developer Console and metadata companion listener on `http://localhost:18889`
+- One separate Developer Console and metadata companion listener on `http://localhost:8888`
 - `app.localhost` reverse proxies an upstream-built frontend and `/api/*` backend
 - `app2.localhost` serves static files directly from OIDCLD and maps `/apimock/*` to OpenAPI mocks
 - The local CA persists in the `oidcld-managed-ca` volume, so the root CA remains stable across restarts while the volume exists
@@ -118,17 +119,17 @@ Then use:
 - OIDC issuer: `https://oidc.localhost:8443`
 - Reverse-proxied frontend: `https://app.localhost:8443`
 - Static-hosted frontend: `https://app2.localhost:8443`
-- Developer Console: `http://localhost:18889/console/`
+- Developer Console: `http://localhost:8888/console/`
 
 The console lets you download the root CA and inspect reverse-proxy routes and request logs. The sample is also documented in [examples/reverseproxy/README.md](examples/reverseproxy/README.md).
 
 If you cannot rely on wildcard `*.localhost` resolution, use split listener mode:
 
 ```bash
-./oidcld serve --port 18443 --proxy-port 19080
+./oidcld serve --port 8443 --proxy-port 19080
 ```
 
-In that mode, `--port` stays the OIDC listener and `--proxy-port` becomes the dedicated reverse-proxy listener. `console.port` still controls the optional third browser-facing port for the Developer Console and metadata companion.
+In that mode, `--port` or `PORT` stays the OIDC listener and `--proxy-port` or `PROXY_PORT` becomes the dedicated reverse-proxy listener. `--console-port` or `CONSOLE_PORT` controls the optional third browser-facing port for the Developer Console and metadata companion. If neither `--proxy-port` nor `PROXY_PORT` is set, reverse proxy shares the main listener.
 
 ## EntraID Compatibility
 
@@ -145,7 +146,7 @@ Minimal example:
 ```bash
 ./oidcld init --template entraid-v2
 ./oidcld --cert-file localhost.pem --key-file localhost-key.pem
-curl -k https://localhost:18443/.well-known/openid-configuration
+curl -k https://localhost:8443/.well-known/openid-configuration
 ```
 
 ## Configuration Notes
@@ -164,7 +165,7 @@ If you are migrating from 0.1.x, read [COMPATIBILITY.md](COMPATIBILITY.md) befor
 
 - `oidcld init`: scaffold a config from a template
 - `oidcld serve`: start the runtime
-- `oidcld serve --proxy-port <port>`: split OIDC and reverse proxy onto separate browser-facing listeners
+- `oidcld serve --proxy-port <port>`: split OIDC and reverse proxy onto separate browser-facing listeners (`PROXY_PORT` is the env equivalent)
 - `oidcld health`: probe readiness / liveness
 - `oidcld mcp`: run the MCP server mode
 

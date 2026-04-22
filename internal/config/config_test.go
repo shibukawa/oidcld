@@ -11,6 +11,7 @@ import (
 )
 
 func TestInitializeConfig(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "")
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
@@ -59,6 +60,7 @@ func TestInitializeConfig(t *testing.T) {
 }
 
 func TestGenerateConfigYAML(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "")
 	config := createDefaultConfig(ModeStandard)
 
 	yamlContent, err := generateConfigYAML(config)
@@ -116,11 +118,12 @@ func TestNormalizeReverseProxyDefaultsIgnoreLogPaths(t *testing.T) {
 }
 
 func TestCreateDefaultConfig_DefaultAudienceClaimFormat(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "")
 	config := createDefaultConfig(ModeStandard)
 	assert.Equal(t, AudienceClaimFormatString, config.OIDC.NormalizedAudienceClaimFormat())
 	assert.True(t, config.AccessFilter.Enabled)
 	assert.True(t, config.Console != nil)
-	assert.Equal(t, "18889", config.Console.Port)
+	assert.Equal(t, "127.0.0.1", config.Console.BindAddress)
 	assert.True(t, config.CertificateAuthority != nil)
 	assert.Equal(t, []string{"localhost", "*.dev.localhost"}, config.CertificateAuthority.Domains)
 	assert.Equal(t, 0, config.AccessFilter.MaxForwardedHops)
@@ -177,6 +180,7 @@ func TestApplyInitServerOptionsEnablesAdminConsoleForSelfSignedTLS(t *testing.T)
 }
 
 func TestLoadConfig_NormalizesMissingAccessFilter(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "")
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "config.yaml")
 
@@ -193,6 +197,46 @@ users:
 	assert.True(t, cfg.AccessFilter.Enabled)
 	assert.Equal(t, 0, cfg.AccessFilter.MaxForwardedHops)
 	assert.Equal(t, []string{}, cfg.AccessFilter.ExtraAllowedIPs)
+}
+
+func TestLoadConfig_DisablesMissingAccessFilterInContainer(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "1")
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`oidc:
+  iss: "http://localhost:18888"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.False(t, cfg.AccessFilter.Enabled)
+	assert.False(t, cfg.AccessFilterExplicit())
+}
+
+func TestLoadConfig_PreservesExplicitAccessFilterInContainer(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "1")
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.yaml")
+
+	err := os.WriteFile(configPath, []byte(`access_filter:
+  enabled: true
+oidc:
+  iss: "http://localhost:18888"
+users:
+  admin:
+    display_name: "Administrator"
+`), 0o644)
+	assert.NoError(t, err)
+
+	cfg, err := LoadConfig(configPath, false)
+	assert.NoError(t, err)
+	assert.True(t, cfg.AccessFilter.Enabled)
+	assert.True(t, cfg.AccessFilterExplicit())
 }
 
 func TestLoadConfig_NormalizesExtraAllowedIPs(t *testing.T) {
@@ -748,7 +792,7 @@ func TestConfigModes(t *testing.T) {
 		expectedIssuer string
 		expectEntraID  bool
 	}{
-		{ModeStandard, "http://localhost:18888", false},
+		{ModeStandard, "http://localhost:8080", false},
 		{ModeEntraIDv1, "https://login.microsoftonline.com/common", true},
 		{ModeEntraIDv2, "https://login.microsoftonline.com/12345678-1234-1234-1234-123456789abc/v2.0", true},
 	}

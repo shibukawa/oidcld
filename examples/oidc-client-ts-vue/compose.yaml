@@ -4,13 +4,12 @@ services:
     image: ghcr.io/shibukawa/oidcld:latest
     container_name: oidcld-demo
     ports:
-      - "18888:18888"
+      - "8080:80"
     volumes:
       - ./oidcld-config.yaml:/app/oidcld.yaml:ro
     environment:
-      - PORT=18888
-      - OIDCLD_CONFIG=/app/config.yaml
-    cmd: ["serve"]
+      - OIDCLD_CONFIG=/app/oidcld.yaml
+    command: ["serve", "--config", "/app/oidcld.yaml"]
 
   # Vue.js Sample Application (Production)
   vue-app-prod:

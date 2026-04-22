@@ -3,7 +3,7 @@ import { ref, onMounted } from "vue";
 import { UserManager, WebStorageStateStore, User } from 'oidc-client-ts';
 
 // Read runtime/build-time configuration from Vite env (set via Docker build-args or .env)
-const AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:18888';
+const AUTHORITY = import.meta.env.VITE_OIDC_AUTHORITY || 'http://localhost:8080';
 const CLIENT_ID = import.meta.env.VITE_OIDC_CLIENT_ID || 'test-client';
 const REDIRECT_URI = import.meta.env.VITE_OIDC_REDIRECT_URI || 'http://localhost:5173/callback';
 const POST_LOGOUT_REDIRECT_URI = import.meta.env.VITE_OIDC_POST_LOGOUT_REDIRECT_URI || 'http://localhost:5173';

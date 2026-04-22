@@ -8,9 +8,47 @@ import (
 )
 
 func TestResolveServePort(t *testing.T) {
+	t.Setenv("PORT", "")
+	t.Setenv("OIDCLD_CONTAINER", "")
 	assert.Equal(t, "19000", resolveServePort("19000", false))
 	assert.Equal(t, config.DefaultHTTPPort, resolveServePort("", false))
 	assert.Equal(t, config.DefaultHTTPSPort, resolveServePort("", true))
+
+	t.Setenv("PORT", "19191")
+	assert.Equal(t, "19191", resolveServePort("", false))
+
+	t.Setenv("PORT", "")
+	t.Setenv("OIDCLD_CONTAINER", "1")
+	assert.Equal(t, "80", resolveServePort("", false))
+	assert.Equal(t, "443", resolveServePort("", true))
+}
+
+func TestResolveConsolePort(t *testing.T) {
+	t.Setenv("CONSOLE_PORT", "")
+	assert.Equal(t, "19999", resolveConsolePort("19999"))
+	assert.Equal(t, "8888", resolveConsolePort(""))
+
+	t.Setenv("CONSOLE_PORT", "29999")
+	assert.Equal(t, "29999", resolveConsolePort(""))
+}
+
+func TestResolveProxyPort(t *testing.T) {
+	t.Setenv("PROXY_PORT", "")
+	assert.Equal(t, "17777", resolveProxyPort("17777"))
+	assert.Equal(t, "", resolveProxyPort(""))
+
+	t.Setenv("PROXY_PORT", "27777")
+	assert.Equal(t, "27777", resolveProxyPort(""))
+}
+
+func TestIsContainerRuntime(t *testing.T) {
+	t.Setenv("OIDCLD_CONTAINER", "")
+	assert.False(t, isContainerRuntime())
+
+	for _, value := range []string{"1", "true", "yes"} {
+		t.Setenv("OIDCLD_CONTAINER", value)
+		assert.True(t, isContainerRuntime())
+	}
 }
 
 func TestShouldUseHTTPSByDefault(t *testing.T) {

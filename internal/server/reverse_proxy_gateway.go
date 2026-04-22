@@ -65,7 +65,10 @@ func (s *Server) authorizeReverseProxyRoute(w http.ResponseWriter, r *http.Reque
 			"path", r.URL.Path,
 			"host", r.Host)
 		w.Header().Set("WWW-Authenticate", "Bearer")
-		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		writeDiagnosticError(w, r, http.StatusUnauthorized, "reverse_proxy_gateway_missing_bearer_token", "missing_bearer_token", "Reverse proxy gateway requires a Bearer token for this route.", map[string]any{
+			"path": r.URL.Path,
+			"host": r.Host,
+		}, "Authenticate first and retry the request with an Authorization: Bearer <token> header.")
 		return false
 	}
 
@@ -84,7 +87,14 @@ func (s *Server) authorizeReverseProxyRoute(w http.ResponseWriter, r *http.Reque
 			"subject", stringifyClaimValue(claims["sub"]),
 			"client_id", stringifyClaimValue(claims["client_id"]))
 		w.Header().Set("WWW-Authenticate", "Bearer error=\"invalid_token\"")
-		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		writeDiagnosticError(w, r, http.StatusUnauthorized, "reverse_proxy_gateway_invalid_token", "invalid_token", "Reverse proxy gateway rejected the Bearer token.", map[string]any{
+			"path":      r.URL.Path,
+			"host":      r.Host,
+			"issuer":    stringifyClaimValue(claims["iss"]),
+			"subject":   stringifyClaimValue(claims["sub"]),
+			"client_id": stringifyClaimValue(claims["client_id"]),
+			"error":     err,
+		}, "Obtain a fresh token from oidcld and ensure its issuer matches the configured oidc.iss value.")
 		return false
 	}
 
@@ -103,7 +113,15 @@ func (s *Server) authorizeReverseProxyRoute(w http.ResponseWriter, r *http.Reque
 			"missing_scopes", claimCheck.missingScopes,
 			"missing_audiences", claimCheck.missingAudiences,
 			"mismatched_claims", claimCheck.mismatchedClaims)
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		writeDiagnosticError(w, r, http.StatusForbidden, "reverse_proxy_gateway_claims_mismatch", "claims_mismatch", "Reverse proxy gateway rejected the token because its claims did not satisfy the route requirements.", map[string]any{
+			"path":              r.URL.Path,
+			"host":              r.Host,
+			"required_claims":   claimCheck.requiredClaims,
+			"token_claims":      claimCheck.tokenClaims,
+			"missing_scopes":    claimCheck.missingScopes,
+			"missing_audiences": claimCheck.missingAudiences,
+			"mismatched_claims": claimCheck.mismatchedClaims,
+		}, "Request a token with the required scope and audience, or adjust the reverse_proxy gateway.required rules for this route.")
 		return false
 	}
 

@@ -124,7 +124,6 @@ oidc:
       - "Authorization"
 
 console:
-  port: "18889"
   bind_address: "127.0.0.1"
 
 certificate_authority:
@@ -141,7 +140,10 @@ users:
 ## Operational Notes That Affect Migration
 
 - 0.2 README examples and the Compose sample now emphasize the integrated HTTPS + console + reverse-proxy topology instead of an IdP-only topology.
-- The Compose sample uses `http://localhost:18889` for the Developer Console and metadata companion, while browser-facing TLS traffic is exposed on `https://*.localhost:8443`.
+- The Compose sample uses `http://localhost:8888` for the Developer Console and metadata companion, while browser-facing TLS traffic is exposed on `https://*.localhost:8443`.
+- Listener ports are now runtime settings rather than config-file fields. Main OIDC/shared traffic uses `--port` or `PORT`, the Developer Console uses `--console-port` or `CONSOLE_PORT`, and reverse-proxy split mode uses `--proxy-port` or `PROXY_PORT`.
+- Port precedence is `CLI > env > default`. For reverse proxy specifically, `--proxy-port` or `PROXY_PORT` enables split listener mode; if neither is set, reverse proxy shares the main listener with OIDC.
+- In split listener mode, `reverse_proxy.hosts[].host` may still omit a port, but any explicit host port must match the resolved proxy listener port after `--proxy-port` / `PROXY_PORT` precedence is applied.
 - If you previously treated OIDCLD only as an IdP, you can still do that in 0.2, but old config files must still be updated to the new section layout.
 
 ## Verification Checklist

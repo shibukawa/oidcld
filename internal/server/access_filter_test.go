@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -60,6 +61,10 @@ func TestAccessFilterRejectsExternalPeerIP(t *testing.T) {
 	server.Handler().ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusForbidden, res.Code)
+	assert.Contains(t, res.Body.String(), "access_filter denied this request because the client IP is not in the allowed local/private ranges.")
+	assert.Contains(t, res.Body.String(), "remote_addr: 8.8.8.8:1234")
+	assert.Contains(t, res.Body.String(), "forwarded: (not set)")
+	assert.Contains(t, res.Body.String(), "x_forwarded_for: (not set)")
 }
 
 func TestAccessFilterAllowsExtraAllowedIP(t *testing.T) {
@@ -155,4 +160,51 @@ func TestAccessFilterAppliesToReadOnlyHTTPHandler(t *testing.T) {
 	server.ReadOnlyHTTPHandler().ServeHTTP(res, req)
 
 	assert.Equal(t, http.StatusForbidden, res.Code)
+}
+
+func TestAccessFilterRejectsExternalPeerIPAsJSON(t *testing.T) {
+	server := newAccessFilterTestServer(t, &config.AccessFilterConfig{Enabled: true})
+
+	req := newRemoteRequest("8.8.8.8:1234")
+	req.Header.Set("Accept", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusForbidden, res.Code)
+	assert.Equal(t, "application/json", res.Header().Get("Content-Type"))
+
+	var payload map[string]any
+	err := json.Unmarshal(res.Body.Bytes(), &payload)
+	assert.NoError(t, err)
+	assert.Equal(t, "access_filter_peer_not_allowed", payload["code"])
+	assert.Equal(t, "peer_not_allowed", payload["reason"])
+	details, ok := payload["details"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "(not set)", details["forwarded"])
+	assert.Equal(t, "(not set)", details["x_forwarded_for"])
+}
+
+func TestAccessFilterPeerDeniedIncludesForwardedHeaderValues(t *testing.T) {
+	server := newAccessFilterTestServer(t, &config.AccessFilterConfig{Enabled: true})
+
+	req := newRemoteRequest("8.8.8.8:1234")
+	req.Header.Set("Forwarded", "for=203.0.113.10;proto=https")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("X-Forwarded-Host", "app.localhost")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("Accept", "application/json")
+	res := httptest.NewRecorder()
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusForbidden, res.Code)
+
+	var payload map[string]any
+	err := json.Unmarshal(res.Body.Bytes(), &payload)
+	assert.NoError(t, err)
+	details, ok := payload["details"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "for=203.0.113.10;proto=https", details["forwarded"])
+	assert.Equal(t, "203.0.113.10", details["x_forwarded_for"])
+	assert.Equal(t, "app.localhost", details["x_forwarded_host"])
+	assert.Equal(t, "https", details["x_forwarded_proto"])
 }

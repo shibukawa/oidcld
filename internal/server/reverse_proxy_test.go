@@ -365,6 +365,7 @@ func TestReverseProxy_GatewayRequiresValidJWTAndForwardsClaims(t *testing.T) {
 	unauthorizedRes := httptest.NewRecorder()
 	server.Handler().ServeHTTP(unauthorizedRes, unauthorizedReq)
 	assert.Equal(t, http.StatusUnauthorized, unauthorizedRes.Code)
+	assert.Contains(t, unauthorizedRes.Body.String(), "Reverse proxy gateway requires a Bearer token")
 
 	token, err := server.signJWT(jwt.MapClaims{
 		"iss":   "http://localhost:18888",
@@ -387,6 +388,52 @@ func TestReverseProxy_GatewayRequiresValidJWTAndForwardsClaims(t *testing.T) {
 	assert.Equal(t, "read write", forwardedScope)
 	assert.True(t, forwardedAuthorization != "")
 	assert.True(t, forwardedAuthorization != "Bearer "+token)
+}
+
+func TestReverseProxy_GatewayClaimMismatchReturnsDetails(t *testing.T) {
+	server := createTestServer(&config.Config{
+		OIDC: config.OIDCConfig{Issuer: "http://localhost:18888"},
+		ReverseProxy: &config.ReverseProxyConfig{
+			Hosts: []config.ReverseProxyHost{{
+				Host: "http://api.localhost",
+				Routes: []config.ReverseProxyRoute{{
+					Path:      "/api",
+					TargetURL: "http://127.0.0.1:9999",
+					Gateway: &config.ReverseProxyGateway{
+						Required: config.ReverseProxyGatewayRequired{
+							Enabled: true,
+							Claims: map[string]any{
+								"scope": "write",
+								"aud":   "demo-client",
+							},
+						},
+					},
+				}},
+			}},
+		},
+	})
+
+	token, err := server.signJWT(jwt.MapClaims{
+		"iss":   "http://localhost:18888",
+		"sub":   "admin",
+		"aud":   []string{"demo-client"},
+		"scope": "read",
+		"iat":   time.Now().Add(-time.Minute).Unix(),
+		"nbf":   time.Now().Add(-time.Minute).Unix(),
+		"exp":   time.Now().Add(time.Hour).Unix(),
+	})
+	assert.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "http://api.localhost/api/data", nil)
+	req.Host = "api.localhost"
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	res := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(res, req)
+
+	assert.Equal(t, http.StatusForbidden, res.Code)
+	assert.Contains(t, res.Body.String(), "missing_scopes")
 }
 
 func TestReverseProxyGatewayEvaluateClaimsReportsMissingScope(t *testing.T) {
@@ -549,7 +596,7 @@ paths:
 
 	server := createTestServer(&config.Config{
 		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
-		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		Console: &config.ConsoleConfig{BindAddress: "127.0.0.1"},
 		ReverseProxy: &config.ReverseProxyConfig{
 			Hosts: []config.ReverseProxyHost{{
 				Host: "http://api.localhost",
@@ -637,7 +684,6 @@ func TestAdminHandler_ReverseProxyEndpointsExposeConfigAndLogs(t *testing.T) {
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		ReverseProxy: &config.ReverseProxyConfig{
@@ -696,7 +742,7 @@ func TestAdminHandler_ReverseProxyLogDetailCapturesRequestAndResponseBodies(t *t
 
 	server := createTestServer(&config.Config{
 		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
-		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		Console: &config.ConsoleConfig{BindAddress: "127.0.0.1"},
 		ReverseProxy: &config.ReverseProxyConfig{
 			Hosts: []config.ReverseProxyHost{
 				{
@@ -801,7 +847,6 @@ func TestAdminHandler_TrafficLogsIncludeOIDCRequests(t *testing.T) {
 			ValidScopes: []string{"openid"},
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 	})
@@ -841,7 +886,7 @@ func TestAdminHandler_TrafficLogsIncludeOIDCRequests(t *testing.T) {
 func TestAccessLogs_IgnoreConfiguredPaths(t *testing.T) {
 	server := createTestServer(&config.Config{
 		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
-		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		Console: &config.ConsoleConfig{BindAddress: "127.0.0.1"},
 		ReverseProxy: &config.ReverseProxyConfig{
 			IgnoreLogPaths: []string{"/health", "/metrics*"},
 			Hosts: []config.ReverseProxyHost{
@@ -887,7 +932,7 @@ func TestAdminHandler_ReverseProxyLogsReplay(t *testing.T) {
 
 	server := createTestServer(&config.Config{
 		OIDC:    config.OIDCConfig{Issuer: "http://localhost:18888"},
-		Console: &config.ConsoleConfig{Port: "18889", BindAddress: "127.0.0.1"},
+		Console: &config.ConsoleConfig{BindAddress: "127.0.0.1"},
 		ReverseProxy: &config.ReverseProxyConfig{
 			Hosts: []config.ReverseProxyHost{
 				{
@@ -968,7 +1013,6 @@ func TestAdminHandler_ReverseProxyLogsStreamSendsBacklogAndSync(t *testing.T) {
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		ReverseProxy: &config.ReverseProxyConfig{
@@ -1026,7 +1070,6 @@ func TestAdminHandler_ReverseProxyLogsStreamRespectsLastEventIDAndDisconnectClea
 			Issuer: "http://localhost:18888",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		ReverseProxy: &config.ReverseProxyConfig{

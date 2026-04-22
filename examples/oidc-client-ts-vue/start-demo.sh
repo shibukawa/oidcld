@@ -30,7 +30,7 @@ sleep 5
 echo "🔍 Checking service health..."
 
 # Check OIDC provider
-if curl -s http://localhost:18888/health > /dev/null; then
+if curl -s http://localhost:8080/health > /dev/null; then
     echo "✅ OIDC Provider is healthy"
 else
     echo "❌ OIDC Provider is not responding"
@@ -57,8 +57,8 @@ echo ""
 echo "🎉 Demo is ready!"
 echo ""
 echo "📱 Vue.js Application: http://localhost:5173"
-echo "🔐 OIDC Provider: http://localhost:18888"
-echo "🔍 OIDC Discovery: http://localhost:18888/.well-known/openid-configuration"
+echo "🔐 OIDC Provider: http://localhost:8080"
+echo "🔍 OIDC Discovery: http://localhost:8080/.well-known/openid-configuration"
 echo ""
 echo "👥 Demo Users:"
 echo "   • demo-admin (Administrator)"

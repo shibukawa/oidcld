@@ -52,7 +52,7 @@ func TestValidateSplitListenerPorts(t *testing.T) {
 			},
 		}
 		assert.NoError(t, cfg.Normalize())
-		assert.NoError(t, cfg.ValidateSplitListenerPorts("18443", "9443", "18889"))
+		assert.NoError(t, cfg.ValidateSplitListenerPorts("8443", "9443", "8888"))
 	})
 
 	t.Run("rejects explicit host port mismatch", func(t *testing.T) {
@@ -65,14 +65,14 @@ func TestValidateSplitListenerPorts(t *testing.T) {
 			},
 		}
 		assert.NoError(t, cfg.Normalize())
-		err := cfg.ValidateSplitListenerPorts("18443", "9443", "18889")
+		err := cfg.ValidateSplitListenerPorts("8443", "9443", "8888")
 		assert.True(t, errors.Is(err, ErrReverseProxySplitHostPortMismatch))
 	})
 
 	t.Run("rejects split mode without reverse proxy hosts", func(t *testing.T) {
 		cfg := &Config{OIDC: OIDCConfig{Issuer: "http://localhost:18888"}}
 		assert.NoError(t, cfg.Normalize())
-		err := cfg.ValidateSplitListenerPorts("18888", "9080", "18889")
+		err := cfg.ValidateSplitListenerPorts("8080", "9080", "8888")
 		assert.True(t, errors.Is(err, ErrReverseProxySplitPortRequiresHosts))
 	})
 }

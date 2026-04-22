@@ -14,7 +14,7 @@ import (
 
 func main() {
 	// Parse CLI arguments
-	idpHost := flag.String("idp-host", "http://localhost:18888", "OIDC server URL")
+	idpHost := flag.String("idp-host", "http://localhost:8080", "OIDC server URL")
 	clientID := flag.String("client-id", "my-client-app", "OAuth 2.0 Client ID")
 	flag.Parse()
 

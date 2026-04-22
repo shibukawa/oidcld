@@ -2,13 +2,11 @@ services:
   oidcld:
     image: ghcr.io/shibukawa/oidcld:latest
     ports:
-      - "18888:18888"
-    environment:
-      - PORT=18888
+      - "8080:80"
     volumes:
       - ./oidcld.yaml:/app/oidcld.yaml:ro
     healthcheck:
-      test: ["CMD", "/app/oidcld", "health", "--url", "http://localhost:18888"]
+      test: ["CMD", "/app/oidcld", "health", "--url", "http://localhost:80"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -24,7 +22,7 @@ services:
       oidcld:
         condition: service_healthy
     command: 
-      - "--idp-host=http://oidcld:18888"
+      - "--idp-host=http://oidcld:80"
       - "--client-id=my-client-app"
     networks:
       - oidc-network

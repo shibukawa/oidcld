@@ -35,19 +35,20 @@ services:
     # image: ghcr.io/shibukawa/oidcld:latest
     ports:
       - "8443:443"      # HTTPS listener for oidc.localhost, app.localhost, and app2.localhost
-      - "18889:18889"   # Developer Console + HTTP metadata companion
+      - "8888:8888"     # Developer Console + HTTP metadata companion
     volumes:
       - ./examples/reverseproxy/config:/app/config:ro
       - app2-static-dist:/app/app2-dist:ro
       - oidcld-managed-ca:/app/tls
     environment:
       - OIDCLD_CONFIG=/app/config/oidcld.yaml
-    command: ["serve", "--config", "/app/config/oidcld.yaml", "--port", "443"]
+      - CONSOLE_PORT=8888
+    command: ["serve", "--config", "/app/config/oidcld.yaml"]
     depends_on:
       app2-static-builder:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:18889"]
+      test: ["CMD", "/usr/local/bin/oidcld", "health", "--url", "http://localhost:8888"]
       interval: 30s
       timeout: 10s
       start_period: 5s

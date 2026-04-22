@@ -166,7 +166,7 @@ func TestMCPServer_InitTool(t *testing.T) {
 			"arguments": map[string]any{
 				"config_path": configPath,
 				"mode":        "standard",
-				"port":        "18888",
+				"port":        "8080",
 			},
 		},
 	}
@@ -188,8 +188,8 @@ func TestMCPServer_InitTool(t *testing.T) {
 		t.Fatalf("Failed to load created config: %v", err)
 	}
 
-	if cfg.OIDC.Issuer != "http://localhost:18888" {
-		t.Errorf("Expected issuer http://localhost:18888, got: %s", cfg.OIDC.Issuer)
+	if cfg.OIDC.Issuer != "http://localhost:8080" {
+		t.Errorf("Expected issuer http://localhost:8080, got: %s", cfg.OIDC.Issuer)
 	}
 }
 

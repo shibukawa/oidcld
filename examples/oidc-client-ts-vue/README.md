@@ -27,7 +27,7 @@ A modern Vue.js application demonstrating OpenID Connect authentication with a b
 
 - Node.js 18+ 
 - npm or yarn
-- OpenID Connect Identity Provider running on `http://localhost:18888`
+- OpenID Connect Identity Provider running on `http://localhost:8080`
 
 ### Installation
 
@@ -46,7 +46,7 @@ npm run build
 
 The application is configured to work with the OpenID Connect for Local Development identity provider:
 
-- **Authority**: `http://localhost:18888`
+- **Authority**: `http://localhost:8080`
 - **Client ID**: `test-client`
 - **Redirect URI**: `http://localhost:5173/callback`
 - **Scopes**: `openid profile email`
@@ -115,7 +115,7 @@ docker compose down
 
 This will start:
 - **Vue.js Application**: http://localhost:5173
-- **OIDC Provider**: http://localhost:18888
+- **OIDC Provider**: http://localhost:8080
 - **4 Demo Users**: admin, user, developer, and guest accounts
 
 See [DOCKER.md](./DOCKER.md) for detailed Docker setup instructions.

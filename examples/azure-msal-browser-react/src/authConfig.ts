@@ -2,7 +2,7 @@ import type { Configuration, RedirectRequest } from "@azure/msal-browser";
 import { LogLevel, ProtocolMode } from "@azure/msal-browser";
 
 const browserOrigin = typeof window !== "undefined" ? window.location.origin : "http://localhost:5173";
-const defaultAuthority = "https://localhost:18888";
+const defaultAuthority = "https://localhost:8443";
 const tenantId = "12345678-1234-1234-1234-123456789abc";
 const defaultRedirectUri = `${browserOrigin}/redirect.html`;
 const defaultPostLogoutRedirectUri = `${browserOrigin}/`;

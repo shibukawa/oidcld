@@ -1,6 +1,6 @@
 # OpenID Connect IdP settings for Vue.js Demo
 oidc:
-  iss: "http://localhost:18888"
+  iss: "http://localhost:8080"
   pkce_required: false
   nonce_required: false
   expired_in: 3600  # Token expiration in seconds

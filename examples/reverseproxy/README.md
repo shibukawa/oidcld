@@ -14,16 +14,16 @@ docker compose up --build
 
 ## Trust The Local CA
 
-1. Open `http://localhost:18889/console/`
-2. Download the root CA from the Certificate Authority page or `http://localhost:18889/console/api/downloads/root-ca.pem`
+1. Open `http://localhost:8888/console/`
+2. Download the root CA from the Certificate Authority page or `http://localhost:8888/console/api/downloads/root-ca.pem`
 3. Import it into your browser or OS trust store for local testing
 4. The CA stays the same across restarts while the `oidcld-managed-ca` Docker volume remains
 
 ## URLs
 
 - OIDC issuer: `https://oidc.localhost:8443`
-- Developer Console + metadata companion: `http://localhost:18889/console/`
-- Metadata-only HTTP endpoint: `http://localhost:18889/.well-known/openid-configuration`
+- Developer Console + metadata companion: `http://localhost:8888/console/`
+- Metadata-only HTTP endpoint: `http://localhost:8888/.well-known/openid-configuration`
 - Original upstream app: `https://app.localhost:8443/`
 - Static-hosted mode variant: `https://app2.localhost:8443/`
 

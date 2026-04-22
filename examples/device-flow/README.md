@@ -41,7 +41,7 @@ This example shows how to implement a device flow client that:
 Configure using environment variables:
 
 ```bash
-export OIDC_ISSUER="http://localhost:18888"
+export OIDC_ISSUER="http://localhost:8080"
 export OIDC_CLIENT_ID="device-flow-cli"
 export OIDC_SCOPE="openid profile email"
 go run main.go
@@ -52,7 +52,7 @@ go run main.go
 ```
 🔐 OpenID Connect Device Flow CLI Example
 ==========================================
-📡 Issuer: http://localhost:18888
+📡 Issuer: http://localhost:8080
 🆔 Client ID: device-flow-cli
 🔭 Scope: openid profile email
 
@@ -60,9 +60,9 @@ Step 1: Starting device authorization flow...
 ✅ Device authorization successful!
 
 📱 USER ACTION REQUIRED:
-   1. Open your browser and go to: http://localhost:18888/device
+   1. Open your browser and go to: http://localhost:8080/device
    2. Enter this code: ABCD-EFGH
-   3. Or use this direct link: http://localhost:18888/device?user_code=ABCD-EFGH
+   3. Or use this direct link: http://localhost:8080/device?user_code=ABCD-EFGH
 
 ⏰ Code expires in 300 seconds
 🔄 Polling every 5 seconds...

@@ -232,7 +232,7 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 
 	// Auto-detect from configuration and environment variables
 	protocol := "http"
-	port := config.DefaultServePort(false)
+	port := defaultServePort(false)
 	hostname := "localhost"
 
 	// Load configuration. If OIDCLD_CONFIG is present and --config was not
@@ -266,23 +266,31 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 			if scheme, issuerHost, issuerPort, ok := config.IssuerURLParts(cfg.OIDC.Issuer); ok {
 				protocol = scheme
 				hostname = issuerHost
-				port = issuerPort
+				if os.Getenv("PORT") == "" {
+					port = issuerPort
+				}
 			}
 		} else if cfg.Autocert != nil && cfg.Autocert.Enabled {
 			protocol = "https"
-			port = config.DefaultServePort(true)
+			port = defaultServePort(true)
 			if len(cfg.Autocert.Domains) > 0 {
 				hostname = cfg.Autocert.Domains[0]
 			}
 		} else if cfg.OIDC.TLSCertFile != "" && cfg.OIDC.TLSKeyFile != "" {
 			// TLS configured via cert files
 			protocol = "https"
-			port = config.DefaultServePort(true)
+			port = defaultServePort(true)
 		}
 	}
 
 	dialLocalhost := false
 	sniHost := ""
+
+	if cmd.Port == "" {
+		if consolePort := strings.TrimSpace(os.Getenv("CONSOLE_PORT")); consolePort != "" {
+			return fmt.Sprintf("http://localhost:%s/health", consolePort), false, false, "", nil
+		}
+	}
 
 	// If we detect we're running in a container with an explicit config file
 	// provided via OIDCLD_CONFIG, prefer localhost as the host for health
@@ -303,6 +311,8 @@ func (cmd *HealthCmd) buildHealthURL() (string, bool, bool, string, error) {
 	// Override port if specified by CLI
 	if cmd.Port != "" {
 		port = cmd.Port
+	} else if envPort := strings.TrimSpace(os.Getenv("PORT")); envPort != "" {
+		port = envPort
 	}
 
 	// Construct URL

@@ -8,7 +8,7 @@ Authoritative reference for all runtime and initialization settings. The root RE
 ./oidcld init                        # Interactive wizard
 ./oidcld init --template entraid-v2  # Non-interactive with template
 ./oidcld --watch                     # Live reload mode
-./oidcld                             # Start server (default: HTTP on port 18888, HTTPS on 18443)
+./oidcld                             # Start server (default: HTTP on port 8080, HTTPS on 8443)
 ```
 
 ## Configuration File Structure
@@ -25,7 +25,7 @@ Authoritative reference for all runtime and initialization settings. The root RE
 
 ```yaml
 oidc:
-  iss: "http://localhost:18888"               # Issuer URL (default varies by mode)
+  iss: "http://localhost:8080"                # Issuer URL (default varies by mode)
   pkce_required: false                        # Require PKCE (default: false)
   nonce_required: false                       # Require nonce (default: false)
   expired_in: 3600                           # Token expiration in seconds (default: 3600)
@@ -56,7 +56,6 @@ oidc:
 
 ```yaml
 console:
-  port: "18889"                            # Always started
   bind_address: "127.0.0.1"               # Loopback by default
 ```
 
@@ -77,12 +76,14 @@ certificate_authority:
 - For EntraID modes, `address` and `phone` scopes are excluded
 - RSA-2048 signing keys are generated in memory at startup
 - `aud_claim_format` controls how a single audience is serialized in JWTs. `string` matches common EntraID output, while `array` forces `aud` to stay a JSON array. Multiple audiences always remain arrays.
-- `access_filter.enabled` defaults to `true` for `serve` listeners. Requests without `Forwarded`/`X-Forwarded-For` are allowed only from loopback or local private peers (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`).
+- `access_filter.enabled` defaults to `true` on the host. When the `access_filter` section is omitted and oidcld detects a container runtime, the runtime default becomes `false`. Explicit `access_filter` settings are still respected as written.
+- Requests without `Forwarded`/`X-Forwarded-For` are allowed only from loopback or local private peers (`127.0.0.0/8`, `::1`, `fc00::/7`, `10/8`, `172.16/12`, `192.168/16`).
 - `access_filter.extra_allowed_ips` accepts both single IPs and CIDRs. Single IPs are normalized internally to `/32` or `/128`.
 - `access_filter.max_forwarded_hops` defaults to `0`, so requests carrying `Forwarded` or `X-Forwarded-For` are rejected unless you explicitly raise the limit.
 - `login_ui.env_title` and `login_ui.info_markdown_file` affect the `/login` page only. Device verification and logout pages stay unchanged.
 - `login_ui.accent_color` accepts only `#RRGGBB`. If omitted and `env_title` is set, oidcld generates a stable high-visibility color from the title.
 - `login_ui.info_markdown_file` is resolved relative to the config file location. Markdown is re-read on each `/login` request, so edits show up without restarting.
+- Discovery keeps `issuer` fixed to `oidc.iss`, but the public endpoint URLs it returns (`authorization_endpoint`, `token_endpoint`, `jwks_uri`, and related endpoints) follow the request host. This allows browser-facing and container-internal metadata access to coexist.
 
 #### 4. EntraID/AzureAD Compatibility (`entraid`)
 
@@ -156,8 +157,8 @@ Notes:
 - `gateway` is valid on `target_url` and `openapi_file` routes and can replay OIDCLD-issued JWTs with refreshed signature and timestamps before proxying upstream
 - `openapi_file` is resolved relative to the config file, loaded at startup, and validated with `kin-openapi`
 - `mock.prefer_examples` prefers named / inline examples; schema synthesis is used only when examples are unavailable
-- `oidcld serve --proxy-port <port>` starts a dedicated browser-facing reverse-proxy listener; in that mode all explicit `reverse_proxy.hosts[].host` values must use the same scheme
-- when split listener mode is enabled, any explicit port in `reverse_proxy.hosts[].host` must match `--proxy-port`; portless hosts still act as fallbacks
+- `oidcld serve --proxy-port <port>` or `PROXY_PORT` starts a dedicated browser-facing reverse-proxy listener; in that mode all explicit `reverse_proxy.hosts[].host` values must use the same scheme
+- when split listener mode is enabled, any explicit port in `reverse_proxy.hosts[].host` must match the resolved proxy listener port after `--proxy-port` / `PROXY_PORT` precedence; portless hosts still act as fallbacks
 
 #### 7. Automatic HTTPS Certificates (`autocert`)
 
@@ -231,9 +232,10 @@ When using EntraID templates, users automatically include:
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--config` | Configuration file path | oidcld.yaml |
-| `--port` | Server listen port | 18888 for HTTP, 18443 for HTTPS |
-| `--proxy-port` | Optional dedicated reverse proxy listener port | disabled |
-| `--http-readonly-port` | Restricted HTTP metadata listener in HTTPS mode | 18888 |
+| `--port` | Main OIDC / shared listener port | Outside containers: 8080 for HTTP, 8443 for HTTPS. In containers: 80 for HTTP, 443 for HTTPS |
+| `--console-port` | Developer Console / metadata companion listener port | 8888 |
+| `--proxy-port` | Optional dedicated reverse proxy listener port | disabled; `PROXY_PORT` can also enable split mode |
+| `--http-readonly-port` | Restricted HTTP metadata listener in HTTPS mode | 8080 |
 | `--watch` | Enable live reload | false |
 | `--cert-file` | TLS certificate file | - |
 | `--key-file` | TLS key file | - |
@@ -245,8 +247,11 @@ When using EntraID templates, users automatically include:
 | Environment Variable | Description | Current implementation status |
 |---------------------|-------------|-------------------------------|
 | `OIDCLD_VERBOSE` | Enable verbose serve logging | Implemented via `serve` command env binding |
+| `OIDCLD_CONTAINER` | Explicitly mark the runtime as container or non-container | Overrides auto-detection for container-specific defaults such as listener ports and the implicit `access_filter` default |
 | `OIDCLD_CONFIG` | Config path used by container/health workflows | Used by runtime conventions and health auto-detection |
-| `PORT` | Documented server port override | Not directly read by the current Go entrypoints; prefer `oidcld serve --port ...` |
+| `PORT` | Main listener port override | Implemented; used after `--port` and before defaults |
+| `CONSOLE_PORT` | Developer Console port override | Implemented; used after `--console-port` and before defaults |
+| `PROXY_PORT` | Reverse proxy split-listener port override | Implemented; used after `--proxy-port`; when unset, reverse proxy shares the main listener |
 | `OIDCLD_ENV_TITLE` | Override `oidcld.login_ui.env_title` | Shows an environment banner on `/login` |
 | `OIDCLD_ENV_COLOR` | Override `oidcld.login_ui.accent_color` | Must be `#RRGGBB`; if omitted, color can still auto-generate from `env_title` |
 | `OIDCLD_ENV_MARKDOWN_FILE` | Override `oidcld.login_ui.info_markdown_file` | Path is resolved relative to the config file when not absolute |
@@ -276,7 +281,7 @@ These should be treated as example drift unless the implementation is extended.
 ### Example Client Environment (Device Flow)
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `OIDC_ISSUER` | `http://localhost:18888` | Target OIDC issuer URL |
+| `OIDC_ISSUER` | `http://localhost:8080` | Target OIDC issuer URL |
 | `OIDC_CLIENT_ID` | `device-flow-cli` | Client identifier |
 | `OIDC_SCOPE` | `openid profile email` | Requested scopes |
 
@@ -305,18 +310,19 @@ Require restart (process-level constructs or TLS listener changes):
 ### HTTPS Modes
 | Mode | Use Case | Setup |
 |------|----------|-------|
-| HTTP | Fast local iteration | Default (issuer `http://localhost:18888`) |
+| HTTP | Fast local iteration | Default (issuer `http://localhost:8080`) |
 | Manual HTTPS | Test SPA with secure origin | Provide `--cert-file` / `--key-file` |
 | mkcert | Trust local certs across browsers | Generate + use manual HTTPS method |
 | ACME (auto) | End-to-end TLS lifecycle simulation | Configure `autocert` or env overrides |
 
 ### Split Listener Mode
 
-Use `oidcld serve --proxy-port <port>` when OIDC and reverse-proxy traffic must be exposed on separate browser-facing ports.
+Use `oidcld serve --proxy-port <port>` or `PROXY_PORT` when OIDC and reverse-proxy traffic must be exposed on separate browser-facing ports.
 
-- `--port` remains the OIDC listener
-- `--proxy-port` becomes the reverse-proxy listener
-- `console.port` remains the Developer Console / metadata companion listener
+- `--port` or `PORT` remains the OIDC listener
+- `--proxy-port` or `PROXY_PORT` becomes the reverse-proxy listener
+- `--console-port` or `CONSOLE_PORT` remains the Developer Console / metadata companion listener
+- if neither `--proxy-port` nor `PROXY_PORT` is set, reverse proxy shares the main listener
 - OIDC scheme is derived from `oidc.iss` plus manual TLS / autocert settings
 - reverse-proxy scheme is derived from `reverse_proxy.hosts[].host`
 - split mode supports OIDC HTTP + proxy HTTP, OIDC HTTPS + proxy HTTP, OIDC HTTP + proxy HTTPS, and OIDC HTTPS + proxy HTTPS
@@ -396,7 +402,7 @@ flowchart TD
    - Email for ACME registration [admin@localhost]
 
 6. **Server Configuration** (Standard template only)
-  - Port number [18888 for HTTP / 18443 for HTTPS]
+  - Port number [8080 for HTTP / 8443 for HTTPS]
 
 7. **Advanced Options**
    - Custom issuer URL (optional)
@@ -421,7 +427,7 @@ flowchart TD
 ./oidcld init
 # Select: 1 (Standard)
 # HTTPS: N
-# Port: (default 18888 for HTTP, 18443 for HTTPS)
+# Port: (default 8080 for HTTP, 8443 for HTTPS)
 ./oidcld
 ```
 

@@ -124,7 +124,6 @@ oidc:
       - "Authorization"
 
 console:
-  port: "18889"
   bind_address: "127.0.0.1"
 
 certificate_authority:
@@ -141,7 +140,10 @@ users:
 ## 運用面で移行に影響する点
 
 - 0.2 の README 例と Compose sample は、IdP 単体トポロジーではなく、HTTPS + console + reverse-proxy を統合したトポロジーを前面に出しています。
-- Compose sample では Developer Console と metadata companion に `http://localhost:18889` を使い、browser-facing の TLS traffic は `https://*.localhost:8443` で公開されます。
+- Compose sample では Developer Console と metadata companion に `http://localhost:8888` を使い、browser-facing の TLS traffic は `https://*.localhost:8443` で公開されます。
+- listener port は config file ではなく runtime 設定になりました。main の OIDC / shared traffic は `--port` または `PORT`、Developer Console は `--console-port` または `CONSOLE_PORT`、reverse-proxy の split mode は `--proxy-port` または `PROXY_PORT` で制御します。
+- port の優先順位は `CLI > env > default` です。reverse proxy については `--proxy-port` または `PROXY_PORT` があると split listener mode になり、どちらも無ければ OIDC と main listener を共有します。
+- split listener mode では `reverse_proxy.hosts[].host` の port 省略は引き続き可能ですが、明示portを書く場合は `--proxy-port` / `PROXY_PORT` の優先順位で解決された proxy listener port と一致している必要があります。
 - OIDCLD を IdP としてだけ使い続けることは 0.2 でも可能ですが、旧設定ファイルは新しい section 構成に合わせて更新が必要です。
 
 ## 確認チェックリスト

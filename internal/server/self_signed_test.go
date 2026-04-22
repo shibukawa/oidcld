@@ -53,7 +53,6 @@ func TestAdminHandler_CertificateAndDownloadEndpointsUseManagedAssets(t *testing
 			Issuer: "https://localhost:18443",
 		},
 		Console: &config.ConsoleConfig{
-			Port:        "18889",
 			BindAddress: "127.0.0.1",
 		},
 		CertificateAuthority: &config.CertificateAuthorityConfig{
