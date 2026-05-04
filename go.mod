@@ -6,11 +6,13 @@ require (
 	github.com/alecthomas/assert/v2 v2.11.0
 	github.com/alecthomas/kong v1.15.0
 	github.com/fatih/color v1.19.0
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.0
+	github.com/getkin/kin-openapi v0.135.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
+	github.com/shibukawa/incontainer v0.1.3
 	github.com/yuin/goldmark v1.8.2
 	github.com/zitadel/oidc/v3 v3.47.5
 	golang.org/x/crypto v0.50.0
@@ -21,7 +23,6 @@ require (
 	github.com/alecthomas/repr v0.5.2 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/getkin/kin-openapi v0.135.0 // indirect
 	github.com/go-chi/chi/v5 v5.2.5 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -40,7 +41,6 @@ require (
 	github.com/oasdiff/yaml3 v0.0.9 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/rs/cors v1.11.1 // indirect
-	github.com/shibukawa/incontainer v0.1.3 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/woodsbury/decimal128 v1.3.0 // indirect
 	github.com/zitadel/logging v0.7.0 // indirect
