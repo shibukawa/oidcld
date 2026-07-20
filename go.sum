@@ -81,8 +81,8 @@ github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
-github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
+github.com/yuin/goldmark v1.8.4 h1:oat/nd3U6NeQqFEL3xpEJq7d7c86NI+DbSNGAs4xnjA=
+github.com/yuin/goldmark v1.8.4/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 github.com/zitadel/logging v0.7.0 h1:eugftwMM95Wgqwftsvj81isL0JK/hoScVqp/7iA2adQ=
 github.com/zitadel/logging v0.7.0/go.mod h1:9A6h9feBF/3u0IhA4uffdzSDY7mBaf7RE78H5sFMINQ=
 github.com/zitadel/oidc/v3 v3.47.9 h1:OnMUhwLuKfKL3EHmyc236uTdaw3BNz/U2GmJYEFGWas=
