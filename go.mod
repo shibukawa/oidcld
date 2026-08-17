@@ -16,7 +16,7 @@ require (
 	github.com/yuin/goldmark v1.8.5
 	github.com/zitadel/oidc/v3 v3.48.1
 	golang.org/x/crypto v0.53.0
-	golang.org/x/text v0.40.0
+	golang.org/x/text v0.41.0
 )
 
 require (
