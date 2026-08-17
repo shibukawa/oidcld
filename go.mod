@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/shibukawa/incontainer v0.1.3
 	github.com/yuin/goldmark v1.8.5
-	github.com/zitadel/oidc/v3 v3.48.1
+	github.com/zitadel/oidc/v3 v3.49.2
 	golang.org/x/crypto v0.53.0
 	golang.org/x/text v0.41.0
 )
