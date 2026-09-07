@@ -1,6 +1,6 @@
 module github.com/shibukawa/oidcld
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/alecthomas/assert/v2 v2.11.0
@@ -15,7 +15,7 @@ require (
 	github.com/shibukawa/incontainer v0.1.3
 	github.com/yuin/goldmark v1.8.6
 	github.com/zitadel/oidc/v3 v3.49.5
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/text v0.41.0
 )
 
