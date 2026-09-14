@@ -15,8 +15,8 @@ require (
 	github.com/shibukawa/incontainer v0.1.3
 	github.com/yuin/goldmark v1.8.6
 	github.com/zitadel/oidc/v3 v3.49.5
-	golang.org/x/crypto v0.56.0
-	golang.org/x/text v0.41.0
+	golang.org/x/crypto v0.57.0
+	golang.org/x/text v0.42.0
 )
 
 require (
@@ -43,7 +43,7 @@ require (
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
