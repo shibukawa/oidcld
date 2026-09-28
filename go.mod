@@ -14,14 +14,14 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/shibukawa/incontainer v0.1.3
 	github.com/yuin/goldmark v1.8.6
-	github.com/zitadel/oidc/v3 v3.51.1
+	github.com/zitadel/oidc/v3 v3.51.5
 	golang.org/x/crypto v0.57.0
 	golang.org/x/text v0.42.0
 )
 
 require (
 	github.com/alecthomas/repr v0.5.2 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/go-chi/chi/v5 v5.3.2 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
