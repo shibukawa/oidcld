@@ -16,7 +16,7 @@ linters:
     - paralleltest
     - funcorder
     - depguard
-    - exhaustruct
+    - exhaustruct_v5
     - nonamedreturns
     - gosec
     - gocognit
