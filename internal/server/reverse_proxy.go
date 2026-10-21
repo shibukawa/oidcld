@@ -156,20 +156,18 @@ func reverseProxyLogRetention(cfg *config.Config) int {
 }
 
 func newSingleHostReverseProxy(target *neturl.URL, matchPath, rewritePathPrefix string) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	defaultDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		originalPath := req.URL.Path
-		originalHost := req.Host
-		defaultDirector(req)
-		rewrittenPath := rewriteMatchedPath(originalPath, matchPath, rewritePathPrefix)
-		req.URL.Path = singleJoiningSlash(target.Path, rewrittenPath)
-		req.URL.RawPath = req.URL.EscapedPath()
-		req.Host = target.Host
-		req.Header.Set("X-Forwarded-Host", originalHost)
-		req.Header.Set("X-Forwarded-Proto", forwardedScheme(req))
+	return &httputil.ReverseProxy{
+		Rewrite: func(proxyReq *httputil.ProxyRequest) {
+			originalPath := proxyReq.In.URL.Path
+			originalHost := proxyReq.In.Host
+			proxyReq.SetURL(target)
+			rewrittenPath := rewriteMatchedPath(originalPath, matchPath, rewritePathPrefix)
+			proxyReq.Out.URL.Path = singleJoiningSlash(target.Path, rewrittenPath)
+			proxyReq.Out.URL.RawPath = proxyReq.Out.URL.EscapedPath()
+			proxyReq.Out.Header.Set("X-Forwarded-Host", originalHost)
+			proxyReq.Out.Header.Set("X-Forwarded-Proto", forwardedScheme(proxyReq.In))
+		},
 	}
-	return proxy
 }
 
 func singleJoiningSlash(a, b string) string {
